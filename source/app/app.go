@@ -21,7 +21,7 @@ import (
 
 // Version is the authoritative release version, bumped here in source before
 // cutting a release (the release tag and goreleaser both derive from it).
-var Version = "1.0.0-alpha.2"
+var Version = "1.0.0-beta.1"
 
 // Build is extra provenance (short commit + dirty flag) stamped by cicd/build.bash
 // via -ldflags -X; empty for a plain `go build`, so a release binary reads clean.

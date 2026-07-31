@@ -9,7 +9,7 @@
 [![CI](https://github.com/jim-collier/nano-git-db/actions/workflows/ci.yml/badge.svg)](https://github.com/jim-collier/nano-git-db/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/jim-collier/nano-git-db?include_prereleases)](https://github.com/jim-collier/nano-git-db/releases/latest)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](license.md)
-![Lifecycle: Alpha](https://img.shields.io/badge/Lifecycle-Alpha-orange)
+![Lifecycle: Beta](https://img.shields.io/badge/Lifecycle-Beta-yellow)
 ![Support](https://img.shields.io/badge/Support-Maintained-brightgreen)
 
 <!-- TOC ignore:true -->
