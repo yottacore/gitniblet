@@ -9,15 +9,14 @@
 // (Apply). Git sync and garbage collection are separate concerns.
 //
 // Note: the original design's field list omits a row identifier, but field-level
-// ops can't be applied without one, so RowID is part of every entry (a hex GUID
-// of the affected row).
+// ops can't be applied without one, so RowID is part of every entry (the GUID of
+// the affected row; see id.go for the wire form).
 package txlog
 
 import (
 	"bytes"
 	"database/sql"
 	"encoding/csv"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -27,16 +26,17 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jim-collier/nano-git-db/internal/core/guid"
 	"github.com/jim-collier/nano-git-db/internal/core/store"
 )
 
 // Entry is one transaction-log row. Field is blank for record-level ops
 // (create with no value, mark_delete, delete).
 type Entry struct {
-	TxID     string // per-entry GUID (hex or base64)
+	TxID     string // per-entry GUID; see id.go for the wire form
 	Date     string // GMT, RFC3339
 	Table    string
-	RowID    string // hex GUID of the affected row
+	RowID    string // GUID of the affected row; see id.go for the wire form
 	Field    string
 	Op       string // create, update, mark_delete, delete
 	NewValue string
@@ -359,7 +359,7 @@ func Apply(st *store.Store, entries []Entry) ([]string, error) {
 				continue
 			}
 		}
-		if err := applyOne(tx, entry); err != nil {
+		if err := applyOne(tx, st, entry); err != nil {
 			if skippable(err) {
 				warns = append(warns, fmt.Sprintf("tx %s (%s/%s) skipped: %v", entry.TxID, entry.Table, entry.Op, err))
 				continue
@@ -392,10 +392,10 @@ func skippable(err error) bool {
 		strings.Contains(msg, "UNIQUE constraint failed")
 }
 
-func applyOne(tx *sql.Tx, entry Entry) error {
-	id, err := hex.DecodeString(entry.RowID)
+func applyOne(tx *sql.Tx, st *store.Store, entry Entry) error {
+	id, err := guid.Decode(entry.RowID)
 	if err != nil {
-		return fmt.Errorf("%w: bad row_id %q: %v", errBadEntry, entry.RowID, err)
+		return fmt.Errorf("%w: %v", errBadEntry, err)
 	}
 	tbl := quoteIdent(entry.Table)
 
@@ -405,7 +405,7 @@ func applyOne(tx *sql.Tx, entry Entry) error {
 			return err
 		}
 		if entry.Field != "" {
-			return setField(tx, tbl, entry, id)
+			return setField(tx, tbl, entry, id, st.IsRef(entry.Table, entry.Field))
 		}
 		return nil
 	case "update":
@@ -413,7 +413,7 @@ func applyOne(tx *sql.Tx, entry Entry) error {
 		if _, err := tx.Exec(`INSERT OR IGNORE INTO `+tbl+` ("id") VALUES (?)`, id); err != nil {
 			return err
 		}
-		return setField(tx, tbl, entry, id)
+		return setField(tx, tbl, entry, id, st.IsRef(entry.Table, entry.Field))
 	case "mark_delete":
 		_, err := tx.Exec(`UPDATE `+tbl+` SET "is_deleted"=1 WHERE "id"=?`, id)
 		return err
@@ -428,11 +428,19 @@ func applyOne(tx *sql.Tx, entry Entry) error {
 // setField writes one column. Values bind as text (SQLite coerces by column
 // affinity), or as NULL when the entry carries the 🗦NULL🗧 sentinel. A still-
 // encrypted entry (Enc: the decrypt pass had no key) also binds NULL - the view
-// must never hold ciphertext.
-func setField(tx *sql.Tx, quotedTable string, entry Entry, id []byte) error {
+// must never hold ciphertext. A ref column binds the raw id bytes instead, so a
+// reference is stored the same way the row's own primary key is.
+func setField(tx *sql.Tx, quotedTable string, entry Entry, id []byte, isRef bool) error {
 	var val any = entry.NewValue
-	if entry.IsNull || entry.Enc {
+	switch {
+	case entry.IsNull || entry.Enc:
 		val = nil
+	case isRef && entry.NewValue != "":
+		raw, err := guid.Decode(entry.NewValue)
+		if err != nil {
+			return fmt.Errorf("%w: %s: %v", errBadEntry, entry.Field, err)
+		}
+		val = raw
 	}
 	_, err := tx.Exec(`UPDATE `+quotedTable+` SET `+quoteIdent(entry.Field)+`=? WHERE "id"=?`, val, id)
 	return err

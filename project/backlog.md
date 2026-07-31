@@ -19,9 +19,9 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- [Bugs](#bugs)
 	- [New features and enhancements](#new-features-and-enhancements)
 	- [Done](#done)
-		- [First steps](#first-steps)
 		- [Done - Bugs](#done---bugs)
 		- [Done - New features and enhancements](#done---new-features-and-enhancements)
+		- [First steps](#first-steps)
 	- [Deferred](#deferred)
 	- [Canceled](#canceled)
 
@@ -43,6 +43,12 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Misc to-do
 
+- 🛠️ Figure a clean and consistent way to hide list columns (or fields in general).
+	- Design settled: `visible_form`/`visible_list` per field (spec in example.shcl, decisions in design.md UI section). The syntax migration it was waiting on is done; the display work itself is still to do.
+
+- 🛠️ Figure a clean and consistent way to show emojis or other short symbolic text in TUI, for lookup items, rather than description.
+	- Design settled: built-in `lookups`/`lookup_values` tables with a `symbol` column, `lookup_in_lists`/`lookup_in_forms: symbol|title|both` display enums, int `idx` reference keys, seed rows in the schema. Spec in example.shcl, decisions in design.md Lookups section. The syntax migration it was waiting on is done; idx assignment, the seed engine and the display enums are still to do.
+
 - 🛠️ Need to research, decide, and document how to separate different concerns in the enterprise repo (and identify what the concerns even are), e.g.:
 	- Customer-facing enterprise product
 	- Our owned side used to (possibly) generate license keys, process payment, check subscription status, etc. This would basically be a completely separate company precense, ecommerce, and validation system.
@@ -53,8 +59,6 @@ In each section, items are listed approximately from newest to oldest.
 ### Bugs
 
 ### New features and enhancements
-
-- 🔘 Use sister project 'SHCL' as the engine for config and DDL files.
 
 - 🛠️ Optional encrypted data in the transaction log. The local SQLite copy is always decrypted.
 	- Reason: keep the log unreadable to the git host, or to anyone who gets the repo.
@@ -69,42 +73,29 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Done
 
-#### First steps
-
-- ✅ Repo scaffold: `go.mod`, package skeleton, arg-dispatch `main`, size-optimized build script, `.gitignore`. Compiles, vets, and gofmt-clean; all four front-ends stubbed and the web server serves its embedded asset.
-
-- ✅ DDL parser: `example.ddl` parses into an in-memory schema model through three layers (indent tree, type-directed values, semantic map). Tested, wired to `nanogitdb ddl <file>`.
-
-- ✅ SQLite view: builds and migrates the local `.sqlite` from the schema using pure-Go `modernc.org/sqlite`, with system columns and uniques/indexes, idempotent. Tested, wired to `nanogitdb build`. On-the-fly migration of existing data is a separate item below.
-
-- ✅ Transaction log: CSV read/write plus apply log to the SQLite view, with the log as source of truth. Append-only, field-granular replay (create/update/mark_delete/delete) in one tx. Tested, wired to `nanogitdb replay`. Added `row_id` to the entry (see design).
-
-- ✅ Core CRUD API: the single internal API every front-end and Lua calls, covering Create/Update/SetField/MarkDelete/Delete/Get/Query. Writes are log-first (append to truth, then apply to view), and it owns id, timestamp, and user stamping. Tested including a full rebuild from log. Validation, access, and triggers are separate items.
-
-- ✅ CLI front-end: full arg-based CRUD over the core, with verbs create/get/update/setnull/markdelete/delete/query each taking the same `<ddl> <sqlite> <logdir>` triple as replay and sync. Stateless and script-friendly until the config file lands. Writes stamp NANOGITDB_USER or the OS username, and `setnull` is its own verb so a literal "NULL" string stays expressible. Schema-op flags are their own backlog item.
-
-- ✅ Git sync: pull/merge/commit/push of the tx-log dir with a background loop, shelling out to `git`. Append conflicts auto-resolve via `merge=union`, and replay sorts by (date, tx_id) so clients converge. Tested including two-client convergence, wired to `nanogitdb sync`.
-
-- ✅ Lua host: `gopher-lua` bound to the same core CRUD as `db.{create,get,update,setfield,markdelete,delete,query}`, sandboxed to base/table/string/math/coroutine only with no os/io. Tested, wired to `nanogitdb --script`.
-	- Note: now an enterprise-edition feature. The host moved behind the script seam, so the open-source build has no scripting host and drops the gopher-lua dependency.
-
-- ✅ Auto tables: users, groups, and the opt-in feature tables (m:m, comments, audit, access, attachments), defined in the same DDL users write and embedded in one source file. Built idempotently at startup, with default groups (owners/admins/users/guests) seeded log-first so they replicate. audit_trail opts out of the universal system columns via the new `system_fields: no` key, and access_rows only appears when a table opts in to row_level_access. First-user membership in owners/admins is deferred until user rows exist.
-
-- ✅ TUI front-end: `tview`/`tcell`, both pure Go with the cross-compile intact. Table list (user tables first, then built-ins), a rows grid that stays empty until a table is opened, a create/edit form that writes only changed fields, and soft/hard delete behind a confirm modal, all through the shared CRUD API. Tested headlessly on tcell's simulation screen, including a full boot-open-quit pass. `nanogitdb --tui <ddl> <sqlite> <logdir>`.
-
-- ✅ Web UI: stdlib `net/http` + `html/template` + `embed` with vendored, pinned htmx (2.0.4). Table sidebar, a rows grid that renders nothing until a table is asked for, a create/edit form writing only changed fields, and soft/hard delete behind hx-confirm; the 127.0.0.1-only binding is the access control. Front-end bring-up and table metadata live in shared `schema.OpenClient`/`schema.Catalog`, so the four front-ends can't drift. `nanogitdb --serve <ddl> <sqlite> <logdir>`.
-
-- ✅ CI/CD: a manual pipeline in `cicd/cicd.bash` that builds native (size-reported), cross-compiles windows-amd64/linux-arm64/windows-arm64 (pure Go, no extra toolchains; macOS stays deferred), zips windows into `dist/`, runs test.bash (vet, gofmt, tests, smoke), verifies the module and runs govulncheck, then dogfoods and publishes. Profiling beyond the size report waits until there's something worth profiling.
-	- ✅ `-q/--quiet` (unattended, no prompt, flows to the publish step) and `-m/--message/--msg` (`-m MSG` or `-m=MSG`; auto-generated when `-q` and no `-m`), in both cicd.bash and the n8git publish helper. Stage output uses the existing `fEcho`/`fEcho_Clean` helpers (bracketed section headers, blank-line grouping).
-	- ✅ `--quick`: skip the slow stages (cross-builds + Windows packaging/install, fuzz, profiler, screenshots, govulncheck, gosec); native build, lint, quick tests, go mod verify, dogfood, and publish still run.
-	- ✅ Pipeline hardening: lint+format stage (`gofmt -w` + `staticcheck`), auto-discovered fuzz targets (`fuzz.bash` over the DDL/txlog/config parsers, seeds also run in the normal suite), `gosec` beside govulncheck (documented exclude list), and a non-gating profiler stage - samples the tx-log replay hot path into an inferno flamegraph (`cicd/artifacts/profiling/`, GFS-rotated) with a `flame-report.py` hotspot summary. Run log tee'd to `cicd/artifacts/lint/` for after-the-fact review (`lint-report.bash`).
-	- ✅ Full cross-platform packaging (non-`--quick`): goreleaser cross-builds linux/macOS/windows/freebsd for amd64+arm64 (all pure Go, one Linux box, no C toolchain), then packages `.deb`/`.rpm` for linux, a `.tar.gz`/`.zip` per target, and checksums. A single self-contained Windows `.exe` installer per arch is built with NSIS (`windows-installer.bash`/`.nsi`) - installs, adds to PATH, upgrades an existing install. Builds split: a native debug binary drives testing/profiling, an optimized release binary is what gets packaged and dogfooded. `--no-arm` trims a run to amd64 only (arm is cheap here, so it's opt-out not opt-in). Deferred (each needs the target OS's own tooling/signing host): macOS `.dmg`, Windows `.msi`, FreeBSD `.pkg` (ship as archives); AppImage + Flatpak.
-
-- ✅ Supply-chain hardening: vendored deps, `go mod verify`, `-mod=vendor`, and `govulncheck`, all wired into the pipeline. The first govulncheck run found five reachable Go-stdlib vulns; pinning `toolchain go1.26.4` cleared them and it now scans clean.
-
 #### Done - Bugs
 
 #### Done - New features and enhancements
+
+- ✅ Use sister project 'SHCL' as the engine for config and DDL files.
+	- Done: one language now covers the schema, the queries sidecar, and ngdb's own registry, settings and web-credential files. The TOML dependency is gone, and so is the hand-rolled indent parser.
+	- Done: schema files are `.shcl`, queries are `.queries.shcl`. A directory holding a pre-rename `.ddl` still opens.
+	- Done: the schema's own key vocabulary is a validation file inside the binary, so a mistyped key is named with its line number instead of being ignored. A schema with errors marks its database unopenable, as before.
+	- Done: renames go through the writer rather than editing lines of text, so comments survive by construction. The file comes back canonical, which does reflow hand-tuned column alignment once.
+	- Note: syntax changes to existing schemas - `unique:`/`index:` entries instead of bare comma rows, `.` instead of `/` for path shorthand, relationships need names, seeds name their table. Details in syntax.md.
+	- Note: restating a table or a query now merges it rather than dropping the repeat, since that is how the language joins nodes.
+
+- ✅ Shorter row and transaction ids in the log.
+	- Done: ids are written as 22 characters of base64url instead of 32 of hex. Two ride on every line, so the log gets smaller to read and replay; the git repo barely changes, since both forms hold the same bits.
+	- Done: logs written before the switch still replay - both forms are read, told apart by width. Ids are never re-encoded in place: an encrypted value is keyed off the id text, so rewriting one would strand its value.
+
+- ✅ New `ref` field type for a reference to another row.
+	- Done: stored as the same raw bytes as the `id` it points at, so it joins directly against the key and takes 16 bytes rather than 22 or 32. Read and written as the usual id text.
+
+- ✅ Every key and reference in the view is binary; text ids live only in the log.
+	- Done: the built-in link tables (`many2many`, `comments`, `audit_trail`, `access_rows`) hold their `parent_id` columns as references too, moved together with the queries that read them - a blob compared to a string matches nothing and reports no error, so a half-done conversion reads as "no results".
+	- Done: hand-written SQL gets `id()` and `idtext()` to convert between an id's text and stored forms. `id()` rejects a malformed id rather than returning nothing.
+	- Done: the id format moved to its own package, shared by the log and the view instead of owned by either.
 
 - ✅ Comments pane in views: a `type: comments` layout block surfaces a table's built-in 1:m comments component as a detail pane.
 	- Done: the pane follows a sibling list block's selected row, lists that row's thread, and adds to it - in the TUI (Tab to the pane, Enter to add) and the web UI (a per-row comments link loads the thread, an add form posts it). Comments never become a list column, and a comments block over a table without the feature is dropped with a warning.
@@ -265,6 +256,39 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ View block `tree_grid` type + `parent_field`: hierarchical grid over a self-referential (same-table) parent link
 	- Done, and it pulled in view rendering itself, since no front-end rendered views yet. Views now resolve once in the core, verifying tables, turning split hints into axis and percent, and inheriting readonly, then render in both TUI and web as nested split blocks. `tree_grid` orders rows depth-first along `parent_field` with indentation, and bad data like orphans, cycles, or a wrong field degrades visibly instead of hiding rows. Blocks open empty per the design and the "All" action loads them; `startup_named_query` hooks in once named queries land.
+
+#### First steps
+
+- ✅ Repo scaffold: `go.mod`, package skeleton, arg-dispatch `main`, size-optimized build script, `.gitignore`. Compiles, vets, and gofmt-clean; all four front-ends stubbed and the web server serves its embedded asset.
+
+- ✅ DDL parser: `example.ddl` parses into an in-memory schema model through three layers (indent tree, type-directed values, semantic map). Tested, wired to `nanogitdb ddl <file>`.
+
+- ✅ SQLite view: builds and migrates the local `.sqlite` from the schema using pure-Go `modernc.org/sqlite`, with system columns and uniques/indexes, idempotent. Tested, wired to `nanogitdb build`. On-the-fly migration of existing data is a separate item below.
+
+- ✅ Transaction log: CSV read/write plus apply log to the SQLite view, with the log as source of truth. Append-only, field-granular replay (create/update/mark_delete/delete) in one tx. Tested, wired to `nanogitdb replay`. Added `row_id` to the entry (see design).
+
+- ✅ Core CRUD API: the single internal API every front-end and Lua calls, covering Create/Update/SetField/MarkDelete/Delete/Get/Query. Writes are log-first (append to truth, then apply to view), and it owns id, timestamp, and user stamping. Tested including a full rebuild from log. Validation, access, and triggers are separate items.
+
+- ✅ CLI front-end: full arg-based CRUD over the core, with verbs create/get/update/setnull/markdelete/delete/query each taking the same `<ddl> <sqlite> <logdir>` triple as replay and sync. Stateless and script-friendly until the config file lands. Writes stamp NANOGITDB_USER or the OS username, and `setnull` is its own verb so a literal "NULL" string stays expressible. Schema-op flags are their own backlog item.
+
+- ✅ Git sync: pull/merge/commit/push of the tx-log dir with a background loop, shelling out to `git`. Append conflicts auto-resolve via `merge=union`, and replay sorts by (date, tx_id) so clients converge. Tested including two-client convergence, wired to `nanogitdb sync`.
+
+- ✅ Lua host: `gopher-lua` bound to the same core CRUD as `db.{create,get,update,setfield,markdelete,delete,query}`, sandboxed to base/table/string/math/coroutine only with no os/io. Tested, wired to `nanogitdb --script`.
+	- Note: now an enterprise-edition feature. The host moved behind the script seam, so the open-source build has no scripting host and drops the gopher-lua dependency.
+
+- ✅ Auto tables: users, groups, and the opt-in feature tables (m:m, comments, audit, access, attachments), defined in the same DDL users write and embedded in one source file. Built idempotently at startup, with default groups (owners/admins/users/guests) seeded log-first so they replicate. audit_trail opts out of the universal system columns via the new `system_fields: no` key, and access_rows only appears when a table opts in to row_level_access. First-user membership in owners/admins is deferred until user rows exist.
+
+- ✅ TUI front-end: `tview`/`tcell`, both pure Go with the cross-compile intact. Table list (user tables first, then built-ins), a rows grid that stays empty until a table is opened, a create/edit form that writes only changed fields, and soft/hard delete behind a confirm modal, all through the shared CRUD API. Tested headlessly on tcell's simulation screen, including a full boot-open-quit pass. `nanogitdb --tui <ddl> <sqlite> <logdir>`.
+
+- ✅ Web UI: stdlib `net/http` + `html/template` + `embed` with vendored, pinned htmx (2.0.4). Table sidebar, a rows grid that renders nothing until a table is asked for, a create/edit form writing only changed fields, and soft/hard delete behind hx-confirm; the 127.0.0.1-only binding is the access control. Front-end bring-up and table metadata live in shared `schema.OpenClient`/`schema.Catalog`, so the four front-ends can't drift. `nanogitdb --serve <ddl> <sqlite> <logdir>`.
+
+- ✅ CI/CD: a manual pipeline in `cicd/cicd.bash` that builds native (size-reported), cross-compiles windows-amd64/linux-arm64/windows-arm64 (pure Go, no extra toolchains; macOS stays deferred), zips windows into `dist/`, runs test.bash (vet, gofmt, tests, smoke), verifies the module and runs govulncheck, then dogfoods and publishes. Profiling beyond the size report waits until there's something worth profiling.
+	- ✅ `-q/--quiet` (unattended, no prompt, flows to the publish step) and `-m/--message/--msg` (`-m MSG` or `-m=MSG`; auto-generated when `-q` and no `-m`), in both cicd.bash and the n8git publish helper. Stage output uses the existing `fEcho`/`fEcho_Clean` helpers (bracketed section headers, blank-line grouping).
+	- ✅ `--quick`: skip the slow stages (cross-builds + Windows packaging/install, fuzz, profiler, screenshots, govulncheck, gosec); native build, lint, quick tests, go mod verify, dogfood, and publish still run.
+	- ✅ Pipeline hardening: lint+format stage (`gofmt -w` + `staticcheck`), auto-discovered fuzz targets (`fuzz.bash` over the DDL/txlog/config parsers, seeds also run in the normal suite), `gosec` beside govulncheck (documented exclude list), and a non-gating profiler stage - samples the tx-log replay hot path into an inferno flamegraph (`cicd/artifacts/profiling/`, GFS-rotated) with a `flame-report.py` hotspot summary. Run log tee'd to `cicd/artifacts/lint/` for after-the-fact review (`lint-report.bash`).
+	- ✅ Full cross-platform packaging (non-`--quick`): goreleaser cross-builds linux/macOS/windows/freebsd for amd64+arm64 (all pure Go, one Linux box, no C toolchain), then packages `.deb`/`.rpm` for linux, a `.tar.gz`/`.zip` per target, and checksums. A single self-contained Windows `.exe` installer per arch is built with NSIS (`windows-installer.bash`/`.nsi`) - installs, adds to PATH, upgrades an existing install. Builds split: a native debug binary drives testing/profiling, an optimized release binary is what gets packaged and dogfooded. `--no-arm` trims a run to amd64 only (arm is cheap here, so it's opt-out not opt-in). Deferred (each needs the target OS's own tooling/signing host): macOS `.dmg`, Windows `.msi`, FreeBSD `.pkg` (ship as archives); AppImage + Flatpak.
+
+- ✅ Supply-chain hardening: vendored deps, `go mod verify`, `-mod=vendor`, and `govulncheck`, all wired into the pipeline. The first govulncheck run found five reachable Go-stdlib vulns; pinning `toolchain go1.26.4` cleared them and it now scans clean.
 
 ### Deferred
 

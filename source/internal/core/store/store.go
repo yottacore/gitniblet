@@ -26,6 +26,12 @@ import (
 type Store struct {
 	db   *sql.DB
 	path string
+	// refs are the ref-typed columns per table, learned as tables are built.
+	// Replay needs them to bind a row reference as raw bytes rather than as its
+	// text form; a plain binary column is a BLOB too, so the SQL type alone
+	// cannot tell them apart. Build can run more than once (user schema, then
+	// the built-ins), so this accumulates rather than resets.
+	refs map[string]map[string]bool
 }
 
 // Open opens or creates the SQLite view at path.
@@ -42,8 +48,13 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	return &Store{db: db, path: path}, nil
+	return &Store{db: db, path: path, refs: map[string]map[string]bool{}}, nil
 }
+
+// IsRef reports whether a column holds a row reference. False for a store whose
+// tables were not built from a schema (the value then binds as text, which is
+// what those callers already expect).
+func (s *Store) IsRef(table, field string) bool { return s.refs[table][field] }
 
 // Close releases the view.
 func (s *Store) Close() error {
@@ -71,6 +82,14 @@ func (s *Store) Build(schema *ddl.Schema) error {
 }
 
 func (s *Store) buildTable(table ddl.Table) error {
+	for _, f := range table.Fields {
+		if f.Type == "ref" {
+			if s.refs[table.Name] == nil {
+				s.refs[table.Name] = map[string]bool{}
+			}
+			s.refs[table.Name][f.Name] = true
+		}
+	}
 	stmts := []string{createTableSQL(table)}
 	existing, err := s.columns(table.Name)
 	if err != nil {
@@ -179,19 +198,21 @@ func sqlType(typ string) string {
 		return "INTEGER"
 	case "float":
 		return "REAL"
-	case "binary":
+	case "binary", "ref":
 		return "BLOB"
 	default: // string, datetime_*, unspecified
 		return "TEXT"
 	}
 }
 
-// defaultLiteral renders a field's DDL default as a SQL literal. NULL and
-// function refs are skipped: NULL is the column default anyway, and functions
-// are computed by the app, not by SQLite.
+// defaultLiteral renders a field's DDL default as a SQL literal. Sentinels and
+// function refs are skipped: @null is the column default anyway, and @previous
+// and functions are computed by the app, not by SQLite. Testing the whole
+// sentinel set matters - checking only @null let @previous through as the
+// literal text on any column type SQLite would accept a string for.
 func defaultLiteral(field ddl.Field) (string, bool) {
 	def := strings.TrimSpace(field.Default)
-	if def == "" || ddl.IsNull(def) {
+	if def == "" || ddl.IsSentinel(def) || ddl.IsNull(def) {
 		return "", false
 	}
 	if _, _, ok := ddl.AsFunc(def); ok {

@@ -23,8 +23,37 @@ func Unquote(s string) (string, bool) {
 	return s, false
 }
 
-// IsNull reports the bare NULL sentinel.
-func IsNull(s string) bool { return strings.TrimSpace(s) == "NULL" }
+// The default-value sentinels, a closed set. They are spelled with a leading @
+// rather than brackets because SHCL reserves [ and ] inside a value.
+const (
+	// SentinelNull is an explicit "no value" default.
+	SentinelNull = "@null"
+	// SentinelPrevious repeats the value from the last row entered in this
+	// session. Interactive front-ends only - a programmatic write has no
+	// "previous row" and never inherits it.
+	SentinelPrevious = "@previous"
+)
+
+// IsSentinel reports whether a default is one of the reserved sentinels. Both
+// mean "the app computes this", so neither is ever emitted as a SQL default.
+//
+// There is no quoted escape: SHCL strips a value's outer quotes on read, so
+// "@null" and @null are indistinguishable by the time this sees them. The two
+// sentinel spellings are therefore reserved words in default position.
+func IsSentinel(s string) bool {
+	switch strings.TrimSpace(s) {
+	case SentinelNull, SentinelPrevious:
+		return true
+	}
+	return false
+}
+
+// IsNull reports a default that resolves to NULL: the @null sentinel, or the
+// bare word NULL that predated it.
+func IsNull(s string) bool {
+	trimmed := strings.TrimSpace(s)
+	return trimmed == SentinelNull || trimmed == "NULL"
+}
 
 // AsBool parses the DDL boolean vocabulary. Second return is false if not a bool.
 func AsBool(s string) (bool, bool) {
@@ -78,13 +107,34 @@ func AsFunc(s string) (name, args string, ok bool) {
 	return name, s[open+1 : len(s)-1], true
 }
 
-// AsSQL matches a backtick-wrapped SQL literal and returns its inner text.
+// AsSQL matches a backtick-wrapped SQL literal and returns its inner text. A
+// fenced raw block is the canonical spelling now that the DDL is SHCL - the
+// reader hands blocks back already unwrapped, so this only has to recognize the
+// older inline backtick form.
 func AsSQL(s string) (string, bool) {
 	s = strings.TrimSpace(s)
 	if len(s) >= 2 && s[0] == '`' && s[len(s)-1] == '`' {
 		return s[1 : len(s)-1], true
 	}
 	return "", false
+}
+
+// isIdent reports whether s is a bareword identifier - a script function name,
+// or a field name in a place that has to be one.
+func isIdent(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '_', c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z':
+		case i > 0 && c >= '0' && c <= '9':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // SplitList splits a top-level comma list, honouring quotes/backticks/brackets,

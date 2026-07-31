@@ -64,11 +64,14 @@ func TestParseQueriesSoftErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// "Dup" appears twice and merges into one query by SHCL's (name, value) rule,
+	// so a repeat cannot arrive as a second entry - its children join the first,
+	// and the first sql: wins.
 	if len(qs) != 2 || qs[0].Name != "Dup" || qs[0].SQL != "SELECT 1" || qs[1].Name != "OddKey" {
 		t.Fatalf("queries = %+v", qs)
 	}
 	joined := strings.Join(warns, "\n")
-	for _, want := range []string{"no name", "already defined", "no SQL", "unknown key"} {
+	for _, want := range []string{"no name", "no SQL", "frobnicate"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("warnings missing %q:\n%s", want, joined)
 		}
@@ -76,7 +79,7 @@ func TestParseQueriesSoftErrors(t *testing.T) {
 }
 
 func TestQueriesPathAndMissingFile(t *testing.T) {
-	if got := QueriesPath("/a/b/example.ddl"); got != "/a/b/example.queries" {
+	if got := QueriesPath("/a/b/example.shcl"); got != "/a/b/example.queries.shcl" {
 		t.Fatalf("QueriesPath = %q", got)
 	}
 	qs, warns, err := ParseQueriesFile("/nonexistent/nope.queries")

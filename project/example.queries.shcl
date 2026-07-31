@@ -1,6 +1,7 @@
-## Predefined queries - sister example to example.ddl (same base name, .queries extension).
-## Same grammar as the DDL. A view's startup_named_query names one of these;
+## Predefined queries - sister example to example.shcl (same base name, .queries.shcl extension).
+## Same grammar as the schema. A view's startup_named_query names one of these;
 ## the UIs also offer them in a per-view dropdown.
+## SQL goes in backticks or a raw block, so its commas stay part of the value.
 
 query_name: "All rows"
 	view:    "people"

@@ -14,7 +14,7 @@
 ##	Exit: 0 always (skips are non-fatal); the flamegraph may or may not be produced.
 ##	History: At bottom of script.
 
-##	Copyright © 2026 Jim Collier (ID: 1cv◂‡Vᛦ)
+##	Copyright © 2026 Bubbles (ID: XଌฅრX۳ᛟԃლፀƅꓩหδლც)
 ##	Licensed under The MIT License (MIT). Full text at:
 ##		https://mit-license.org/
 ##	SPDX-License-Identifier: MIT
@@ -83,4 +83,4 @@ python3 "${meDir}/flame-report.py" --dir "${profDir}" || echo "profile.bash: hot
 
 
 ##	Script history:
-##		- 20260709 JC: Created.
+##		- 20260709: Created.

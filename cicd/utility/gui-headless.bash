@@ -34,7 +34,7 @@
 ##		Display/size is overridable via RPD_HEADLESS_DISPLAY / RPD_HEADLESS_SIZE.
 ##	History: At bottom of script.
 
-##	Copyright © 2026 Jim Collier (ID: 1cv◂‡Vᛦ)
+##	Copyright © 2026 Bubbles (ID: XଌฅრX۳ᛟԃლፀƅꓩหδლც)
 ##	Licensed under The MIT License (MIT). Full text at:
 ##		https://mit-license.org/
 ##	SPDX-License-Identifier: MIT
@@ -116,4 +116,4 @@ esac
 
 
 ##	Script history:
-##		- 20260701 JC: Created.
+##		- 20260701: Created.

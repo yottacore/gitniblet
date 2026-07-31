@@ -10,19 +10,21 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	shcl "github.com/jim-collier/shcl/source/go"
 )
 
 // webCredsFile holds the proxied-mode web logins. It lives at the registry root,
 // deliberately OUTSIDE any git-synced tree: password hashes are per-deployment
 // secrets and must never ride along in the shared tx-log repo. Like settingsFile
 // it is a plain file, so database discovery (which scans only dirs) ignores it.
-const webCredsFile = "webusers.toml"
+const webCredsFile = "webusers.shcl"
 
 // pbkdf2 parameters. Hashing is stdlib (crypto/pbkdf2, Go 1.24+), so proxied
 // login adds no dependency - the same discipline as the rest of the web tier.
@@ -35,7 +37,7 @@ const (
 
 // WebCreds is the set of username -> password-hash records for proxied mode.
 type WebCreds struct {
-	Users map[string]string `toml:"users"`
+	Users map[string]string
 }
 
 func webCredsPath() (string, error) {
@@ -49,13 +51,22 @@ func webCredsPath() (string, error) {
 // LoadWebCreds reads the web logins, returning an empty set when the file is
 // missing (proxied mode with no users yet is a valid, if useless, state - the
 // server simply cannot be logged into until a user is added).
+// Each login is one "user" instance discriminated by the username, with the
+// hash on a child leaf. Instances (not child field names) carry the username
+// because SHCL folds field-name case but compares discriminator values exactly
+// - so "Alice" and "alice" stay two accounts, as they were under the old map.
 func LoadWebCreds() *WebCreds {
 	c := &WebCreds{Users: map[string]string{}}
-	if path, err := webCredsPath(); err == nil {
-		_, _ = toml.DecodeFile(path, c)
+	path, err := webCredsPath()
+	if err != nil {
+		return c
 	}
-	if c.Users == nil {
-		c.Users = map[string]string{}
+	doc := loadLenient(path)
+	for i, user := range doc.Instances("user") {
+		if user == "" {
+			continue
+		}
+		c.Users[user] = doc.GetStringOr(fmt.Sprintf("user[#%d].hash", i), "")
 	}
 	return c
 }
@@ -93,12 +104,13 @@ func (c *WebCreds) Save() error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
+	doc := shcl.New()
+	// Sorted so a save is reproducible; Go map order would reshuffle the file
+	// on every write and make it undiffable.
+	for _, user := range slices.Sorted(maps.Keys(c.Users)) {
+		doc.SetString(fmt.Sprintf("user[%q].hash", user), c.Users[user])
 	}
-	defer f.Close()
-	return toml.NewEncoder(f).Encode(c)
+	return save(path, doc, 0o600)
 }
 
 // hashPassword returns a self-describing PBKDF2 hash string:

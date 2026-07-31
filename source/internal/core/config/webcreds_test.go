@@ -45,6 +45,46 @@ func TestWebCredsSaveLoad(t *testing.T) {
 	}
 }
 
+// Usernames ride in the file as instance discriminators, not as field names,
+// because SHCL folds field-name case. Spelling them as fields would quietly
+// merge "Alice" into "alice" and hand one account the other's password. The
+// awkward names cover the other two ways a name meets the grammar: one that
+// needs quoting, and one a bare selector would read as an index.
+func TestWebCredsAwkwardNamesSurviveSaveLoad(t *testing.T) {
+	SetBaseOverride(t.TempDir())
+	t.Cleanup(func() { SetBaseOverride("") })
+
+	logins := map[string]string{
+		"alice":     "lower",
+		"Alice":     "upper",
+		"bob smith": "spaced",
+		"123":       "numeric",
+	}
+	c := &WebCreds{}
+	for user, password := range logins {
+		if err := c.Set(user, password); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	got := LoadWebCreds()
+	if len(got.Users) != len(logins) {
+		t.Fatalf("reloaded %d users, want %d", len(got.Users), len(logins))
+	}
+	for user, password := range logins {
+		if !got.Verify(user, password) {
+			t.Errorf("user %q did not verify its own password", user)
+		}
+	}
+	// The case pair is the whole point: each must reject the other's password.
+	if got.Verify("alice", "upper") || got.Verify("Alice", "lower") {
+		t.Fatal("case-different usernames collapsed into one account")
+	}
+}
+
 func TestWebModeProxied(t *testing.T) {
 	if (&Settings{WebMode: "proxied"}).WebModeProxied() != true {
 		t.Fatal(`web_mode "proxied" should be proxied`)

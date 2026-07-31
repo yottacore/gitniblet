@@ -43,7 +43,7 @@ func resolveArgs(args []string) (ddlPath, sqlitePath, logDir string, err error) 
 	if d, s, l, ok := config.PWDTriple(); ok {
 		return d, s, l, nil
 	}
-	return "", "", "", fmt.Errorf("usage: ngdb --serve <db> (or run from a directory containing a .ddl)")
+	return "", "", "", fmt.Errorf("usage: ngdb --serve <db> (or run from a directory containing a .shcl schema)")
 }
 
 //go:embed assets

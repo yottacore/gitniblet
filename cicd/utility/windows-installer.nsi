@@ -6,6 +6,11 @@
 # Re-running upgrades an existing install: the prior copy is uninstalled first
 # (registry-detected), then the new binary lands in the same dir and PATH entry.
 
+# Copyright © 2026 Bubbles (ID: XଌฅრX۳ᛟԃლፀƅꓩหδლც)
+# Licensed under The MIT License (MIT). Full text at:
+#	https://mit-license.org/
+# SPDX-License-Identifier: MIT
+
 !ifndef ARCH
 	!define ARCH "amd64"
 !endif

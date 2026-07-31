@@ -4,7 +4,7 @@
 package txlog
 
 import (
-	"encoding/hex"
+	"bytes"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -36,18 +36,19 @@ const uniqueDDL = "tables:\n" +
 	"\t\t\tfield: name\n" +
 	"\t\t\t\ttype: string\n" +
 	"\t\tuniques:\n" +
-	"\t\t\tname\n"
+	"\t\t\tunique: name\n"
 
 // Two soft-deletes of the same natural key used to collide on the unique index
 // and abort the entire replay; partial indexes must make this a non-event.
 func TestReplaySurvivesRepeatedSoftDelete(t *testing.T) {
 	st := newView(t, uniqueDDL)
+	row1, row2, row3 := testID("01"), testID("02"), testID("03")
 	entries := []Entry{
-		{Date: "1", TxID: "a", Op: "create", Table: "person", RowID: "01", Field: "name", NewValue: "Ann"},
-		{Date: "2", TxID: "b", Op: "mark_delete", Table: "person", RowID: "01"},
-		{Date: "3", TxID: "c", Op: "create", Table: "person", RowID: "02", Field: "name", NewValue: "Ann"},
-		{Date: "4", TxID: "d", Op: "mark_delete", Table: "person", RowID: "02"},
-		{Date: "5", TxID: "e", Op: "create", Table: "person", RowID: "03", Field: "name", NewValue: "Ann"},
+		{Date: "1", TxID: "a", Op: "create", Table: "person", RowID: row1, Field: "name", NewValue: "Ann"},
+		{Date: "2", TxID: "b", Op: "mark_delete", Table: "person", RowID: row1},
+		{Date: "3", TxID: "c", Op: "create", Table: "person", RowID: row2, Field: "name", NewValue: "Ann"},
+		{Date: "4", TxID: "d", Op: "mark_delete", Table: "person", RowID: row2},
+		{Date: "5", TxID: "e", Op: "create", Table: "person", RowID: row3, Field: "name", NewValue: "Ann"},
 	}
 	warns, err := Apply(st, entries)
 	if err != nil {
@@ -70,11 +71,12 @@ func TestReplaySurvivesRepeatedSoftDelete(t *testing.T) {
 // with a warning, never fatal - the log may be newer than the DDL.
 func TestReplaySkipsSchemaDrift(t *testing.T) {
 	st := newView(t, uniqueDDL)
+	row1, row2 := testID("01"), testID("02")
 	entries := []Entry{
-		{Date: "1", TxID: "a", Op: "create", Table: "person", RowID: "01", Field: "name", NewValue: "Ann"},
-		{Date: "2", TxID: "b", Op: "update", Table: "person", RowID: "01", Field: "no_such_field", NewValue: "x"},
-		{Date: "3", TxID: "c", Op: "create", Table: "no_such_table", RowID: "02", Field: "f", NewValue: "y"},
-		{Date: "4", TxID: "d", Op: "update", Table: "person", RowID: "01", Field: "name", NewValue: "Anne"},
+		{Date: "1", TxID: "a", Op: "create", Table: "person", RowID: row1, Field: "name", NewValue: "Ann"},
+		{Date: "2", TxID: "b", Op: "update", Table: "person", RowID: row1, Field: "no_such_field", NewValue: "x"},
+		{Date: "3", TxID: "c", Op: "create", Table: "no_such_table", RowID: row2, Field: "f", NewValue: "y"},
+		{Date: "4", TxID: "d", Op: "update", Table: "person", RowID: row1, Field: "name", NewValue: "Anne"},
 	}
 	warns, err := Apply(st, entries)
 	if err != nil {
@@ -83,7 +85,7 @@ func TestReplaySkipsSchemaDrift(t *testing.T) {
 	if len(warns) != 2 {
 		t.Fatalf("warnings = %v, want 2", warns)
 	}
-	id, _ := hex.DecodeString("01")
+	id, _ := decodeID(row1)
 	var name string
 	if err := st.DB().QueryRow(`SELECT "name" FROM "person" WHERE "id"=?`, id).Scan(&name); err != nil {
 		t.Fatal(err)
@@ -97,9 +99,10 @@ func TestReplaySkipsSchemaDrift(t *testing.T) {
 // later one is skipped everywhere, not fatal anywhere.
 func TestReplaySkipsUniqueLoser(t *testing.T) {
 	st := newView(t, uniqueDDL)
+	row1, row2 := testID("01"), testID("02")
 	entries := []Entry{
-		{Date: "1", TxID: "a", Op: "create", Table: "person", RowID: "01", Field: "name", NewValue: "Ann"},
-		{Date: "2", TxID: "b", Op: "create", Table: "person", RowID: "02", Field: "name", NewValue: "Ann"},
+		{Date: "1", TxID: "a", Op: "create", Table: "person", RowID: row1, Field: "name", NewValue: "Ann"},
+		{Date: "2", TxID: "b", Op: "create", Table: "person", RowID: row2, Field: "name", NewValue: "Ann"},
 	}
 	warns, err := Apply(st, entries)
 	if err != nil {
@@ -115,11 +118,12 @@ func TestReplaySkipsUniqueLoser(t *testing.T) {
 // drift; they must never abort the whole replay.
 func TestReplaySkipsBadEntries(t *testing.T) {
 	st := newView(t, uniqueDDL)
+	row1 := testID("01")
 	entries := []Entry{
-		{Date: "1", TxID: "a", Op: "create", Table: "person", RowID: "01", Field: "name", NewValue: "Ann"},
-		{Date: "2", TxID: "b", Op: "frobnicate", Table: "person", RowID: "01"},
+		{Date: "1", TxID: "a", Op: "create", Table: "person", RowID: row1, Field: "name", NewValue: "Ann"},
+		{Date: "2", TxID: "b", Op: "frobnicate", Table: "person", RowID: row1},
 		{Date: "3", TxID: "c", Op: "update", Table: "person", RowID: "zz", Field: "name", NewValue: "x"},
-		{Date: "4", TxID: "d", Op: "update", Table: "person", RowID: "01", Field: "name", NewValue: "Anne"},
+		{Date: "4", TxID: "d", Op: "update", Table: "person", RowID: row1, Field: "name", NewValue: "Anne"},
 	}
 	warns, err := Apply(st, entries)
 	if err != nil {
@@ -128,7 +132,7 @@ func TestReplaySkipsBadEntries(t *testing.T) {
 	if len(warns) != 2 {
 		t.Fatalf("warnings = %v, want 2", warns)
 	}
-	id, _ := hex.DecodeString("01")
+	id, _ := decodeID(row1)
 	var name string
 	if err := st.DB().QueryRow(`SELECT "name" FROM "person" WHERE "id"=?`, id).Scan(&name); err != nil {
 		t.Fatal(err)
@@ -142,11 +146,12 @@ func TestReplaySkipsBadEntries(t *testing.T) {
 // future GC of the delete's own creates) must not resurrect a one-field ghost.
 func TestReplayDeleteWinsOverLaterUpdates(t *testing.T) {
 	st := newView(t, uniqueDDL)
+	row1 := testID("01")
 	entries := []Entry{
-		{Date: "1", TxID: "a", Op: "create", Table: "person", RowID: "01", Field: "name", NewValue: "Ann"},
-		{Date: "2", TxID: "b", Op: "delete", Table: "person", RowID: "01"},
-		{Date: "3", TxID: "c", Op: "update", Table: "person", RowID: "01", Field: "name", NewValue: "Ghost"},
-		{Date: "4", TxID: "d", Op: "mark_delete", Table: "person", RowID: "01"},
+		{Date: "1", TxID: "a", Op: "create", Table: "person", RowID: row1, Field: "name", NewValue: "Ann"},
+		{Date: "2", TxID: "b", Op: "delete", Table: "person", RowID: row1},
+		{Date: "3", TxID: "c", Op: "update", Table: "person", RowID: row1, Field: "name", NewValue: "Ghost"},
+		{Date: "4", TxID: "d", Op: "mark_delete", Table: "person", RowID: row1},
 	}
 	if _, err := Apply(st, entries); err != nil {
 		t.Fatalf("replay failed: %v", err)
@@ -161,7 +166,7 @@ func TestReplayDeleteWinsOverLaterUpdates(t *testing.T) {
 
 	// ...but a later create legitimately reuses the row id.
 	if _, err := Apply(st, append(entries,
-		Entry{Date: "5", TxID: "e", Op: "create", Table: "person", RowID: "01", Field: "name", NewValue: "Reborn"},
+		Entry{Date: "5", TxID: "e", Op: "create", Table: "person", RowID: row1, Field: "name", NewValue: "Reborn"},
 	)); err != nil {
 		t.Fatalf("replay failed: %v", err)
 	}
@@ -170,5 +175,65 @@ func TestReplayDeleteWinsOverLaterUpdates(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("%d row(s) after re-create, want 1", n)
+	}
+}
+
+// A ref column holds the same raw bytes as a row's own primary key, so a
+// reference joins straight against the id it points at.
+func TestApplyStoresRefAsRawBytes(t *testing.T) {
+	st := newView(t, "tables:\n"+
+		"\ttable: task\n"+
+		"\t\tfields:\n"+
+		"\t\t\tfield: parent_task\n"+
+		"\t\t\t\ttype: ref\n")
+	row, parent := testID("01"), testID("02")
+	warns, err := Apply(st, []Entry{
+		{Date: "1", TxID: "a", Op: "create", Table: "task", RowID: parent},
+		{Date: "2", TxID: "b", Op: "create", Table: "task", RowID: row, Field: "parent_task", NewValue: parent},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("unexpected warnings: %v", warns)
+	}
+
+	id, _ := decodeID(row)
+	want, _ := decodeID(parent)
+	var got []byte
+	if err := st.DB().QueryRow(`SELECT "parent_task" FROM "task" WHERE "id"=?`, id).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("ref stored %x, want the parent's raw id %x", got, want)
+	}
+
+	var joined int
+	if err := st.DB().QueryRow(`SELECT COUNT(*) FROM "task" c JOIN "task" p ON c."parent_task"=p."id"`).
+		Scan(&joined); err != nil {
+		t.Fatal(err)
+	}
+	if joined != 1 {
+		t.Fatalf("ref joined %d row(s) against id, want 1", joined)
+	}
+}
+
+// A ref value that is not an id skips with a warning rather than landing a
+// string in a column everything else treats as bytes.
+func TestApplySkipsMalformedRef(t *testing.T) {
+	st := newView(t, "tables:\n"+
+		"\ttable: task\n"+
+		"\t\tfields:\n"+
+		"\t\t\tfield: parent_task\n"+
+		"\t\t\t\ttype: ref\n")
+	warns, err := Apply(st, []Entry{
+		{Date: "1", TxID: "a", Op: "create", Table: "task", RowID: testID("01"),
+			Field: "parent_task", NewValue: "not-an-id"},
+	})
+	if err != nil {
+		t.Fatalf("a bad ref must warn, not abort: %v", err)
+	}
+	if len(warns) != 1 || !strings.Contains(warns[0], "parent_task") {
+		t.Fatalf("warnings = %v, want one naming the ref column", warns)
 	}
 }

@@ -5,6 +5,11 @@
 # box without NSIS still finishes the run - CI installs nsis before calling this.
 #
 # Usage: windows-installer.bash <version>   (run from repo root, after goreleaser)
+
+##	Copyright © 2026 Bubbles (ID: XଌฅრX۳ᛟԃლፀƅꓩหδლც)
+##	Licensed under The MIT License (MIT). Full text at:
+##		https://mit-license.org/
+##	SPDX-License-Identifier: MIT
 set -euo pipefail
 cd "$(dirname "$0")/../.."  ## repo root
 

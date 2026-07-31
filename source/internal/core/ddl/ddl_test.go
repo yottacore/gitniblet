@@ -63,32 +63,38 @@ func TestSplitListRespectsQuotesAndCommas(t *testing.T) {
 	}
 }
 
-func TestBuildTreeNestingAndListItems(t *testing.T) {
-	src := "tables:\n\ttable: t1\n\t\tfields:\n\t\t\tfield: a\n\t\t\tfield: b\n\t\tuniques:\n\t\t\ta, b\n"
-	root, _, err := buildTree([]byte(src))
+func TestNestingAndKeyGroups(t *testing.T) {
+	src := "tables:\n\ttable: t1\n\t\tfields:\n\t\t\tfield: a\n\t\t\tfield: b\n\t\tuniques:\n\t\t\tunique: a, b\n"
+	s, err := Parse([]byte(src))
 	if err != nil {
 		t.Fatal(err)
 	}
-	tables := root.child("tables")
-	if tables == nil {
-		t.Fatal("no tables node")
+	if len(s.Tables) != 1 || s.Tables[0].Name != "t1" {
+		t.Fatalf("tables = %+v", s.Tables)
 	}
-	tbl := tables.child("table")
-	if tbl == nil || tbl.Value != "t1" {
-		t.Fatalf("table node = %+v", tbl)
+	tbl := s.Tables[0]
+	if len(tbl.Fields) != 2 || tbl.Fields[0].Name != "a" || tbl.Fields[1].Name != "b" {
+		t.Fatalf("fields = %+v", tbl.Fields)
 	}
-	if fs := tbl.child("fields").all("field"); len(fs) != 2 {
-		t.Fatalf("want 2 fields, got %d", len(fs))
+	if len(tbl.Uniques) != 1 || len(tbl.Uniques[0]) != 2 || tbl.Uniques[0][1] != "b" {
+		t.Fatalf("uniques = %v", tbl.Uniques)
 	}
-	if rows := tbl.child("uniques").items(); len(rows) != 1 || rows[0].Value != "a, b" {
-		t.Fatalf("uniques items = %+v", rows)
+	if s.HasErrors() {
+		t.Fatalf("clean DDL reported errors: %v", s.Warnings)
 	}
 }
 
-func TestInconsistentIndentErrors(t *testing.T) {
-	src := "tables:\n\ttable: t\n        field: a\n" // tab then spaces
-	if _, _, err := buildTree([]byte(src)); err == nil {
-		t.Fatal("expected inconsistent-indentation error")
+// Mixed indentation used to fail the whole load. SHCL recovers instead: the
+// offending line is reported and skipped so the rest of the file still opens.
+// The report is what matters - a silently dropped line would be the bug.
+func TestInconsistentIndentIsReportedNotFatal(t *testing.T) {
+	src := "tables:\n\ttable: t\n        fields:\n" // tab, then spaces
+	s, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("load should recover, got %v", err)
+	}
+	if !s.HasErrors() {
+		t.Fatal("mixed indentation should be reported")
 	}
 }
 
@@ -103,7 +109,7 @@ func TestCommentStrippingIgnoresQuotedHash(t *testing.T) {
 	}
 }
 
-// Parses the real project/example.ddl to guard the full grammar. Path is found
+// Parses the real project/example.shcl to guard the full grammar. Path is found
 // by climbing so it survives directory moves.
 func TestParseExampleDDL(t *testing.T) {
 	path := findExample(t)
@@ -112,13 +118,15 @@ func TestParseExampleDDL(t *testing.T) {
 		t.Fatalf("ParseFile: %v", err)
 	}
 
-	if len(s.Tables) != 1 {
-		t.Fatalf("tables = %d want 1", len(s.Tables))
+	// Three tables: the worked example, plus the two built-in lookup tables the
+	// file documents (lookups, lookup_values).
+	if len(s.Tables) != 3 {
+		t.Fatalf("tables = %d want 3 (%v)", len(s.Tables), tableNames(s))
+	}
+	if got := tableNames(s); got[0] != "table_name1" || got[1] != "lookups" || got[2] != "lookup_values" {
+		t.Fatalf("table names = %v", got)
 	}
 	tbl := s.Tables[0]
-	if tbl.Name != "table_name1" {
-		t.Fatalf("table name = %q", tbl.Name)
-	}
 	if len(tbl.Aliases) != 2 || tbl.Aliases[1] != "old_table79" {
 		t.Fatalf("aliases = %v", tbl.Aliases)
 	}
@@ -126,8 +134,13 @@ func TestParseExampleDDL(t *testing.T) {
 		t.Fatalf("fields = %d want 2", len(tbl.Fields))
 	}
 	f1 := tbl.Fields[0]
-	if f1.Name != "field_name1" || f1.Type != "string" || f1.Default != "NULL" {
+	if f1.Name != "field_name1" || f1.Type != "string" {
 		t.Fatalf("field1 = %+v", f1)
+	}
+	// The example's default is the @null sentinel, which must resolve to NULL
+	// rather than reaching SQLite as the literal text "@null".
+	if !IsSentinel(f1.Default) || !IsNull(f1.Default) {
+		t.Fatalf("field1 default = %q, want the @null sentinel", f1.Default)
 	}
 	if f1.NullOK == nil || !*f1.NullOK {
 		t.Fatal("field1 null_ok want true")
@@ -135,7 +148,7 @@ func TestParseExampleDDL(t *testing.T) {
 	if f1.UI.Order == nil || *f1.UI.Order != 3.005 {
 		t.Fatalf("field1 ui.order = %v", f1.UI.Order)
 	}
-	if len(tbl.Uniques) != 2 || len(tbl.Uniques[0]) != 2 || tbl.Uniques[1][0] != "field3" {
+	if len(tbl.Uniques) != 2 || len(tbl.Uniques[0]) != 2 || tbl.Uniques[1][0] != "field_name2" {
 		t.Fatalf("uniques = %v", tbl.Uniques)
 	}
 	if len(tbl.Indexes) != 1 || tbl.Indexes[0][0] != "field_name1" {
@@ -143,6 +156,23 @@ func TestParseExampleDDL(t *testing.T) {
 	}
 	if tbl.Features.Comments || tbl.Features.AuditTrail {
 		t.Fatalf("features should default off: %+v", tbl.Features)
+	}
+
+	// A lookup-backed field's list_source is SQL, so it has to survive verbatim -
+	// a plain string read would split it on its comma and re-quote the pieces.
+	lookupValues := s.table("lookup_values")
+	if lookupValues == nil {
+		t.Fatal("no lookup_values table")
+	}
+	groupField := lookupValues.field("lookups_idx")
+	if groupField == nil {
+		t.Fatal("no lookups_idx field")
+	}
+	if !strings.Contains(groupField.UI.ListSource, "SELECT idx, title FROM lookups") {
+		t.Fatalf("list_source did not survive intact: %q", groupField.UI.ListSource)
+	}
+	if groupField.Default != SentinelPrevious {
+		t.Fatalf("lookups_idx default = %q, want %s", groupField.Default, SentinelPrevious)
 	}
 
 	if len(s.Relations) != 2 || s.Relations[0].Type != "1:m" || s.Relations[1].Type != "m:m" {
@@ -165,6 +195,19 @@ func TestParseExampleDDL(t *testing.T) {
 	if layout[1].Name != "3" || len(layout[1].Location) != 3 || layout[1].Location[0] != "top" {
 		t.Fatalf("block 3 = %+v", layout[1])
 	}
+
+	// The shipped example must be a clean parse: it is what users copy.
+	if s.HasErrors() {
+		t.Fatalf("example.shcl should parse without errors, got %v", s.Warnings)
+	}
+}
+
+func tableNames(s *Schema) []string {
+	var out []string
+	for _, t := range s.Tables {
+		out = append(out, t.Name)
+	}
+	return out
 }
 
 func findExample(t *testing.T) string {
@@ -174,7 +217,7 @@ func findExample(t *testing.T) string {
 		t.Fatal(err)
 	}
 	for i := 0; i < 8; i++ {
-		p := filepath.Join(dir, "project", "example.ddl")
+		p := filepath.Join(dir, "project", "example.shcl")
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}
@@ -184,7 +227,7 @@ func findExample(t *testing.T) string {
 		}
 		dir = parent
 	}
-	t.Skip("project/example.ddl not found; skipping integration parse")
+	t.Skip("project/example.shcl not found; skipping integration parse")
 	return ""
 }
 
@@ -202,7 +245,7 @@ func TestHierarchyMergeAndShorthand(t *testing.T) {
 		"\t\ttable: t2\n" +
 		"\t\t\tfields:\n" +
 		"\t\t\t\tfield: b\n" +
-		"database/tables:\n" + // path shorthand
+		"database.tables:\n" + // path shorthand
 		"\ttable: t3\n" +
 		"\t\tfields:\n" +
 		"\t\t\tfield: c\n"
@@ -297,7 +340,7 @@ func TestParserWarnings(t *testing.T) {
 	if got := s.Tables[0].Fields[0].Type; got != "string" {
 		t.Errorf("conflicting duplicate scalar: first value must win, got %q", got)
 	}
-	for _, want := range []string{"duplicate key", "unclosed quote", "unknown field"} {
+	for _, want := range []string{"repeats as a bare leaf", "unknown field"} {
 		found := false
 		for _, w := range s.Warnings {
 			if strings.Contains(w, want) {
@@ -318,8 +361,14 @@ func TestParserWarnings(t *testing.T) {
 }
 
 // Load-time validation: what can be safely assumed around is fixed with a
-// warning (nameless/duplicate tables and fields dropped, unknown types stored
-// as text); nothing here may hard-error.
+// warning (nameless fields dropped, system-column collisions dropped, unknown
+// types stored as text); nothing here may hard-error.
+//
+// Restating an entity MERGES it rather than dropping the repeat: two `table: t`
+// sections are one node by SHCL's (name, value) merge rule, so the second one's
+// fields join the first. That is the same rule that lets a long DDL add to a
+// table further down the file, and it is why there is no "already defined"
+// warning for a table - a repeat is indistinguishable from a deliberate addition.
 func TestLoadValidationSoftFixes(t *testing.T) {
 	src := "tables:\n" +
 		"\ttable: t\n" +
@@ -327,24 +376,31 @@ func TestLoadValidationSoftFixes(t *testing.T) {
 		"\t\t\tfield: a\n" +
 		"\t\t\t\ttype: strng\n" + // typo'd type
 		"\t\t\tfield:\n" + // no name
-		"\t\t\tfield: a\n" + // redefined
-		"\t\t\tfield: id\n" + // system column collision
-		"\ttable: t\n" + // redefined table
+		"\t\t\tfield: id\n" + // system column: ui: only, so type: is ignored
+		"\t\t\t\ttype: string\n" +
+		"\ttable: t\n" + // restated: merges into the first
 		"\t\tfields:\n" +
-		"\t\t\tfield: other\n" +
-		"\ttable:\n" // no name
+		"\t\t\tfield: other\n"
 	s, err := Parse([]byte(src))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.Tables) != 1 || len(s.Tables[0].Fields) != 1 || s.Tables[0].Fields[0].Name != "a" {
-		t.Fatalf("want one table with one field, got %+v", s.Tables)
+	if len(s.Tables) != 1 {
+		t.Fatalf("restated table should merge into one, got %d", len(s.Tables))
+	}
+	names := []string{}
+	for _, f := range s.Tables[0].Fields {
+		names = append(names, f.Name)
+	}
+	if len(names) != 2 || names[0] != "a" || names[1] != "other" {
+		t.Fatalf("fields = %v, want [a other]", names)
+	}
+	if s.Tables[0].Fields[0].Type != "strng" {
+		t.Fatalf("unknown type should store as written, got %q", s.Tables[0].Fields[0].Type)
 	}
 	warns := strings.Join(s.Warnings, "\n")
 	for _, want := range []string{
-		"unknown type", "field with no name", "already defined",
-		"auto-added system field", "table with no name",
-		`table "t" already defined`,
+		"field with no name", "is a system field", "value not allowed",
 	} {
 		if !strings.Contains(warns, want) {
 			t.Errorf("warnings missing %q:\n%s", want, warns)
@@ -363,7 +419,7 @@ func TestIrregularIndentWarns(t *testing.T) {
 	}
 	found := false
 	for _, w := range s.Warnings {
-		if strings.Contains(w, "indent width") {
+		if strings.Contains(w, "matches no open level") {
 			found = true
 		}
 	}
@@ -375,7 +431,7 @@ func TestIrregularIndentWarns(t *testing.T) {
 func TestTunables(t *testing.T) {
 	src := "tunables:\n" +
 		"\tgit_sync_frequency: 30\n" +
-		"\tgc_age_days = 45\n" + // the design doc writes tunables with '='
+		"\tgc_age_days: 45\n" +
 		"\tmystery: 9\n" +
 		"tunables:\n" + // duplicate section merges; first value wins
 		"\tgit_sync_frequency: 99\n"
@@ -393,7 +449,38 @@ func TestTunables(t *testing.T) {
 		t.Fatalf("absent tunable = %d", got)
 	}
 	joined := strings.Join(s.Warnings, "\n")
-	if !strings.Contains(joined, `unknown tunable "mystery"`) {
-		t.Fatalf("warnings = %v", s.Warnings)
+	if !strings.Contains(joined, "tunables.mystery") {
+		t.Fatalf("an unknown tunable should be reported: %v", s.Warnings)
+	}
+	// Reported, but still stored: a tunable a newer client wrote has to survive
+	// a round trip through an older one that does not know it.
+	if s.Tunables["mystery"] != "9" {
+		t.Fatalf("unknown tunable should still store, got %q", s.Tunables["mystery"])
+	}
+}
+
+// The default-value sentinels are app-computed, so neither may ever reach SQLite
+// as a literal. @previous is the one that used to slip through: only @null was
+// recognized, so on any column SQLite accepts a string for, the column came out
+// with DEFAULT '@previous' baked in.
+func TestSentinelDefaults(t *testing.T) {
+	for _, sentinel := range []string{SentinelNull, SentinelPrevious} {
+		if !IsSentinel(sentinel) {
+			t.Errorf("%s should be a sentinel", sentinel)
+		}
+	}
+	// A bare NULL predates the @ spelling and still means the same thing.
+	if !IsNull("NULL") || !IsNull(SentinelNull) {
+		t.Error("NULL and @null should both resolve to null")
+	}
+	// @previous is a sentinel but not a null: it inherits a real value at entry.
+	if IsNull(SentinelPrevious) {
+		t.Error("@previous is not a null default")
+	}
+	// An ordinary value is neither, or real defaults would stop being emitted.
+	for _, literal := range []string{"general", "0", "fMyFunction()"} {
+		if IsSentinel(literal) || IsNull(literal) {
+			t.Errorf("%q should be an ordinary default", literal)
+		}
 	}
 }

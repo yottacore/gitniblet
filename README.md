@@ -9,7 +9,7 @@
 [![CI](https://github.com/jim-collier/nano-git-db/actions/workflows/ci.yml/badge.svg)](https://github.com/jim-collier/nano-git-db/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/jim-collier/nano-git-db?include_prereleases)](https://github.com/jim-collier/nano-git-db/releases/latest)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](license.md)
-![Lifecycle: Alpha](https://img.shields.io/badge/Lifecycle-Alpha-orange)
+![Lifecycle: Beta](https://img.shields.io/badge/Lifecycle-Beta-yellow)
 ![Support](https://img.shields.io/badge/Support-Maintained-brightgreen)
 
 <!-- TOC ignore:true -->
@@ -117,11 +117,11 @@ The existing functionality and feature set in this open-source version will neve
 
 A database is just a few files. You register it once with `ngdb --init`, then refer to it by name - ngdb keeps track of the paths.
 
-- `schema.ddl` - your schema. Keep it with your project, inside the git repo if you want syncing. Edit it anytime; the local database migrates itself.
+- `schema.shcl` - your schema. Keep it with your project, inside the git repo if you want syncing. Edit it anytime; the local database migrates itself.
 - `txlog.csv` - the append-only transaction log (a folder of segments). The source of truth, synced and auto-merged by git. For sharing, this *is* the database.
-- `<name>.queries` - optional saved queries, next to the schema.
+- `<name>.queries.shcl` - optional saved queries, next to the schema.
 - `db.sqlite` - the local, rebuildable view of the log. Derived, never synced, kept outside the repo (defaults under `~/.local/share/ngdb/`).
-- `config.toml` - ngdb's own registry record for the database, in your OS config dir. Written by `--init`; you won't normally touch it.
+- `config.shcl` - ngdb's own registry record for the database, in your OS config dir. Written by `--init`; you won't normally touch it.
 - `ngdb` - the one binary, anywhere on your `PATH`.
 
 ## Example use cases
@@ -139,11 +139,11 @@ Grab a release binary (once releases start), or build from source. It's one stat
 
 ## Quick start
 
-You define the database in a plain-text schema file (the DDL). No SQL, no migrations - you edit the file, and the local database migrates itself. Under the hood three things matter: your `schema.ddl`, a tx-log directory (the shared source of truth, git-syncable), and a local `.sqlite` (a rebuildable view - never synced). You register those once and then just refer to the database by name; ngdb keeps track of the paths (see [Startup discovery](syntax.md#startup-discovery-and-the-database-registry)).
+You define the database in a plain-text schema file (the DDL). No SQL, no migrations - you edit the file, and the local database migrates itself. Under the hood three things matter: your `schema.shcl`, a tx-log directory (the shared source of truth, git-syncable), and a local `.sqlite` (a rebuildable view - never synced). You register those once and then just refer to the database by name; ngdb keeps track of the paths (see [Startup discovery](syntax.md#startup-discovery-and-the-database-registry)).
 
 ### A minimal schema
 
-The whole grammar is indent-nested `key: value` lines, one tab per level. A table is a name and its fields:
+The schema is written in [SHCL](https://github.com/jim-collier/shcl): indent-nested `key: value` lines, one tab per level. A table is a name and its fields:
 
 ```
 database:
@@ -160,7 +160,7 @@ That is a complete, working schema. Every table also gets `id`, `is_active`, `da
 
 ### A minimal to-do database
 
-A slightly fuller example: hierarchical tasks (each task can have a parent task) that each carry their own list of comments, shown as a nested list. Save it as `todo.ddl`:
+A slightly fuller example: hierarchical tasks (each task can have a parent task) that each carry their own list of comments, shown as a nested list. Save it as `todo.shcl`:
 
 ```
 ## Minimal to-do database: hierarchical tasks, each with a comment list.
@@ -178,7 +178,7 @@ database:
 				field: closed
 					type: datetime_local
 				field: parent_task
-					type: string  ## a parent task's id; empty for a top-level task
+					type: ref  ## a parent task's id; empty for a top-level task
 			features:
 				comments: yes    ## each task gets its own list of comments
 
@@ -200,7 +200,7 @@ ui:
 Register your schema once, then refer to the database by name - you never spell out the schema, view, or log paths again:
 
 ```
-# register the todo.ddl in this directory as the database "todo"
+# register the todo.shcl in this directory as the database "todo"
 ngdb --init
 
 # add a top-level task; the command prints the new row's id

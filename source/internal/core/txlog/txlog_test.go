@@ -5,7 +5,6 @@ package txlog
 
 import (
 	"database/sql"
-	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -215,7 +214,7 @@ func TestApplyReplaysToView(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rowA, rowB := "0a0a", "0b0b"
+	rowA, rowB := testID("0a0a"), testID("0b0b")
 	entries := []Entry{
 		{Op: "create", Table: "person", RowID: rowA, Field: "name", NewValue: "Ann"},
 		{Op: "update", Table: "person", RowID: rowA, Field: "age", NewValue: "30"},
@@ -242,7 +241,7 @@ func TestApplyReplaysToView(t *testing.T) {
 		t.Fatal(err)
 	}
 	var n int
-	idA, _ := hex.DecodeString(rowA)
+	idA, _ := decodeID(rowA)
 	if err := st.DB().QueryRow(`SELECT COUNT(*) FROM "person" WHERE "id"=?`, idA).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +252,7 @@ func TestApplyReplaysToView(t *testing.T) {
 
 func lookup(t *testing.T, st *store.Store, rowID string) (string, int) {
 	t.Helper()
-	id, _ := hex.DecodeString(rowID)
+	id, _ := decodeID(rowID)
 	var name sql.NullString
 	var age sql.NullInt64
 	err := st.DB().QueryRow(`SELECT "name","age" FROM "person" WHERE "id"=?`, id).Scan(&name, &age)
@@ -265,7 +264,7 @@ func lookup(t *testing.T, st *store.Store, rowID string) (string, int) {
 
 func softDeleted(t *testing.T, st *store.Store, rowID string) bool {
 	t.Helper()
-	id, _ := hex.DecodeString(rowID)
+	id, _ := decodeID(rowID)
 	var del int
 	if err := st.DB().QueryRow(`SELECT "is_deleted" FROM "person" WHERE "id"=?`, id).Scan(&del); err != nil {
 		t.Fatal(err)

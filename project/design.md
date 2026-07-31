@@ -34,6 +34,7 @@
 		- [Always created and used](#always-created-and-used)
 			- [Users](#users)
 			- [Groups](#groups)
+			- [Lookups](#lookups)
 		- [Automatic features that any table can opt-in to](#automatic-features-that-any-table-can-opt-in-to)
 			- [Many-to-many relationships](#many-to-many-relationships)
 			- [Comments](#comments)
@@ -84,7 +85,7 @@ Binary size is a real goal (though not the absolute top priority it would be for
 | Git sync   | shell out to `git`       | Design only needs pull/merge/commit/push on the log dir. Avoids libgit2 bulk. Revisit only if conflict handling outgrows the CLI.
 | Tx log CSV | stdlib `encoding/csv`    | Canonical, zero dep.
 | Scripting  | `gopher-lua`             | Pure-Go Lua 5.1. Well-known embedded language, easy syntax, easy to sandbox and expose the CRUD API into. External `python3` via exec stays available as the worst-case fallback.
-| IDs (GUID) | `google/uuid`            | v4/v7, stored as 16-byte blob, hex/base64 at the boundaries.
+| IDs (GUID) | `google/uuid`            | v4/v7, stored as a 16-byte blob, base64url text at the boundaries.
 | CLI        | TBD (lean stdlib `flag`) | Large flag surface; stdlib `flag` favours size, move to `cobra` only if subcommand ergonomics demand.
 | Formatting | `gofmt`                  | Tabs-native, matches house style for free.
 
@@ -137,42 +138,56 @@ source/internal/web/          - net/http handlers, html/template, embedded asset
 
 ### User-definable DDL
 
-`example.ddl` contains an example schema DDL. It's vaguely YAML-like, but looser and domain-specific.
+The schema is written in [SHCL](https://github.com/jim-collier/shcl), the sister project's small indent-nested `key: value` language. [example.shcl](example.shcl) is a worked example exercising every key. It defines tables, fields, relationships, indexes, unique constraints, validation, code execution (triggers, events), UI views, and opt-in prepackaged features.
 
-It can define tables, fields, relationships, indexes, unique constraints, validation, code execution (e.g. triggers, events), UI views, inherit prepackaged features,
+The language decision, and what it bought:
+
+- SHCL replaced a hand-rolled indent parser once it reached v1.0.0 and put its grammar, APIs and diagnostic codes under semver. The two grammars had converged on nearly the same shape, so existing schemas needed only four mechanical corrections - which is what made the swap cheap enough to be worth doing.
+
+- It is one language for the whole product: the schema, the queries sidecar, and ngdb's own registry, settings and web-credential files. That retired the TOML dependency, so a user reads and edits one syntax everywhere.
+
+- Its Go binding is a single dependency-free pure-Go file, so `CGO_ENABLED=0` and the one-static-binary rule are untouched (the reference implementation being Rust is irrelevant to us - we never link it).
+
+- Schema *validation* came along with it. The DDL's own key vocabulary now lives in `ddl/schema.shcl`, embedded in the binary, and SHCL checks a loaded file against it. That is what puts line numbers back on messages: the parse tree is reached only through paths, with no per-node line accessor, so an unknown key or an out-of-range value can only be reported with a line by the validator. Checks the schema file cannot express - a `unique:` naming a field that does not exist, an entity defined twice - stay in Go and name the entity instead.
+
+Consequences of SHCL's data model, which are load-bearing here:
+
+- **Merging is the core rule.** Nodes merge when (field-name, value) match, so restating `database:` or `tables:` re-opens that section instead of creating a second one. The old parser had a section-merging pass of its own for exactly that readability win; this comes free. It extends further, though: restating an *entity* merges it too, so two `table: t` sections are one table. A duplicate is therefore invisible to the mapper, and there is no longer an "already defined, first wins" warning to give.
+
+- **Empty values merge too**, so unnamed instances collapse into one. Relationships must be named for that reason; the name is otherwise just a label.
+
+- **Field names fold ASCII case; values do not.** Anything whose identity is user-supplied and case-sensitive has to be modelled as an instance discriminated by that value, never as a child field name - see [Web login](#web-login), where two accounts differing only in case would otherwise share one password.
+
+- **Loose strictness** is what the schema loads at, and it is almost exactly the tolerance this DDL already documented: `y`/`n` and `enable`/`disable` as booleans, a bare leading or trailing `.` on a number, a leading currency symbol, a fraction where a whole number was wanted. Only Strict can fail a load, so a schema file never aborts one; the registry (rather than the parser) is what refuses to open a database whose schema has errors.
+
+- **Hierarchies short-hand with '.'**: `database.tables.table: t1` is the same as the nested form.
+
+- **Wrapper levels** `database:` (over `tables:`/`relationships:`) and `ui:` (over `views:`, plus `default_view`) are transparent; flat schemas without them still parse. Same for `methods:`, renamed to `code:` - both keys are read.
+
+- **Values containing commas need the verbatim read.** An unquoted comma splits a value into a list, and quoting is not an escape (a read strips outer quotes). SQL and regexes therefore go in a raw block or single-line backticks; sentinels like `@null` are reserved words in default position with no quoted spelling.
 
 Also:
 
-- Spaces OR tabs are OK, as long as its consistent.
+- If the schema file is updated while an existing DB has data, the local `.sqlite` is either updated on-the-fly, or rebuilt.
 
-- The hierarchy does not have to be unique: restating a section (`database:`, `tables:`, even nested ones) merges its children into the first occurrence in document order, so long files can re-open a section instead of scrolling back to the right indent. Entities (`table:`, `field:`, `relationship:`, `view:`, `block:`) always stay separate. A scalar key redefined to a *different* value keeps the first value and warns.
+- The fields referenced in the transaction log are never deleted or changed. References to past and future nonexistent fields in the schema are ignored.
 
-- Hierarchies can be short-handed with '/': `database/tables/table: "t1"` is the same as the nested form. ('/' over '.' or '|' because the example DDL uses it, '.' already appears in numeric values and reads as TOML dotted keys, and '|' reads as alternation in this file's own comments.)
-
-- Wrapper levels `database:` (over `tables:`/`relationships:`) and `ui:` (over `views:`, plus `default_view`) are transparent; older flat DDLs without them still parse. Same for `methods:`, renamed to `code:` - both keys are read.
-
-- Numeric values in this DDL can have a bare leading or trailing '.'.
-
-- If the DDL file is updated while an existing DB has data, the local `.sqlite` is either updated on-the-fly, or rebuilt.
-
-- The fields referenced in the transaction log are never deleted or changed. References to past and future nonexistent fields in the DDL are ignored.
-
-- Functions are written in external python3, or better yet some non-SQL programming-like scripting language the main program can host internally. At worst, the functions would only have access to the executable CLI args interface. At best, an internal CRUD API.
+- Functions are written in a scripting language the main program hosts internally, with access to the internal CRUD API.
 
 - Warn if it looks like user created a primary key field, which already exists.
 
-- Load-time validation fixes what it safely can with a warning - nameless or redefined tables/fields are dropped (first definition wins), a field colliding with an auto-added system column is dropped, an unknown field type stores as text - and hard-errors only on genuine ambiguity (mixed tab/space indentation). Same philosophy on the tx-log: torn or unreadable lines skip with a warning naming the file and line, repeated header rows (union-merge leftovers) skip silently, and replay skips-and-warns entry-local data errors (mangled row id, an operation this build does not know - possibly a newer client's) exactly like schema drift.
+- Load-time validation fixes what it safely can with a warning - nameless fields are dropped, a field colliding with an auto-added system column is dropped, an unknown field type stores as text - and never hard-errors. Same philosophy on the tx-log: torn or unreadable lines skip with a warning naming the file and line, repeated header rows (union-merge leftovers) skip silently, and replay skips-and-warns entry-local data errors (mangled row id, an operation this build does not know - possibly a newer client's) exactly like schema drift.
 
-- Most DDL fields are optional, with sane defaults.
+- Most schema keys are optional, with sane defaults.
 
 - Special values (without quotes):
 
-	- **Null value**: NULL
+	- **Null / previous-value sentinels**: `@null`, `@previous`
 	- **Function**: some_function_name()
-	- **SQL**: \`SELECT * FROM ...\`
+	- **SQL**: a raw block, or \`SELECT * FROM ...\`
 	- **String**: "A string with o'l spaces" or 'A string with "literal" quotes' or AstringWithNoSpaces.
-	- **Boolean**: true|false|1|0|T|f|yes|no|enable[d]|disable[d]|y|n
-	- **Number**; `10`, `1,000`, `.1`, `1.`, `0.1`, `1.0`.
+	- **Boolean**: true|false|1|0|t|f|yes|no|on|off|enable[d]|disable[d]|y|n
+	- **Number**; `10`, `.1`, `1.`, `0.1`, `1.0`, `0x1f`, with an optional leading currency symbol or trailing `%`.
 	- **Date/time**: Anything internal parser or `printf` can interpret. String, linux/unix epoch float, Excel-style float on Windows, etc.
 
 ### Transaction log
@@ -193,16 +208,26 @@ After the program loads with a local view of the SQLite database, it begins in t
 
 Fields:
 
-- tx_id (hex or base64 GUID)
+- tx_id (GUID)
 - date (GMT)
 - table_name
-- row_id  ## hex GUID of the affected row. Added during implementation - field-level ops can't be applied without a row identifier.
+- row_id  ## GUID of the affected row. Added during implementation - field-level ops can't be applied without a row identifier.
 - field_name  ## Can be blank if record-level only
 - operation (create, update, mark_delete, delete)
 - new_value
 - user_id
 - ok_to_garbage_collect
 - host_name  ## Machine that wrote the entry. One user can write from several hosts.
+
+Both ids are a 16-byte UUIDv7 written as 22 characters of unpadded base64url rather than 32 of hex. Two ids ride on every line, so the shorter form trims a useful slice off a file that is read whole on every replay; it buys little in git, where both forms hold the same 128 bits and compress alike. An id pasted in the longer hex form is also accepted, since the two widths are exact and disjoint and nothing has to be sniffed. Ids are never re-encoded in place: an encrypted value derives its subkey from the tx_id and row_id strings and authenticates the row id, so rewriting an id from one form to the other would silently strand the ciphertext under it. Append-only makes that a non-issue in normal operation (GC rotation copies lines verbatim), but it rules out any tidy-up pass over historical ids.
+
+Note the encoding does not sort in time order, since base64url is not ASCII-ordered. That costs nothing: replay orders by date first, and dates are nanosecond and strictly increasing per client, so the tx_id tiebreak only arises between two clients writing in the same nanosecond - where issue order is meaningless anyway. What the tiebreak has to be is identical on every client, and a string compare is. The raw bytes still climb, which is what keeps primary-key inserts at the b-tree tail.
+
+A field declared `ref` holds a reference to another row's `id`, and holds it the same way the `id` itself is held - as the raw 16 bytes, not as their text form. So a reference joins directly against the key it points at, and costs 16 bytes rather than 22 or 32. The log still carries the value as ordinary id text, since the log is text; replay converts it on the way into the view, and reads convert it back, so nothing above the storage layer has to think about bytes. A `binary` field is also a blob, which is why the ref columns are tracked from the schema rather than inferred from the SQL type.
+
+The built-in link tables (`many2many`, `comments`, `audit_trail`, `access_rows`) hold their `parent_id` columns the same way, so every key and every reference in the view is raw bytes and text appears only in the log. Their feature queries had to move with the columns: a blob column compared against a string parameter matches nothing and reports no error, so a half-done conversion reads as "no results" rather than as a failure.
+
+That same trap is why a hand-written query gets two helper functions, `id(text)` and `idtext(blob)`. Ad-hoc SQL is a headline feature, and without them a perfectly reasonable `WHERE parent_id = '<id>'` would quietly return nothing; `id()` converts, and rejects a malformed id loudly rather than degrading to an empty result. They are registered on the driver, so any opened view has them.
 
 Reads map columns by the header row's names, not by position, so field order does not affect compatibility. A column can be reordered, added, or dropped and older and newer clients still read each other's logs: an unknown extra column is ignored, and a column a record lacks (e.g. a pre-host_name row, or a narrower legacy header) defaults to empty. A record only needs enough fields to carry the required columns (through `user_id`); anything shorter is treated as torn. Header rows are recognized by carrying the reserved column names rather than by their first cell, so even the header can be reordered. tx_id remains the conventional first column.
 
@@ -220,7 +245,7 @@ v1 GC (the `gc <ddl> <logdir>` verb): collectible = every entry of a row whose f
 
 Scripting is an enterprise-edition feature. The core exposes a script seam (the same open-core shape as encryption); the enterprise build registers the Lua host, and the open-source build has none, so it ignores `code:` hooks and rejects `--script`.
 
-The DDL's `code:` keys name Lua functions defined in a `.lua` sidecar next to the DDL (same base name, like `.queries`); no sidecar means no triggers. The core wires the write-path hooks through the seam, so every front-end fires them identically:
+The DDL's `code:` keys name Lua functions defined in a `.lua` sidecar next to the schema (same base name, like `.queries.shcl`); no sidecar means no triggers. The core wires the write-path hooks through the seam, so every front-end fires them identically:
 
 - Field `before_update(table, field, value)` -> `pass [, new_value]`: an explicit `false` cancels the write; a second return replaces the value. Runs before the table-level hook, per the design's ordering note.
 - Table `before_update(table, fields)` -> `pass`: sees the field hooks' output; explicit `false` vetoes the whole write.
@@ -247,10 +272,10 @@ A database is addressed by the name it was registered under: every CLI verb and 
 
 How a run finds a database when it was not handed a name:
 
-- A lone `*.ddl` in the current directory is used directly (the sqlite view defaults beside it, the tx-log dir is that directory). Zero or several `.ddl` files are ambiguous, so discovery falls through.
+- A lone `*.shcl` in the current directory is used directly (the sqlite view defaults beside it, the tx-log dir is that directory). Zero or several schema files are ambiguous, so discovery falls through - as is a directory holding both a `.shcl` and a legacy `.ddl`. The queries sidecar is excluded from that count by its `.queries.shcl` suffix, so a schema and its sidecar are not mistaken for two candidates.
 - Otherwise the interactive front-end (bare `ngdb` or `--tui`) shows a registry picker; the non-interactive ones (`--serve`, CLI verbs) require a name and error otherwise (no picker).
 
-The registry is per-database TOML records under a config base: `<os-user-config>/ngdb/<name>/config.toml`, where the base is `$XDG_CONFIG_HOME` (else `~/.config`) on Linux, `%AppData%` on Windows, `~/Library/Application Support` on macOS - whatever `os.UserConfigDir` returns. Read-only system bases (`$XDG_CONFIG_DIRS`, default `/etc/xdg`; `%ProgramData%` on Windows) are also searched, after the user base. A record holds: `name`, `ddl_path`, `log_dir` (the git-synced artifacts), `sqlite_path`, `key_file` (local, unsynced; both default beside the record and are rebuildable / re-fetchable), `encryption` and `last_opened`. `key_file`/`encryption` are stored for a stable format ahead of the encryption feature.
+The registry is per-database SHCL records under a config base: `<os-user-config>/ngdb/<name>/config.shcl`, where the base is `$XDG_CONFIG_HOME` (else `~/.config`) on Linux, `%AppData%` on Windows, `~/Library/Application Support` on macOS - whatever `os.UserConfigDir` returns. Read-only system bases (`$XDG_CONFIG_DIRS`, default `/etc/xdg`; `%ProgramData%` on Windows) are also searched, after the user base. A record holds: `name`, `ddl_path`, `log_dir` (the git-synced artifacts), `sqlite_path`, `key_file` (local, unsynced; both default beside the record and are rebuildable / re-fetchable), `encryption` and `last_opened`. `key_file`/`encryption` are stored for a stable format ahead of the encryption feature.
 
 Discovery lists every record across the bases, name-sorted, and lightly validates each: its DDL must exist and parse. A record that fails still appears in the picker, flagged `[!] <name>` with the reason (missing/corrupt DDL), so a broken database is visible rather than silently dropped. A missing sqlite view is never an error - it rebuilds from the log on open. The picker always offers "Create new database" (register a new record pointing at a DDL + tx-log, then open) and "Open existing ..." (open a DDL + tx-log ad-hoc, without registering). Opening a registered database stamps its `last_opened`.
 
@@ -261,6 +286,11 @@ The `--init`, `--config`, and `--encrypt` CLI flags drive the same registry from
 - When a view specifies `startup_named_query`, that named query's dataset loads as soon as the view opens. Only when it is empty or unspecified does the view open with no records shown - then you have to query, e.g. via "All" button, or via predefined query dropdown.
 - The default view (`ui:` -> `default_view`, else the first view defined) opens on startup in both UIs. Its blocks still load empty per the no-records-until-asked rule; a `default_view` naming an unusable view warns and falls back to the first one.
 - View rendering (v1): the DDL's layout blocks render as nested splits in both UIs (TUI flexes, web flexbox). A location hint's direction and percent set each split's axis and share; the relative-to element is ignored for now (blocks place in DDL order). Leaf blocks are `grid`, `tree_grid` (rows ordered depth-first along `parent_field`, indented by depth; orphaned or cyclic parents degrade to extra roots rather than hiding rows), `form` (single-record panel; shows the first record until block linking exists), or `comments` (a detail pane over the table's built-in comments component - it follows a sibling list block's selected row, listing that row's thread with an add affordance, and stays empty until a row is picked). The comments pane surfaces the 1:m `comments` feature a table opted into, without ever adding a column to the list view; a `comments` block over a table that has no comments feature is dropped with a warning. Blocks over unknown tables are dropped with a warning, a bad `tree_grid` degrades to a plain grid, and `readonly` (view-level, overridable per block) removes the edit affordances. Editing from a web view block currently jumps to the table's form; returning into the view is future polish.
+- Field UI metadata (spec settled 2026-07, implementation waits for the shcl syntax migration; current vocabulary in [example.shcl](example.shcl)):
+	- `visible` splits into `visible_form` and `visible_list`. Presentation only, never access control - a hidden field stays fully readable via CLI/query/SQL; the `access:` lists are the only thing that gates data.
+	- `title` becomes `label`; `list_type` values are `literal|sql|lookup` (`sql` replaces `dynamic`); `lookup` wires a field to the built-in lookup tables (see Lookups).
+	- A DDL field entry naming a system field (`id`, `is_active`, `date_created`) merges its `ui:` block onto it instead of being dropped. Presentation-only merge: `type:`, `validation:`, `defaultval:` on a system field warn and are ignored - system fields stay structurally immutable, presentationally customizable.
+	- `defaultval` takes three forms: a static value, a sentinel from a closed set (`@null`, `@previous`), or a script function `"fFunc()"`. The `@` marker was chosen over brackets because `[` `]` are reserved value characters in shcl. `@previous` (value from the previously entered row, this session) applies in interactive front-ends only - programmatic writes never inherit a sticky session value; an omitted field is null or a required-field error.
 
 ### Predefined queries
 
@@ -274,7 +304,7 @@ query_name: "Some name"
 	SQL:        `SELECT * FROM table_name WHERE field1 = 'Joe;'`
 ~~~
 
-v1 notes: the file is a sidecar to the DDL - same base name, `.queries` extension (`example.ddl` -> `example.queries`); missing file just means no queries. Grammar and load validation match the DDL (nameless/duplicate/no-SQL entries drop with a warning). `view:` scopes a query to one view's dropdown; omitting it offers the query on every view; `active: no` hides it everywhere; dropdown order is by `sort`, file order within ties. Both UIs run a picked query into the view's first block (TUI: 'p' picks, and the dataset renders with the query's own columns; web: dropdown + Run above the blocks). A view's `startup_named_query` that resolves to an active query loads on open per the UI section; an unresolvable name degrades to the normal empty open (with a status note in the TUI when a queries file exists).
+v1 notes: the file is a sidecar to the schema - same base name, `.queries.shcl` extension (`example.shcl` -> `example.queries.shcl`); missing file just means no queries. Grammar and load validation match the schema (nameless and no-SQL entries drop with a warning; two queries sharing a name are one query, per the merge rule). SQL belongs in a raw block so its commas survive. `view:` scopes a query to one view's dropdown; omitting it offers the query on every view; `active: no` hides it everywhere; dropdown order is by `sort`, file order within ties. Both UIs run a picked query into the view's first block (TUI: 'p' picks, and the dataset renders with the query's own columns; web: dropdown + Run above the blocks). A view's `startup_named_query` that resolves to an active query loads on open per the UI section; an unresolvable name degrades to the normal empty open (with a status note in the TUI when a queries file exists).
 
 ### Optional granular access model
 
@@ -302,7 +332,7 @@ The web tier binds `127.0.0.1` only, so on a single machine the loopback binding
 - `web_mode` (user-global setting, default `local`): `local` is the passwordless single-user shape; `proxied` requires a login. Any value but the exact word `proxied` falls back to `local`, so a typo fails toward the guarded-but-passwordless mode rather than a broken login wall.
 - Local mode identifies the one user with no password - the git account of the log dir's repo, else the OS user (the same default-user resolution the other front-ends use) - and stamps every request as them. Safety-net: if a request ever carries a reverse-proxy header (`X-Forwarded-For` / `X-Real-Ip` / `Forwarded`) while in local mode, the server refuses to serve. A box accidentally exposed behind a proxy can never run passwordless; the operator must opt into `proxied` and add a login.
 - Proxied mode requires a session for every path but the login endpoints and static assets. A login checks a username and password against a local credentials file, then sets a random session cookie (HttpOnly, SameSite=Lax, Secure when the request arrived over TLS); the session table is in memory, so a restart just re-prompts. The logged-in user is set as the acting user for that request, so the existing user/group access model applies to the web view exactly as it would elsewhere. Because that acting user is shared state, proxied requests are serialized - this is a local UI lightly extended to multi-user, not a high-throughput service.
-- Credentials: a `webusers.toml` of PBKDF2-HMAC-SHA256 hashes (stdlib `crypto/pbkdf2`, so no new dependency; random per-password salt, constant-time compare), kept in the config dir OUTSIDE any git-synced tree - password hashes must never ride along in the shared log repo. The `webuser` CLI verb adds or replaces a login (password from `NGDB_WEB_PASSWORD` or a prompt). Stronger methods - 2FA, passkeys, SSO - are an enterprise concern; this is the open-source baseline that makes the server safe to put behind a proxy at all.
+- Credentials: a `webusers.shcl` of PBKDF2-HMAC-SHA256 hashes (stdlib `crypto/pbkdf2`, so no new dependency; random per-password salt, constant-time compare), kept in the config dir OUTSIDE any git-synced tree - password hashes must never ride along in the shared log repo. The `webuser` CLI verb adds or replaces a login (password from `NGDB_WEB_PASSWORD` or a prompt). Stronger methods - 2FA, passkeys, SSO - are an enterprise concern; this is the open-source baseline that makes the server safe to put behind a proxy at all.
 
 ### Donations
 
@@ -323,7 +353,7 @@ Optional at-rest encryption so the git-synced log is unreadable to the hosting p
 - Policy, two layers. DDL `encryption: always|never|auto` at database/table/field (shared, in git): scanning outermost-first, the first always|never locks - a lower level cannot override it (only a higher one can); all-auto defers. Local `--encrypt=on|off|auto` (per-host, in the unsynced registry record): the persistent per-user preference; auto = encrypt-if-key-present. Resolution per field: a DDL always/never wins; otherwise on -> encrypt (clear if no key), auto -> encrypt only if a key is present, off -> clear.
 - Degraded and enforced modes: writing an `always` field with no key is refused (the whole write aborts - nothing half-committed). Reading without the key shows encrypted fields empty (the decrypt pass leaves them Enc-marked and Apply binds NULL - the view never holds ciphertext) and warns. Having the key but `--encrypt=off` warns too, for awareness. GC needs no key: it rotates encrypted entries as opaque lines.
 - Wiring: encryption happens on the write path (crud commit seals the log copy while the view gets cleartext) and the decrypt pass runs before replay (schema.OpenClientWith / cli replay). All four front-ends inherit it through the shared bring-up.
-- Deferred (documented, not built): encrypting the DDL / `.queries` / `.lua` FILES themselves with decrypt/re-encrypt flags; the `ddl:` / `named_queries:` / `config:` file-level encryption labels; and the futures - multiple keys, public/private keys, passphrase-derived keys, and bulk re-encryption under a new key.
+- Deferred (documented, not built): encrypting the schema / `.queries.shcl` / `.lua` FILES themselves with decrypt/re-encrypt flags; the `ddl:` / `named_queries:` / `config:` file-level encryption labels; and the futures - multiple keys, public/private keys, passphrase-derived keys, and bulk re-encryption under a new key.
 
 ### Tables created automatically at new startup (and verified in the background every startup)
 
@@ -333,7 +363,7 @@ Core tables like Users, Groups, etc. also inherit things like audit trail, comme
 
 These tables, the ones are automatically managed, have `cascade_delete` enabled if appropriate.
 
-These are defined in a single source code file (not end-user editable), with the [same DDL language](example.ddl) that users use.
+These are defined in a single source code file (not end-user editable), with the [same schema language](example.shcl) that users use.
 
 #### Always created and used
 
@@ -372,6 +402,18 @@ relationships:
 		cascade_delete: y
 		enable_audit_trail: y
 ~~~
+
+##### Lookups
+
+Two built-in tables, created for every database, give any field a data-driven pick list without a schema change: `lookups` (the groups) and `lookup_values` (the members: title, symbol e.g. a single emoji, description, sort, is_active). Decisions made here:
+
+- Unlike the other built-ins, these are meant to be user-edited in the UI, so front-ends list them like normal tables.
+- Both keep the invisible system `id` (row identity in the tx log, untouched machinery) and add `idx`: a unique, read-only, auto-assigned (max+1) int. `idx` is the reference key - a field's `list_source` names a `lookups.idx`, and the field stores the picked `lookup_values.idx`. We chose a meaning-free int over a name (retitling a value or group never orphans data) and over a UUID (compact and legible in the DDL and log).
+- The DDL can carry seed rows for these tables (`seed:` section). Seeding is idempotent and log-first at open: a seed row inserts only when its idx is absent; runtime edits to a seeded row win over the DDL forever after. Seeding via the DDL is the preferred way to mint values - idx conflicts then surface as ordinary git merge conflicts. Two offline clients minting values at runtime can collide on idx; the unique index drops one at replay with a warning.
+- "Value must exist in lookup_values" is enforced at write time only, never at replay - a value legitimately picked while active must still apply after later deactivation.
+- Deactivated values (`is_active: n`) can't be picked for new rows, but existing rows still render their symbol/title.
+- Display is controlled per field by two enums, `lookup_in_lists` and `lookup_in_forms`, each `symbol|title|both`: lists default to symbol (falling back to title when a value has no symbol), forms default to both, rendered symbol then title. Hiding entirely is the job of the `visible_*` keys, not these.
+- TUI note for implementation: emoji symbols mean double-width and occasionally unrenderable glyphs; the symbol column needs width handling, with title fallback. The web UI has no such problem.
 
 #### Automatic features that any table can opt-in to
 

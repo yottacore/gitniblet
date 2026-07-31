@@ -21,7 +21,7 @@ import (
 
 // Version is the authoritative release version, bumped here in source before
 // cutting a release (the release tag and goreleaser both derive from it).
-var Version = "1.0.0-alpha.2"
+var Version = "1.0.0-beta.1"
 
 // Build is extra provenance (short commit + dirty flag) stamped by cicd/build.bash
 // via -ldflags -X; empty for a plain `go build`, so a release binary reads clean.
@@ -81,7 +81,7 @@ func Run(args []string) error {
 	if len(args) > 0 {
 		mode = args[0]
 	}
-	// --init[=path]: register a database from a $PWD .ddl (its own mode, not a
+	// --init[=path]: register a database from a $PWD .shcl (its own mode, not a
 	// data verb).
 	if val, ok := splitFlag(mode, "--init"); ok {
 		rest := args[1:]

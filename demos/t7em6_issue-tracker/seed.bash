@@ -27,10 +27,10 @@ export NANOGITDB_USER=demo NANOGITDB_HOST=workstation
 export XDG_CONFIG_HOME="$work/.config"
 
 rm -rf "$work"; mkdir -p "$work"
-cp "$dirPath_Self/issues.ddl" "$dirPath_Self/issues.queries" "$work/"
+cp "$dirPath_Self/issues.shcl" "$dirPath_Self/issues.queries.shcl" "$work/"
 
 cd "$work"
-"$exe" --init . >/dev/null   # registers the folder's issues.ddl as "issues"
+"$exe" --init . >/dev/null   # registers the folder's issues.shcl as "issues"
 
 "$exe" create issues person screen_name=alex  full_name="Alex Kim"  role=maintainer  active=true  >/dev/null
 "$exe" create issues person screen_name=priya full_name="Priya Rao" role=contributor active=true  >/dev/null

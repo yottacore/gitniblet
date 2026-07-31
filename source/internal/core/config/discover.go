@@ -19,7 +19,7 @@ import (
 type Listed struct {
 	Name   string
 	Dir    string
-	Config *DBConfig // nil when config.toml itself could not be read
+	Config *DBConfig // nil when config.shcl itself could not be read
 	System bool      // from a read-only system base
 	Err    error     // nil means openable; else why not
 }
@@ -42,7 +42,7 @@ func List() []Listed {
 }
 
 // scanBase lists the immediate sub-directories of one base that hold a
-// config.toml. A missing base is not an error - it just yields nothing.
+// config.shcl. A missing base is not an error - it just yields nothing.
 func scanBase(base string, system bool) []Listed {
 	entries, err := os.ReadDir(base)
 	if err != nil {
@@ -80,8 +80,15 @@ func validate(dir, fallbackName string, system bool) Listed {
 		listed.Err = fmt.Errorf("DDL not found: %s", cfg.DDLPath)
 		return listed
 	}
-	if _, err := ddl.ParseFile(cfg.DDLPath); err != nil {
+	schema, err := ddl.ParseFile(cfg.DDLPath)
+	if err != nil {
 		listed.Err = fmt.Errorf("DDL invalid: %w", err)
+		return listed
+	}
+	// A recoverable parse still yields a schema, but one with lines missing from
+	// it is not a database to open silently - flag it so the picker can say so.
+	if schema.HasErrors() {
+		listed.Err = fmt.Errorf("DDL has %d problem(s): %s", schema.Errors, schema.Warnings[0])
 		return listed
 	}
 	return listed
@@ -127,20 +134,44 @@ func FindByDDL(ddlPath string) *DBConfig {
 	return nil
 }
 
-// PWDDdl reports a DDL sitting in the current directory, so a database in $PWD
-// opens without being named. It uses a lone *.ddl file; zero or several are
-// ambiguous and yield ("", false), leaving the caller to fall back to the
-// registry picker or to require explicit paths.
+// PWDDdl reports a schema file sitting in the current directory, so a database
+// in $PWD opens without being named. It needs exactly one candidate; zero or
+// several are ambiguous and yield ("", false), leaving the caller to fall back
+// to the registry picker or to require explicit paths.
+//
+// The schema is a .shcl file. The older .ddl extension is still recognized so a
+// database predating the rename still opens - but having both is ambiguous, not
+// a preference, so it bails rather than guessing which one is current.
 func PWDDdl() (string, bool) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return "", false
 	}
-	matches, err := filepath.Glob(filepath.Join(wd, "*.ddl"))
-	if err != nil || len(matches) != 1 {
+	var candidates []string
+	for _, pattern := range []string{"*.shcl", "*.ddl"} {
+		matches, err := filepath.Glob(filepath.Join(wd, pattern))
+		if err != nil {
+			return "", false
+		}
+		for _, match := range matches {
+			// The queries sidecar shares the .shcl extension; it is not a schema.
+			if isQueriesSidecar(match) {
+				continue
+			}
+			candidates = append(candidates, match)
+		}
+	}
+	if len(candidates) != 1 {
 		return "", false
 	}
-	return matches[0], true
+	return candidates[0], true
+}
+
+// isQueriesSidecar reports whether a path is a <name>.queries.shcl sidecar
+// rather than a schema.
+func isQueriesSidecar(path string) bool {
+	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	return strings.HasSuffix(base, ".queries")
 }
 
 // LocalSQLite is the view path for an unregistered open: beside the DDL, named

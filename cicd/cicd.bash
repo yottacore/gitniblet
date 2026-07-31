@@ -307,7 +307,7 @@ fMain(){
 	##   G204            subprocess with variable args - we shell out to git by design
 	##   G304/G703       open user-named DDL/log/config paths - that IS the program
 	##   G301/G302/G306  file/dir perms - the tx-log is git-committed and readable by
-	##                   design; real secrets (webusers.toml, keys) write 0600 at their sites
+	##                   design; real secrets (webusers.shcl, keys) write 0600 at their sites
 	##   G202            SQL identifier concat - SQLite can't bind identifiers; all pass
 	##                   through quoteIdent and every value binds as ? (see txlog.applyOne)
 	##   G203            template.HTML/CSS - only wraps dev-computed layout CSS, never user input

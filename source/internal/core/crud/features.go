@@ -19,8 +19,20 @@ import (
 	"time"
 
 	"github.com/jim-collier/nano-git-db/internal/core/ddl"
+	"github.com/jim-collier/nano-git-db/internal/core/guid"
 	"github.com/jim-collier/nano-git-db/internal/core/txlog"
 )
+
+// parentArg renders a row id for binding against a parent_id column. Those
+// columns are ref-typed, so they hold the raw bytes; binding the text form
+// would match nothing and report no error.
+func parentArg(id string) ([]byte, error) {
+	raw, err := guid.Decode(id)
+	if err != nil {
+		return nil, fmt.Errorf("crud: %w", err)
+	}
+	return raw, nil
+}
 
 // EnableFeatures tells the API which tables opted in to what, and carries
 // the tables' access rules along (access.go enforces them). Pass the user
@@ -125,8 +137,12 @@ func (a *API) audit(table, id, action string, changed map[string]string) []txlog
 
 // lastAudit fetches the newest audit record for a row; nil when none/unreadable.
 func (a *API) lastAudit(table, id string) map[string]string {
+	parent, err := parentArg(id)
+	if err != nil {
+		return nil
+	}
 	rows, err := a.Query(`SELECT "id","action","user_id","values" FROM "audit_trail"
-		WHERE "table_name"=? AND "parent_id"=? ORDER BY "date" DESC, "id" DESC LIMIT 1`, table, id)
+		WHERE "table_name"=? AND "parent_id"=? ORDER BY "date" DESC, "id" DESC LIMIT 1`, table, parent)
 	if err != nil || len(rows) == 0 {
 		return nil
 	}
@@ -193,9 +209,17 @@ func mergeAuditValues(have, add string) string {
 // Link records a live many2many link (idempotent) and returns the link row id.
 // Convention: the host row is side 1, the feature row side 2.
 func (a *API) Link(table1, id1, table2, id2 string) (string, error) {
+	parent1, err := parentArg(id1)
+	if err != nil {
+		return "", err
+	}
+	parent2, err := parentArg(id2)
+	if err != nil {
+		return "", err
+	}
 	rows, err := a.Query(`SELECT "id" FROM "many2many"
 		WHERE "table_name_1"=? AND "parent_id_1"=? AND "table_name_2"=? AND "parent_id_2"=? AND "is_deleted"=0`,
-		table1, id1, table2, id2)
+		table1, parent1, table2, parent2)
 	if err != nil {
 		return "", err
 	}
@@ -210,9 +234,13 @@ func (a *API) Link(table1, id1, table2, id2 string) (string, error) {
 
 // Links returns the side-2 row ids linked to (table1, id1).
 func (a *API) Links(table1, id1, table2 string) ([]string, error) {
+	parent1, err := parentArg(id1)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := a.Query(`SELECT "parent_id_2" FROM "many2many"
 		WHERE "table_name_1"=? AND "parent_id_1"=? AND "table_name_2"=? AND "is_deleted"=0`,
-		table1, id1, table2)
+		table1, parent1, table2)
 	if err != nil {
 		return nil, err
 	}
@@ -237,8 +265,12 @@ func (a *API) CommentAdd(table, id, text string) (string, error) {
 
 // CommentsFor lists a row's live comments, oldest first. Reads are not gated.
 func (a *API) CommentsFor(table, id string) ([]map[string]string, error) {
+	parent, err := parentArg(id)
+	if err != nil {
+		return nil, err
+	}
 	return a.Query(`SELECT * FROM "comments"
-		WHERE "table_name"=? AND "parent_id"=? AND "is_deleted"=0 ORDER BY "date_created"`, table, id)
+		WHERE "table_name"=? AND "parent_id"=? AND "is_deleted"=0 ORDER BY "date_created"`, table, parent)
 }
 
 // --- attachments ---
@@ -383,8 +415,12 @@ func (a *API) GrantRowAccess(table, id, groupID string) error {
 	if err := a.requireFeature(table, a.features[table].RowLevelAccess, "row_level_access"); err != nil {
 		return err
 	}
+	parent, err := parentArg(id)
+	if err != nil {
+		return err
+	}
 	rows, err := a.Query(`SELECT "id" FROM "access_rows"
-		WHERE "table_name"=? AND "parent_id"=? AND "is_deleted"=0`, table, id)
+		WHERE "table_name"=? AND "parent_id"=? AND "is_deleted"=0`, table, parent)
 	if err != nil {
 		return err
 	}
@@ -402,8 +438,12 @@ func (a *API) GrantRowAccess(table, id, groupID string) error {
 
 // RowAccessGroups returns the group ids granted to a row (empty = no grants).
 func (a *API) RowAccessGroups(table, id string) ([]string, error) {
+	parent, err := parentArg(id)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := a.Query(`SELECT "id" FROM "access_rows"
-		WHERE "table_name"=? AND "parent_id"=? AND "is_deleted"=0`, table, id)
+		WHERE "table_name"=? AND "parent_id"=? AND "is_deleted"=0`, table, parent)
 	if err != nil || len(rows) == 0 {
 		return nil, err
 	}

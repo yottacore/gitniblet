@@ -21,9 +21,9 @@ const personDDL = "tables:\n" +
 	"\t\t\t\ttype: int\n" +
 	"\t\t\t\tdefaultval: 0\n" +
 	"\t\tuniques:\n" +
-	"\t\t\tname\n" +
+	"\t\t\tunique: name\n" +
 	"\t\tindexes:\n" +
-	"\t\t\tage\n"
+	"\t\t\tindex: age\n"
 
 func TestBuildSchema(t *testing.T) {
 	schema, err := ddl.Parse([]byte(personDDL))
@@ -81,7 +81,7 @@ func TestBuildMigratesNewFields(t *testing.T) {
 		"\t\t\t\ttype: string\n" +
 		"\t\t\t\tnull_ok: no\n" + // NOT NULL without default: alter must relax it
 		"\t\tuniques:\n" +
-		"\t\t\tname\n"
+		"\t\t\tunique: name\n"
 	grown, err := ddl.Parse([]byte(grownDDL))
 	if err != nil {
 		t.Fatal(err)
@@ -198,4 +198,53 @@ func indexExists(t *testing.T, st *Store, name string) bool {
 		t.Fatal(err)
 	}
 	return got == name
+}
+
+// A ref column is declared BLOB so a reference is stored the same way the row
+// id it points at is, and IsRef marks it for replay's value conversion.
+func TestRefColumnIsBlob(t *testing.T) {
+	schema, err := ddl.Parse([]byte("tables:\n" +
+		"\ttable: task\n" +
+		"\t\tfields:\n" +
+		"\t\t\tfield: parent_task\n" +
+		"\t\t\t\ttype: ref\n" +
+		"\t\t\tfield: title\n" +
+		"\t\t\t\ttype: string\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := Open(filepath.Join(t.TempDir(), "v.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.Build(schema); err != nil {
+		t.Fatal(err)
+	}
+
+	types := map[string]string{}
+	rows, err := st.DB().Query(`SELECT name, type FROM pragma_table_info('task')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name, typ string
+		if err := rows.Scan(&name, &typ); err != nil {
+			t.Fatal(err)
+		}
+		types[name] = typ
+	}
+	if types["parent_task"] != "BLOB" {
+		t.Fatalf("parent_task declared %q, want BLOB", types["parent_task"])
+	}
+	if types["id"] != "BLOB" {
+		t.Fatalf("id declared %q, want BLOB", types["id"])
+	}
+	if !st.IsRef("task", "parent_task") {
+		t.Fatal("IsRef should mark parent_task")
+	}
+	if st.IsRef("task", "title") {
+		t.Fatal("IsRef must not mark a plain string field")
+	}
 }

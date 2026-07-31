@@ -11,7 +11,7 @@
 ##	- Source this file; do not execute it.
 ## History: At bottom of script.
 
-##	Copyright © 2026 Jim Collier (ID: 1cv◂‡Vᛦ)
+##	Copyright © 2026 Bubbles (ID: XଌฅრX۳ᛟԃლፀƅꓩหδლც)
 ##	Licensed under The MIT License (MIT). Full text at:
 ##		https://mit-license.org/
 ##	SPDX-License-Identifier: MIT
@@ -26,4 +26,4 @@ unset _ngdb_cores
 
 
 ##	History:
-##		- 20260709 JC: Created.
+##		- 20260709: Created.

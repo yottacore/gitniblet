@@ -3,21 +3,34 @@
 
 // Package ddl parses the nano-git-db DDL into an in-memory schema model.
 //
-// Three layers: buildTree (node.go) turns text into a generic indentation tree,
-// value.go interprets the special value types on demand, and the mappers here
-// walk the tree into the typed Schema. Most attributes are optional, so scalars
-// that carry an unset/default distinction use pointers (nil = "use the default").
+// The DDL is an SHCL document (github.com/jim-collier/shcl), so the language
+// itself - indentation, quoting, comments, merging of repeated sections - is
+// shcl's job, not this package's. What is left here is two things shcl cannot
+// know: the schema file in schema.shcl, which states the DDL's vocabulary and
+// value domains for shcl's validator, and the mappers below, which walk a
+// validated document into the typed Schema.
+//
+// Warnings come from two sources. Anything about a single line - an unknown key,
+// a value outside its allowed set, a bad number - is an shcl diagnostic and
+// carries a line number. Anything cross-cutting - a table defined twice, a
+// unique naming a field that does not exist - is checked here and names the
+// entity instead, since shcl's Go API exposes no per-node line numbers.
+//
+// Most attributes are optional, so scalars that carry an unset/default
+// distinction use pointers (nil = "use the default").
 package ddl
 
 import (
 	"fmt"
 	"os"
 	"strings"
+
+	shcl "github.com/jim-collier/shcl/source/go"
 )
 
 // Schema is a parsed DDL file.
 type Schema struct {
-	AppCode     map[string]string // before_open, after_open, ... (DDL `code:`, formerly `methods:`)
+	AppCode     map[string]string // before_open, after_open, ... (DDL `code:`)
 	Tunables    map[string]string // tunables: section, raw values (see TunableInt)
 	Tables      []Table
 	Relations   []Relationship
@@ -25,46 +38,15 @@ type Schema struct {
 	DefaultView string   // ui: default_view; empty means "first view defined"
 	Encryption  string   // database-level encryption: always|never|auto ("" = unset)
 	Warnings    []string // soft issues; parsing still succeeds
+	// Errors counts the error-severity diagnostics behind Warnings: lines that
+	// were skipped or repaired, and failed validation. Parsing still produced a
+	// schema, but something in the file did not survive intact - discovery uses
+	// this to flag a record rather than opening a silently incomplete schema.
+	Errors int
 }
 
-// encValues gates the encryption: key like every other load validation. always
-// and never lock lower levels; auto (the default) defers up or down.
-var encValues = map[string]bool{"": true, "always": true, "never": true, "auto": true}
-
-// encOf reads and validates an encryption: child. An unknown value warns and is
-// treated as unset (auto).
-func encOf(n *Node, s *Schema, where string) string {
-	child := n.child("encryption")
-	if child == nil {
-		return ""
-	}
-	value, _ := Unquote(strings.TrimSpace(child.Value))
-	value = strings.ToLower(value)
-	if !encValues[value] {
-		s.Warnings = append(s.Warnings,
-			fmt.Sprintf("line %d: %s encryption %q is not always|never|auto, ignored", child.Line, where, value))
-		return ""
-	}
-	return value
-}
-
-// knownTunables gets a warning gate like every other load validation; the
-// value still stores, so a newer client's tunable survives a round trip.
-var knownTunables = map[string]bool{"git_sync_frequency": true, "gc_age_days": true}
-
-// TunableInt reads a tunable as an integer, falling back on absent or
-// non-numeric values.
-func (s *Schema) TunableInt(key string, def int) int {
-	value, ok := s.Tunables[key]
-	if !ok {
-		return def
-	}
-	num, ok := AsInt(value)
-	if !ok {
-		return def
-	}
-	return num
-}
+// HasErrors reports whether the load lost or repaired anything.
+func (s *Schema) HasErrors() bool { return s.Errors > 0 }
 
 // AccessRule is one allow/deny pair. Empty whitelist means "all".
 type AccessRule struct {
@@ -94,17 +76,22 @@ type Table struct {
 	Aliases    []string
 	Access     Access
 	Fields     []Field
-	Code       map[string]string // before_update, after_update (DDL `code:`, formerly `methods:`)
+	Code       map[string]string // before_update, after_update
 	Uniques    [][]string        // each group of field names (auto-named, indexed)
 	Indexes    [][]string        // each index
 	Features   Features
 	Encryption string // table-level encryption: always|never|auto ("" = unset)
+	// SystemUI holds presentation hints for the auto-added columns. A DDL entry
+	// naming a system field is legal but presentation-only: the column itself is
+	// managed, so only its ui: block is kept (anything else warns and is
+	// ignored). Keeping these out of Fields is what stops the view builder from
+	// emitting a second column for a name it already manages.
+	SystemUI map[string]FieldUI
 	// NoSystemFields (DDL `system_fields: no`) drops the auto-added
 	// is_active/date_created/is_deleted columns; `id` is always managed.
 	// Used by the built-in audit_trail table, which defines exactly its own
 	// fields per the design.
 	NoSystemFields bool
-	Line           int
 }
 
 // Validation holds a field's validation rules.
@@ -120,16 +107,19 @@ type Validation struct {
 
 // FieldUI holds a field's presentation hints.
 type FieldUI struct {
-	Visible    *bool
-	Title      string
-	Desc       string
-	Order      *float64
-	Readonly   *bool
-	Width      *int
-	Widget     string
-	ListType   string
-	ListSource string // raw: mixed literals and/or backtick SQL
-	Format     string
+	VisibleForm  *bool
+	VisibleList  *bool
+	Title        string
+	Desc         string
+	Order        *float64
+	Readonly     *bool
+	Width        *int
+	Widget       string
+	ListType     string
+	ListSource   string // raw: literals, backtick SQL, or a lookups idx
+	Format       string
+	LookupInList string // symbol|title|both
+	LookupInForm string // symbol|title|both
 }
 
 // Field is one column.
@@ -141,13 +131,12 @@ type Field struct {
 	Encryption string // field-level encryption: always|never|auto ("" = unset)
 	Special    string
 	IsActive   *bool
-	Default    string // raw: NULL, a func() ref, or a literal
+	Default    string // raw: a sentinel, a func() ref, or a literal
 	NullOK     *bool
 	EmptyOK    *bool
 	Validation Validation
 	Code       map[string]string
 	UI         FieldUI
-	Line       int
 }
 
 // Relationship is a 1:m or m:m link.
@@ -158,14 +147,13 @@ type Relationship struct {
 	ParentIDField    string
 	CascadeDelete    bool
 	EnableAuditTrail bool
-	Line             int
 }
 
 // Block is one (possibly nested) view layout block.
 type Block struct {
 	Name        string
 	Table       string
-	Type        string // form|grid|tree_grid
+	Type        string // form|grid|tree_grid|comments
 	ParentField string // tree_grid: same-table field naming the parent row
 	Location    []string
 	Readonly    *bool
@@ -180,54 +168,33 @@ type View struct {
 	Readonly          *bool
 	Access            AccessRule // views use a flat rule, not read/write/delete
 	Layout            []Block
-	Line              int
 }
 
 // Parse turns DDL source into a Schema.
+//
+// The load is Loose on purpose, and not just as a shrug: SHCL's Loose bundle is
+// almost exactly the value tolerance this DDL already documented - y/n and
+// enable/disable as booleans, a leading currency symbol on a number, a
+// fractional value where an integer is wanted. The DDL is aimed at users with no
+// SQL background, so the parser does the work.
+//
+// Loose still reports everything it repairs, and (like Standard) never fails a
+// load over one bad line: the rest of the file still opens, so a typo costs a
+// line rather than the whole schema. Nothing passes silently.
 func Parse(src []byte) (*Schema, error) {
-	root, warns, err := buildTree(src)
-	if err != nil {
-		return nil, err
-	}
-	normalize(root, &warns)
-	s := mapSchema(root)
-	s.Warnings = append(warns, s.Warnings...)
+	doc, _ := shcl.ParseWith(string(src), shcl.Loose) // only Strict can fail a load
+	s := &Schema{AppCode: map[string]string{}, Tunables: map[string]string{}}
+	s.addDiagnostics(doc.Diagnostics())
+	s.addDiagnostics(doc.Validate(schemaDoc()))
+
+	root := cursor{doc: doc}
+	s.mapCode(root)
+	s.mapTunables(root)
+	s.mapEncryption(root)
+	s.mapTables(root)
+	s.mapRelationships(root)
+	s.mapViews(root)
 	return s, nil
-}
-
-// mapTunables reads a tunables: section. Both `key: value` children and the
-// design doc's `key = value` list form are accepted.
-func (s *Schema) mapTunables(n *Node) {
-	if s.Tunables == nil {
-		s.Tunables = map[string]string{}
-	}
-	for _, child := range n.Children {
-		key, val := child.Key, child.Value
-		if child.List {
-			var ok bool
-			key, val, ok = strings.Cut(child.Value, "=")
-			if !ok {
-				s.Warnings = append(s.Warnings,
-					fmt.Sprintf("line %d: tunable %q is not key: value or key = value, ignored", child.Line, child.Value))
-				continue
-			}
-			key = strings.TrimSpace(key)
-		}
-		if !knownTunables[key] {
-			s.Warnings = append(s.Warnings, fmt.Sprintf("line %d: unknown tunable %q", child.Line, key))
-		}
-		if _, dup := s.Tunables[key]; dup {
-			continue // first value wins, like every other merge
-		}
-		s.Tunables[key], _ = Unquote(strings.TrimSpace(val))
-	}
-}
-
-// repeatable keys legitimately recur at one level and stay separate entities;
-// every other duplicated key merges into its first occurrence (see normalize).
-var repeatable = map[string]bool{
-	"table": true, "field": true, "relationship": true, "view": true, "block": true,
-	"query_name": true, // the queries sidecar file shares this grammar
 }
 
 // ParseFile reads and parses a DDL file.
@@ -239,264 +206,372 @@ func ParseFile(path string) (*Schema, error) {
 	return Parse(b)
 }
 
-func mapSchema(root *Node) *Schema {
-	s := &Schema{AppCode: map[string]string{}}
-	s.mapSections(root)
-	return s
-}
-
-// mapSections walks one level of section keys. `database:` and `ui:` are
-// transparent wrappers (recursed with the same switch), so both the nested
-// layout and the older flat one parse; normalize already merged duplicates,
-// so each wrapper appears at most once.
-func (s *Schema) mapSections(n *Node) {
-	for _, sec := range n.Children {
-		switch sec.Key {
-		case "code", "methods": // `methods:` renamed to `code:` 2026-07; keep reading both
-			collectCode(sec, s.AppCode)
-		case "database", "ui":
-			s.mapSections(sec)
-		case "default_view":
-			s.DefaultView, _ = Unquote(sec.Value)
-		case "encryption":
-			if v, _ := Unquote(strings.TrimSpace(sec.Value)); encValues[strings.ToLower(v)] {
-				s.Encryption = strings.ToLower(v)
-			} else {
-				s.Warnings = append(s.Warnings,
-					fmt.Sprintf("line %d: database encryption %q is not always|never|auto, ignored", sec.Line, v))
-			}
-		case "tunables":
-			s.mapTunables(sec)
-		case "tables":
-			for _, tableNode := range sec.all("table") {
-				tbl := parseTable(tableNode, s)
-				if tbl.Name == "" {
-					s.Warnings = append(s.Warnings,
-						fmt.Sprintf("line %d: table with no name, dropped", tableNode.Line))
-					continue
-				}
-				if prev := s.table(tbl.Name); prev != nil {
-					s.Warnings = append(s.Warnings, fmt.Sprintf(
-						"line %d: table %q already defined on line %d; the first definition wins", tableNode.Line, tbl.Name, prev.Line))
-					continue
-				}
-				s.Tables = append(s.Tables, tbl)
-			}
-		case "relationships":
-			for _, r := range sec.all("relationship") {
-				s.Relations = append(s.Relations, parseRelationship(r))
-			}
-		case "views":
-			for _, v := range sec.all("view") {
-				s.Views = append(s.Views, parseView(v))
-			}
-		case "":
-			// stray list item; ignore
-		default:
-			s.Warnings = append(s.Warnings,
-				fmt.Sprintf("line %d: unknown section %q (ignored)", sec.Line, sec.Key))
+// addDiagnostics folds shcl's line-numbered diagnostics into the schema's
+// warnings. Hints are carried through too: shcl's one hint (a repeated bare
+// leaf that looks like an array) is exactly the kind of near-miss this DDL's
+// audience needs told about.
+func (s *Schema) addDiagnostics(diags []shcl.Diagnostic) {
+	for _, d := range diags {
+		if expectedRepeat(d) {
+			continue
+		}
+		s.Warnings = append(s.Warnings, fmt.Sprintf("line %d: %s", d.Line, d.Message))
+		if d.Severity == shcl.SeverityError {
+			s.Errors++
 		}
 	}
 }
 
-func parseTable(n *Node, s *Schema) Table {
-	name, _ := Unquote(n.Value)
-	t := Table{Name: name, Line: n.Line, Code: map[string]string{}}
-	t.Aliases = listOf(n, "aliases")
-	t.Encryption = encOf(n, s, "table "+name)
-	if systemFields := boolOf(n, "system_fields"); systemFields != nil && !*systemFields {
-		t.NoSystemFields = true
+// repeatedLeaves are the DDL keys whose whole design is to recur as a bare leaf:
+// each occurrence is one unique group, one index, or one seeded row.
+var repeatedLeaves = []string{"unique", "index", "row"}
+
+// expectedRepeat drops shcl's repeated-leaf hint for those keys. The hint asks
+// whether a comma array was meant, which for these three is structurally always
+// no - so it would fire on every correct DDL and train the reader to ignore
+// warnings. It stays live for every other key, where a repeat usually IS the
+// mistake the hint describes (`aliases: a` twice instead of `aliases: a, b`).
+func expectedRepeat(d shcl.Diagnostic) bool {
+	if d.Code != "H001" {
+		return false
 	}
-	if accessNode := n.child("access"); accessNode != nil {
-		t.Access = parseAccessRWD(accessNode)
+	for _, name := range repeatedLeaves {
+		if strings.HasPrefix(d.Message, "'"+name+"'") {
+			return true
+		}
 	}
-	if fieldsNode := n.child("fields"); fieldsNode != nil {
-		for _, fieldNode := range fieldsNode.all("field") {
-			field := parseField(fieldNode, s)
-			if field.Name == "" {
-				s.Warnings = append(s.Warnings,
-					fmt.Sprintf("line %d: field with no name in table %q, dropped", fieldNode.Line, t.Name))
+	return false
+}
+
+// warn records a cross-cutting problem. These name the entity rather than a
+// line, because they are about the relationship between lines.
+func (s *Schema) warn(format string, args ...any) {
+	s.Warnings = append(s.Warnings, fmt.Sprintf(format, args...))
+}
+
+// sectionPrefixes are the paths a logical section may sit at. `database:` and
+// `ui:` are organizational wrappers, so a DDL may nest a section under one or
+// leave it at the top level; both spell the same thing. shcl merges repeated
+// wrappers itself, so each prefix resolves at most once.
+func sectionPrefixes(wrapper string) []string { return []string{wrapper, ""} }
+
+// mapCode reads the application-level `code:` hooks.
+func (s *Schema) mapCode(root cursor) {
+	for name, fn := range root.codeMap("code") {
+		s.AppCode[name] = fn
+	}
+}
+
+// mapEncryption reads the database-level encryption directive.
+func (s *Schema) mapEncryption(root cursor) {
+	for _, prefix := range sectionPrefixes("database") {
+		at := cursor{doc: root.doc, path: prefix}
+		if !at.exists("encryption") {
+			continue
+		}
+		if value := at.lower("encryption"); encValues[value] {
+			s.Encryption = value
+			return
+		}
+	}
+}
+
+// mapTunables reads the tunables: section. The known keys are validated by the
+// schema file; an unknown one still stores, so a tunable written by a newer
+// client survives a round trip through an older one.
+func (s *Schema) mapTunables(root cursor) {
+	const section = "tunables."
+	for _, path := range root.doc.Paths() {
+		key, ok := strings.CutPrefix(path, section)
+		if !ok || strings.Contains(key, ".") {
+			continue // not a tunable, or nested below one
+		}
+		if _, dup := s.Tunables[key]; dup {
+			continue // first wins, like every other merge
+		}
+		s.Tunables[key] = root.child("tunables").str(key)
+	}
+}
+
+// mapTables reads every table, from either section prefix.
+func (s *Schema) mapTables(root cursor) {
+	for _, prefix := range sectionPrefixes("database") {
+		at := cursor{doc: root.doc, path: prefix}.child("tables")
+		names := at.instances("table")
+		for i, name := range names {
+			table := s.parseTable(at.instance("table", i), name)
+			if table.Name == "" {
+				s.warn("a table with no name was dropped")
 				continue
 			}
-			// hasField covers both a redefined field and a collision with the
-			// auto-added system columns - either would double a column.
-			if t.hasField(field.Name) {
-				what := "already defined; the first definition wins"
-				if field.Name == "id" || !t.NoSystemFields &&
-					(field.Name == "is_active" || field.Name == "is_deleted" || field.Name == "date_created") {
-					what = "collides with an auto-added system field, dropped"
-				}
-				s.Warnings = append(s.Warnings,
-					fmt.Sprintf("line %d: field %q in table %q %s", fieldNode.Line, field.Name, t.Name, what))
+			if s.table(table.Name) != nil {
+				s.warn("table %q is defined more than once; the first definition wins", table.Name)
 				continue
 			}
-			t.Fields = append(t.Fields, field)
+			s.Tables = append(s.Tables, table)
 		}
 	}
-	if codeNode := firstChild(n, "code", "methods"); codeNode != nil {
-		collectCode(codeNode, t.Code)
-	}
-	if uniquesNode := n.child("uniques"); uniquesNode != nil {
-		for _, row := range uniquesNode.items() {
-			group := SplitList(row.Value)
-			t.Uniques = append(t.Uniques, group)
-			warnUnknownFields(s, &t, row.Line, "uniques", group)
+}
+
+// mapRelationships reads every relationship, from either section prefix.
+func (s *Schema) mapRelationships(root cursor) {
+	for _, prefix := range sectionPrefixes("database") {
+		at := cursor{doc: root.doc, path: prefix}.child("relationships")
+		for i := 0; i < at.count("relationship"); i++ {
+			s.Relations = append(s.Relations, parseRelationship(at.instance("relationship", i)))
 		}
 	}
-	if indexesNode := n.child("indexes"); indexesNode != nil {
-		for _, row := range indexesNode.items() {
-			group := SplitList(row.Value)
-			t.Indexes = append(t.Indexes, group)
-			warnUnknownFields(s, &t, row.Line, "indexes", group)
+}
+
+// mapViews reads every view and the default-view pointer.
+func (s *Schema) mapViews(root cursor) {
+	for _, prefix := range sectionPrefixes("ui") {
+		at := cursor{doc: root.doc, path: prefix}
+		if s.DefaultView == "" {
+			s.DefaultView = at.str("default_view")
+		}
+		views := at.child("views")
+		for i, name := range views.instances("view") {
+			s.Views = append(s.Views, parseView(views.instance("view", i), name))
 		}
 	}
-	if featuresNode := n.child("features"); featuresNode != nil {
+}
+
+// encValues is the closed encryption vocabulary. always and never lock lower
+// levels; auto (the default) defers up or down. A value outside the set is
+// reported by schema validation and read here as unset.
+var encValues = map[string]bool{"": true, "always": true, "never": true, "auto": true}
+
+// encOf reads an encryption: child, treating anything outside the set as unset.
+func encOf(c cursor) string {
+	if value := c.lower("encryption"); encValues[value] {
+		return value
+	}
+	return ""
+}
+
+func (s *Schema) parseTable(c cursor, name string) Table {
+	t := Table{Name: name, Code: c.codeMap("code")}
+	t.Aliases = c.list("aliases")
+	t.Encryption = encOf(c)
+	// system_fields defaults on; only an explicit false opts out.
+	t.NoSystemFields = !c.boolOr("system_fields", true)
+	if c.exists("access") {
+		t.Access = parseAccessRWD(c.child("access"))
+	}
+
+	fields := c.child("fields")
+	for i, fieldName := range fields.instances("field") {
+		field := parseField(fields.instance("field", i), fieldName)
+		if field.Name == "" {
+			s.warn("a field with no name in table %q was dropped", t.Name)
+			continue
+		}
+		// A system field's column is managed, so an entry naming one contributes
+		// presentation only - it never becomes a second column.
+		if isSystemField(field.Name, t.NoSystemFields) {
+			if t.SystemUI == nil {
+				t.SystemUI = map[string]FieldUI{}
+			}
+			t.SystemUI[field.Name] = field.UI
+			if definesColumn(field) {
+				s.warn("field %q in table %q is a system field: its ui: applies, the rest is ignored", field.Name, t.Name)
+			}
+			continue
+		}
+		if t.hasField(field.Name) {
+			s.warn("field %q in table %q is defined more than once; the first definition wins", field.Name, t.Name)
+			continue
+		}
+		t.Fields = append(t.Fields, field)
+	}
+
+	t.Uniques = s.parseKeyGroups(c, &t, "uniques", "unique")
+	t.Indexes = s.parseKeyGroups(c, &t, "indexes", "index")
+
+	if c.exists("features") {
+		features := c.child("features")
 		t.Features = Features{
-			LocalAttachments: boolDefault(featuresNode, "local_attachments"),
-			URIAttachments:   boolDefault(featuresNode, "uri_attachments"),
-			Comments:         boolDefault(featuresNode, "comments"),
-			AuditTrail:       boolDefault(featuresNode, "audit_trail"),
-			RowLevelAccess:   boolDefault(featuresNode, "row_level_access"),
+			LocalAttachments: features.boolOr("local_attachments", false),
+			URIAttachments:   features.boolOr("uri_attachments", false),
+			Comments:         features.boolOr("comments", false),
+			AuditTrail:       features.boolOr("audit_trail", false),
+			RowLevelAccess:   features.boolOr("row_level_access", false),
 		}
 	}
 	return t
 }
 
-// fieldTypes are the DDL's data types (design: string|int|float|bool|
-// datetime[_local]|datetime_utc|binary); anything else stores as text.
-var fieldTypes = map[string]bool{
-	"": true, "string": true, "int": true, "float": true, "bool": true,
-	"datetime": true, "datetime_local": true, "datetime_utc": true, "binary": true,
+// parseKeyGroups reads a uniques:/indexes: section. Each group is one instance
+// of the singular name carrying a comma list of field names, so a table can
+// declare several groups (`unique: a, b` then `unique: c, d`).
+func (s *Schema) parseKeyGroups(c cursor, t *Table, section, entry string) [][]string {
+	if !c.exists(section) {
+		return nil
+	}
+	at := c.child(section)
+	var out [][]string
+	for i := 0; i < at.count(entry); i++ {
+		group := at.instance(entry, i).list("")
+		if len(group) == 0 {
+			continue
+		}
+		for _, name := range group {
+			if !t.hasField(name) {
+				s.warn("%s on table %q names unknown field %q", section, t.Name, name)
+			}
+		}
+		out = append(out, group)
+	}
+	return out
 }
 
-func parseField(n *Node, s *Schema) Field {
-	name, _ := Unquote(n.Value)
-	f := Field{Name: name, Line: n.Line, Code: map[string]string{}}
-	f.Aliases = listOf(n, "aliases")
-	if accessNode := n.child("access"); accessNode != nil {
-		f.Access = parseAccessRWD(accessNode)
+// The closed set of field types lives in schema.shcl as the `allowed:` list on
+// a field's type, so an unrecognized one is reported there with its line number.
+// It still stores as written rather than failing the load.
+
+func parseField(c cursor, name string) Field {
+	f := Field{Name: name, Code: c.codeMap("code")}
+	f.Aliases = c.list("aliases")
+	if c.exists("access") {
+		f.Access = parseAccessRWD(c.child("access"))
 	}
-	f.Type = strings.ToLower(strOf(n, "type"))
-	if !fieldTypes[f.Type] {
-		s.Warnings = append(s.Warnings, fmt.Sprintf(
-			"line %d: field %q has unknown type %q, stored as text", n.Line, name, f.Type))
-	}
-	f.Encryption = encOf(n, s, "field "+name)
-	f.Special = strOf(n, "special")
-	f.IsActive = boolOf(n, "isactive")
-	f.Default = rawOf(n, "defaultval")
-	f.NullOK = boolOf(n, "null_ok")
-	f.EmptyOK = boolOf(n, "empty_ok")
-	if validationNode := n.child("validation"); validationNode != nil {
+	f.Type = c.lower("type")
+	f.Encryption = encOf(c)
+	f.Special = c.str("special")
+	f.IsActive = c.boolPtr("is_active")
+	f.Default = c.raw("defaultval")
+
+	// null_ok/empty_ok belong under validation:, but the example DDL has carried
+	// them at field level too; read either place, field level first.
+	validation := c.child("validation")
+	f.NullOK = firstBool(c, validation, "null_ok")
+	f.EmptyOK = firstBool(c, validation, "empty_ok")
+	if c.exists("validation") {
 		f.Validation = Validation{
-			Required: boolOf(validationNode, "required"),
-			MinLen:   intOf(validationNode, "minlen"),
-			MaxLen:   intOf(validationNode, "maxlen"),
-			MinVal:   floatOf(validationNode, "minval"),
-			MaxVal:   floatOf(validationNode, "maxval"),
-			Regex:    strOf(validationNode, "regex"),
-			Method:   rawOf(validationNode, "method"),
+			Required: validation.boolPtr("required"),
+			MinLen:   validation.intPtr("minlen"),
+			MaxLen:   validation.intPtr("maxlen"),
+			MinVal:   validation.floatPtr("minval"),
+			MaxVal:   validation.floatPtr("maxval"),
+			Regex:    validation.raw("regex"),
+			Method:   validation.raw("method"),
+		}
+		// defaultval also appears under validation: in the example DDL.
+		if f.Default == "" {
+			f.Default = validation.raw("defaultval")
 		}
 	}
-	if codeNode := firstChild(n, "code", "methods"); codeNode != nil {
-		collectCode(codeNode, f.Code)
-	}
-	if uiNode := n.child("ui"); uiNode != nil {
+	if c.exists("ui") {
+		ui := c.child("ui")
 		f.UI = FieldUI{
-			Visible:    boolOf(uiNode, "visible"),
-			Title:      strOf(uiNode, "title"),
-			Desc:       strOf(uiNode, "description"),
-			Order:      floatOf(uiNode, "order"),
-			Readonly:   boolOf(uiNode, "readonly"),
-			Width:      intOf(uiNode, "width"),
-			Widget:     strOf(uiNode, "widget"),
-			ListType:   strOf(uiNode, "list_type"),
-			ListSource: rawOf(uiNode, "list_source"),
-			Format:     strOf(uiNode, "format"),
+			VisibleForm: ui.boolPtr("visible_form"),
+			VisibleList: ui.boolPtr("visible_list"),
+			// label: is the documented key; title: was the earlier spelling.
+			Title:        ui.firstStr("label", "title"),
+			Desc:         ui.str("description"),
+			Order:        ui.floatPtr("order"),
+			Readonly:     ui.boolPtr("readonly"),
+			Width:        ui.intPtr("width"),
+			Widget:       ui.str("widget"),
+			ListType:     ui.str("list_type"),
+			ListSource:   ui.raw("list_source"),
+			Format:       ui.str("format"),
+			LookupInList: ui.lower("lookup_in_lists"),
+			LookupInForm: ui.lower("lookup_in_forms"),
 		}
 	}
 	return f
 }
 
-func parseRelationship(n *Node) Relationship {
+// firstBool reads a bool from the first of two cursors that carries it, for keys
+// accepted at more than one level.
+func firstBool(first, second cursor, rel string) *bool {
+	if val := first.boolPtr(rel); val != nil {
+		return val
+	}
+	return second.boolPtr(rel)
+}
+
+func parseRelationship(c cursor) Relationship {
 	return Relationship{
-		Type:             strings.ToLower(strOf(n, "type")),
-		Parent:           strOf(n, "parent"),
-		Child:            strOf(n, "child"),
-		ParentIDField:    strOf(n, "parent_id_field"),
-		CascadeDelete:    boolDefault(n, "cascade_delete"),
-		EnableAuditTrail: boolDefault(n, "enable_audit_trail"),
-		Line:             n.Line,
+		Type:             c.lower("type"),
+		Parent:           c.str("parent"),
+		Child:            c.str("child"),
+		ParentIDField:    c.str("parent_id_field"),
+		CascadeDelete:    c.boolOr("cascade_delete", false),
+		EnableAuditTrail: c.boolOr("enable_audit_trail", false),
 	}
 }
 
-func parseView(n *Node) View {
-	name, _ := Unquote(n.Value)
-	v := View{Name: name, Line: n.Line}
-	v.Aliases = listOf(n, "aliases")
+func parseView(c cursor, name string) View {
+	v := View{Name: name}
+	v.Aliases = c.list("aliases")
 	// Renamed from default_named_query 2026-07; keep reading the old key so
-	// existing DDLs parse. Unquoted: it must compare equal to a query's name.
-	v.StartupNamedQuery, _ = Unquote(rawOf(n, "startup_named_query"))
+	// existing DDLs parse. It must compare equal to a named query's name.
+	v.StartupNamedQuery = c.str("startup_named_query")
 	if v.StartupNamedQuery == "" {
-		v.StartupNamedQuery, _ = Unquote(rawOf(n, "default_named_query"))
+		v.StartupNamedQuery = c.str("default_named_query")
 	}
-	v.Readonly = boolOf(n, "readonly")
-	if accessNode := n.child("access"); accessNode != nil {
-		v.Access = accessFlat(accessNode)
+	v.Readonly = c.boolPtr("readonly")
+	if c.exists("access") {
+		v.Access = accessFlat(c.child("access"))
 	}
-	if layoutNode := n.child("layout"); layoutNode != nil {
-		for _, blockNode := range layoutNode.all("block") {
-			v.Layout = append(v.Layout, parseBlock(blockNode))
-		}
+	if c.exists("layout") {
+		v.Layout = parseBlocks(c.child("layout"))
 	}
 	return v
 }
 
-func parseBlock(n *Node) Block {
-	name, _ := Unquote(n.Value)
-	b := Block{
-		Name:        name,
-		Table:       strOf(n, "table"),
-		Type:        strOf(n, "type"),
-		ParentField: strOf(n, "parent_field"),
-		Location:    listOf(n, "location"),
-		Readonly:    boolOf(n, "readonly"),
+// parseBlocks reads a layout's block instances, recursing into nested ones.
+func parseBlocks(c cursor) []Block {
+	var out []Block
+	for i, name := range c.instances("block") {
+		at := c.instance("block", i)
+		out = append(out, Block{
+			Name:        name,
+			Table:       at.str("table"),
+			Type:        at.lower("type"),
+			ParentField: at.str("parent_field"),
+			Location:    at.list("location"),
+			Readonly:    at.boolPtr("readonly"),
+			Children:    parseBlocks(at),
+		})
 	}
-	for _, childNode := range n.all("block") {
-		b.Children = append(b.Children, parseBlock(childNode))
-	}
-	return b
+	return out
 }
 
-func parseAccessRWD(n *Node) Access {
+func parseAccessRWD(c cursor) Access {
 	return Access{
-		Read:   accessFlat(n.child("read")),
-		Write:  accessFlat(n.child("write")),
-		Delete: accessFlat(n.child("delete")),
+		Read:   accessFlat(c.child("read")),
+		Write:  accessFlat(c.child("write")),
+		Delete: accessFlat(c.child("delete")),
 	}
 }
 
-// accessFlat reads whitelist/blacklist from a node. Early DDLs (including the
+// accessFlat reads whitelist/blacklist from a cursor. Early DDLs (including the
 // original example) misspelled it "blaclist"; keep accepting both so they parse.
-func accessFlat(n *Node) AccessRule {
-	if n == nil {
-		return AccessRule{}
-	}
+func accessFlat(c cursor) AccessRule {
 	return AccessRule{
-		Whitelist: firstList(n, "whitelist"),
-		Blacklist: firstList(n, "blacklist", "blaclist"),
+		Whitelist: c.list("whitelist"),
+		Blacklist: c.firstList("blacklist", "blaclist"),
 	}
 }
 
-// warnUnknownFields flags uniques/indexes rows naming fields the table doesn't
-// have - caught here at parse time instead of as an opaque SQLite error later.
-func warnUnknownFields(s *Schema, t *Table, line int, kind string, fields []string) {
-	for _, name := range fields {
-		if !t.hasField(name) {
-			s.Warnings = append(s.Warnings, fmt.Sprintf(
-				"line %d: %s names unknown field %q in table %q", line, kind, name, t.Name))
-		}
+// -- resolvers over a parsed schema --
+
+// TunableInt reads a tunable as an integer, falling back on absent or
+// non-numeric values.
+func (s *Schema) TunableInt(key string, def int) int {
+	value, ok := s.Tunables[key]
+	if !ok {
+		return def
 	}
+	num, ok := AsInt(value)
+	if !ok {
+		return def
+	}
+	return num
 }
 
 // table finds an already-parsed table by name.
@@ -559,12 +634,31 @@ func (s *Schema) EncryptionPolicy(table, field string) string {
 	return "auto"
 }
 
-func (t *Table) hasField(name string) bool {
-	switch name {
-	case "id":
+// definesColumn reports whether a field entry says anything about the column
+// itself, as opposed to only how it is presented. Used to tell a presentation-only
+// system-field entry (silent, as designed) from one trying to redefine a managed
+// column (warned and ignored).
+func definesColumn(f Field) bool {
+	return f.Type != "" || f.Default != "" || f.Special != "" || f.Encryption != "" ||
+		f.NullOK != nil || f.EmptyOK != nil || len(f.Aliases) > 0 ||
+		f.Validation != Validation{}
+}
+
+// isSystemField reports whether a name is one of the auto-added columns.
+func isSystemField(name string, noSystemFields bool) bool {
+	if name == "id" {
 		return true // id is managed on every table, opt-out or not
+	}
+	switch name {
 	case "is_active", "date_created", "is_deleted":
-		return !t.NoSystemFields
+		return !noSystemFields
+	}
+	return false
+}
+
+func (t *Table) hasField(name string) bool {
+	if isSystemField(name, t.NoSystemFields) {
+		return true
 	}
 	for _, f := range t.Fields {
 		if f.Name == name {
@@ -572,95 +666,4 @@ func (t *Table) hasField(name string) bool {
 		}
 	}
 	return false
-}
-
-// -- small node accessors --
-
-func collectCode(n *Node, dst map[string]string) {
-	for _, child := range n.Children {
-		if child.Key != "" && child.Value != "" {
-			dst[child.Key] = child.Value
-		}
-	}
-}
-
-func firstChild(n *Node, keys ...string) *Node {
-	for _, key := range keys {
-		if child := n.child(key); child != nil {
-			return child
-		}
-	}
-	return nil
-}
-
-func firstList(n *Node, keys ...string) []string {
-	for _, key := range keys {
-		if child := n.child(key); child != nil {
-			return SplitList(child.Value)
-		}
-	}
-	return nil
-}
-
-func listOf(n *Node, key string) []string {
-	if child := n.child(key); child != nil {
-		return SplitList(child.Value)
-	}
-	return nil
-}
-
-func strOf(n *Node, key string) string {
-	if child := n.child(key); child != nil {
-		s, _ := Unquote(child.Value)
-		return s
-	}
-	return ""
-}
-
-func rawOf(n *Node, key string) string {
-	if child := n.child(key); child != nil {
-		return child.Value
-	}
-	return ""
-}
-
-func boolOf(n *Node, key string) *bool {
-	child := n.child(key)
-	if child == nil || child.Value == "" {
-		return nil
-	}
-	if b, ok := AsBool(child.Value); ok {
-		return &b
-	}
-	return nil
-}
-
-// boolDefault is boolOf with a false default (for keys whose default is off).
-func boolDefault(n *Node, key string) bool {
-	if val := boolOf(n, key); val != nil {
-		return *val
-	}
-	return false
-}
-
-func intOf(n *Node, key string) *int {
-	child := n.child(key)
-	if child == nil || child.Value == "" {
-		return nil
-	}
-	if i, ok := AsInt(child.Value); ok {
-		return &i
-	}
-	return nil
-}
-
-func floatOf(n *Node, key string) *float64 {
-	child := n.child(key)
-	if child == nil || child.Value == "" {
-		return nil
-	}
-	if f, ok := AsFloat(child.Value); ok {
-		return &f
-	}
-	return nil
 }

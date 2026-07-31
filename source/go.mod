@@ -5,9 +5,9 @@ go 1.25.0
 toolchain go1.26.5
 
 require (
-	github.com/BurntSushi/toml v1.6.0
 	github.com/gdamore/tcell/v2 v2.8.1
 	github.com/google/uuid v1.6.0
+	github.com/jim-collier/shcl/source/go v1.0.0
 	github.com/rivo/tview v0.42.0
 	modernc.org/sqlite v1.53.0
 )

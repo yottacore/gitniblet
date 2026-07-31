@@ -222,7 +222,7 @@ func (p *picker) confirmRemove(cfg *config.DBConfig) {
 // confirmDeleteFiles offers to also delete the deregistered database's files.
 // The default (first button) keeps them; the DDL is never deleted.
 func (p *picker) confirmDeleteFiles(cfg *config.DBConfig) {
-	msg := fmt.Sprintf("Also delete its files? (kept by default)\n  tx-log: %s\n  record: %s\n(the .ddl schema is kept)", cfg.LogDir, cfg.Dir())
+	msg := fmt.Sprintf("Also delete its files? (kept by default)\n  tx-log: %s\n  record: %s\n(the schema file is kept)", cfg.LogDir, cfg.Dir())
 	p.modal("delfiles", msg, []string{"Keep files", "Delete files"}, func(label string) {
 		if label == "Delete files" {
 			if err := cfg.DeleteFiles(); err != nil {

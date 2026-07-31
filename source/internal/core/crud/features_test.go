@@ -71,7 +71,9 @@ func newFeatAPI(t *testing.T) *crud.API {
 
 func auditRows(t *testing.T, api *crud.API, table, id string) []map[string]string {
 	t.Helper()
-	rows, err := api.Query(`SELECT * FROM "audit_trail" WHERE "table_name"=? AND "parent_id"=? ORDER BY "date"`, table, id)
+	// parent_id is a ref column, so the id crosses to raw bytes via id() -
+	// the same way a hand-written query would have to.
+	rows, err := api.Query(`SELECT * FROM "audit_trail" WHERE "table_name"=? AND "parent_id"=id(?) ORDER BY "date"`, table, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +239,13 @@ func TestRowAccessGrants(t *testing.T) {
 	if err != nil || len(gs) != 1 || gs[0] != gid {
 		t.Fatalf("grants = %v err=%v", gs, err)
 	}
-	if none, _ := api.RowAccessGroups("person", "00ff"); none != nil {
-		t.Fatalf("ungranted row should have no groups: %v", none)
+	other, _ := api.Create("person", map[string]string{"name": "Bob"})
+	if none, err := api.RowAccessGroups("person", other); err != nil || none != nil {
+		t.Fatalf("ungranted row should have no groups: %v err=%v", none, err)
+	}
+	// A malformed id is an error, not an empty result - a ref column compared
+	// against the wrong shape would otherwise just look like "no grants".
+	if _, err := api.RowAccessGroups("person", "00ff"); err == nil {
+		t.Fatal("malformed id was accepted")
 	}
 }

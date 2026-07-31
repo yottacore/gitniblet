@@ -301,7 +301,7 @@ func doRenameField(args []string) error {
 func usage() error {
 	fmt.Println("usage: ngdb <verb> ...")
 	fmt.Println("  setup and run modes:")
-	fmt.Println("    --init [repo-or-dir]           register the $PWD .ddl as a database")
+	fmt.Println("    --init [repo-or-dir]           register the $PWD .shcl as a database")
 	fmt.Println("    --config <dir> ...             use an alternate registry dir, then run")
 	if enc.Available() { // enterprise build only
 		fmt.Println("    --encrypt[=on|off|auto] ...    set the local encryption preference,")

@@ -9,23 +9,23 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/BurntSushi/toml"
+	shcl "github.com/jim-collier/shcl/source/go"
 )
 
-const recordFile = "config.toml"
+const recordFile = "config.shcl"
 
 // DBConfig is one registered database's record. Paths are stored absolute so a
 // record stays valid regardless of the working directory it is opened from.
 // Encryption and KeyFile are parsed now for a stable file format; the crypto
 // behavior itself lands with the encryption feature.
 type DBConfig struct {
-	Name       string `toml:"name"`
-	DDLPath    string `toml:"ddl_path"`    // git-synced schema file
-	LogDir     string `toml:"log_dir"`     // git-synced tx-log + attachments dir
-	SQLitePath string `toml:"sqlite_path"` // local unsynced view; rebuilt from the log
-	KeyFile    string `toml:"key_file"`    // encryption key; local, defaults beside the record
-	Encryption string `toml:"encryption"`  // local field-encryption pref: on|off|auto (default auto)
-	LastOpened string `toml:"last_opened"` // RFC3339, refreshed on successful open
+	Name       string // database name
+	DDLPath    string // git-synced schema file
+	LogDir     string // git-synced tx-log + attachments dir
+	SQLitePath string // local unsynced view; rebuilt from the log
+	KeyFile    string // encryption key; local, defaults beside the record
+	Encryption string // local field-encryption pref: on|off|auto (default auto)
+	LastOpened string // RFC3339, refreshed on successful open
 
 	dir string // the record's directory; set on Load/Create, not serialized
 }
@@ -35,7 +35,7 @@ type DBConfig struct {
 func (c *DBConfig) Dir() string { return c.dir }
 
 // applyDefaults fills the local-file paths that were left blank, keying them to
-// the record directory and name so a minimal hand-written config.toml (just a
+// the record directory and name so a minimal hand-written config.shcl (just a
 // name, ddl_path and log_dir) still opens.
 func (c *DBConfig) applyDefaults() {
 	if c.SQLitePath == "" {
@@ -49,14 +49,23 @@ func (c *DBConfig) applyDefaults() {
 	}
 }
 
-// Load reads <dir>/config.toml and fills defaults. A missing or malformed file
+// Load reads <dir>/config.shcl and fills defaults. A missing or malformed file
 // is an error the caller reports (discovery marks such a record unopenable).
 func Load(dir string) (*DBConfig, error) {
-	var cfg DBConfig
-	if _, err := toml.DecodeFile(filepath.Join(dir, recordFile), &cfg); err != nil {
+	doc, err := loadStrict(filepath.Join(dir, recordFile))
+	if err != nil {
 		return nil, err
 	}
-	cfg.dir = dir
+	cfg := DBConfig{
+		Name:       doc.GetStringOr("name", ""),
+		DDLPath:    doc.GetStringOr("ddl_path", ""),
+		LogDir:     doc.GetStringOr("log_dir", ""),
+		SQLitePath: doc.GetStringOr("sqlite_path", ""),
+		KeyFile:    doc.GetStringOr("key_file", ""),
+		Encryption: doc.GetStringOr("encryption", ""),
+		LastOpened: doc.GetStringOr("last_opened", ""),
+		dir:        dir,
+	}
 	if cfg.Name == "" {
 		cfg.Name = filepath.Base(dir) // a nameless record falls back to its dir
 	}
@@ -64,7 +73,7 @@ func Load(dir string) (*DBConfig, error) {
 	return &cfg, nil
 }
 
-// Save writes the record back to <dir>/config.toml, creating the directory.
+// Save writes the record back to <dir>/config.shcl, creating the directory.
 func (c *DBConfig) Save() error {
 	if c.dir == "" {
 		return fmt.Errorf("config: record has no directory")
@@ -72,12 +81,15 @@ func (c *DBConfig) Save() error {
 	if err := os.MkdirAll(c.dir, 0o755); err != nil {
 		return err
 	}
-	f, err := os.Create(filepath.Join(c.dir, recordFile))
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return toml.NewEncoder(f).Encode(c)
+	doc := shcl.New()
+	setIfSet(doc, "name", c.Name)
+	setIfSet(doc, "ddl_path", c.DDLPath)
+	setIfSet(doc, "log_dir", c.LogDir)
+	setIfSet(doc, "sqlite_path", c.SQLitePath)
+	setIfSet(doc, "key_file", c.KeyFile)
+	setIfSet(doc, "encryption", c.Encryption)
+	setIfSet(doc, "last_opened", c.LastOpened)
+	return save(filepath.Join(c.dir, recordFile), doc, 0o644)
 }
 
 // Touch stamps LastOpened and persists it; a failed save is non-fatal (the

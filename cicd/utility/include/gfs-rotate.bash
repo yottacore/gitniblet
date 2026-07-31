@@ -1,4 +1,22 @@
-# shellcheck shell=bash
+#!/bin/bash
+
+#  shellcheck disable=2001  ## 'See if you can use ${variable//search/replace} instead.' Complains about good uses of sed.
+#  shellcheck disable=2016  ## 'Expressions don't expand in single quotes, use double quotes for that.' I know, and I often want an explicit '$'.
+#  shellcheck disable=2034  ## 'variable appears unused.' Complains about valid use of variable indirection (e.g. later use of local -n var=$1)
+#  shellcheck disable=2046  ## 'Quote to prevent word-splitting.' (OK for integers.)
+#  shellcheck disable=2086  ## 'Double quote to prevent globbing and word splitting.' (OK for integers.)
+#  shellcheck disable=2119  ## 'Use foo "$@" if function's $1 should mean script's $1.' Confusing and inapplicable.
+#  shellcheck disable=2120  ## 'Foo references arguments, but none are ever passed.' Valid function argument overloading.
+#  shellcheck disable=2128  ## 'Expanding an array without an index only gives the element in the index 0.' False hits on associative arrays.
+#  shellcheck disable=2155  ## 'Declare and assign separately to avoid masking return values.' Cumbersome and unnecessary. For integers it's sometimes required to even come into existence for counters.
+#  shellcheck disable=2162  ## 'read without -r will mangle backslashes.'
+#  shellcheck disable=2178  ## 'Variable was used as an array but is now assigned a string.' False hits on associative arrays with e.g. 'local -n assocArray=$1'.
+#  shellcheck disable=2181  ## 'Check exit code directly, not indirectly with $?.'
+#  shellcheck disable=2317  ## 'Can't reach.' (I.e. an 'exit' is used for debugging - and makes an unusable visual mess.)
+## shellcheck disable=2002  ## 'Useless use of cat.'
+## shellcheck disable=2004  ## '$/${} is unnecessary on arithmetic variables.' Inappropriate complaining?
+## shellcheck disable=2053  ## 'Quote the right-hand sid of = in [[ ]] to prevent glob matching.' Disable for Yoda Notation.
+## shellcheck disable=2143  ## 'Use grep -q instead of echo | grep'
 
 ## Purpose:
 ##	- Reusable GFS (grandfather-father-son) file rotation. Source this and call:
@@ -20,10 +38,9 @@
 ##		GFS_KEEP_FREQUENT, GFS_KEEP_HOURLY, GFS_KEEP_DAILY, GFS_KEEP_WEEKLY, GFS_KEEP_MONTHLY,
 ##		GFS_KEEP_YEARLY. GFS_NOW (epoch seconds) overrides "now" for testing.
 
-
 ##	History: At bottom of script.
 
-##	Copyright © 2026 Jim Collier (ID: 1cv◂‡Vᛦ)
+##	Copyright © 2026 Bubbles (ID: XଌฅრX۳ᛟԃლፀƅꓩหδლც)
 ##	Licensed under The MIT License (MIT). Full text at:
 ##		https://mit-license.org/
 ##	SPDX-License-Identifier: MIT
@@ -51,7 +68,9 @@ _gfs_ts(){
 	[[ -n "$epoch" ]] || epoch="$(date +%s)"
 	canon="$(date -d "@${epoch}" +%Y%m%d-%H%M%S 2>/dev/null || true)"
 	[[ -n "$canon" ]] || canon="00000000-000000"
-	printf '%s %s' "${epoch}" "${canon}"
+	## Trailing newline so the caller's `read` returns 0; without it `read` hits
+	## EOF with no delimiter, returns 1, and aborts a set -e caller.
+	printf '%s %s\n' "${epoch}" "${canon}"
 }
 
 gfs_rotate(){
@@ -94,7 +113,7 @@ gfs_rotate(){
 	done
 
 	## Assign the coarsest role to each kept file:
-	##   first > year > month > week > day > hour > frequent
+	##   first > year > month > week > day > hour > frequent (newest tagged "latest")
 	## First-set wins, so process coarsest first.
 	local -A role; role["${items[0]}"]="first"
 	local spec rn cnt nk i
@@ -112,11 +131,14 @@ gfs_rotate(){
 		unset -n arr
 	done
 
-	## Frequent: most recent kFreq not already claimed by a coarser role.
+	## Frequent: most recent kFreq not already claimed by a coarser role. The
+	## single newest file is labelled "latest" instead - a stable, naturally-
+	## sorting pointer to the most recent file (no separate "<prefix>-latest" copy).
 	local ni=${#items[@]}
 	for ((i = ni>kFreq ? ni-kFreq : 0; i<ni; i++)); do
 		[[ -z "${role[${items[i]}]:-}" ]] && role["${items[i]}"]="frequent"
 	done
+	[[ "${role[${items[ni-1]}]:-}" == "first" ]] || role["${items[ni-1]}"]="latest"
 
 	## Prune the unrole'd; rename the kept to canonical (no-op if already canonical).
 	local rest r want
@@ -141,4 +163,5 @@ declare -i isSourced_t6wq5=0; [[ "${BASH_SOURCE[0]}" == "${0}" ]] || isSourced_t
 
 
 ##	History:
-##		- 2026-06-05 JC: Created.
+##		- 2026-06-05: Created.
+##		- 2026-07-25: Harmonized every copy of this file to one identical file.

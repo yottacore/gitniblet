@@ -14,6 +14,11 @@
 ##		gui-headless.bash uses. All content is fake (demo user, /tmp paths) so no
 ##		real name, path, or data ends up in a committed image.
 
+##	Copyright © 2026 Bubbles (ID: XଌฅრX۳ᛟԃლፀƅꓩหδლც)
+##	Licensed under The MIT License (MIT). Full text at:
+##		https://mit-license.org/
+##	SPDX-License-Identifier: MIT
+
 set -Eeuo pipefail
 
 dirPath_Self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -50,7 +55,7 @@ fSetup() {
 	mkdir -p "$demo"/{cfg,empty,databases/team-issues,databases/reading-list,databases/recipes}
 	export NANOGITDB_USER=demo NANOGITDB_HOST=workstation
 
-	cat > "$demo/databases/team-issues/issues.ddl" <<'DDL'
+	cat > "$demo/databases/team-issues/issues.shcl" <<'DDL'
 database:
 	tables:
 		table: task
@@ -66,7 +71,7 @@ database:
 				field: opened
 					type: datetime_local
 				field: parent_task
-					type: string
+					type: ref
 			features:
 				comments: yes
 				audit_trail: yes
@@ -90,16 +95,16 @@ ui:
 DDL
 
 	printf 'database:\n\ttables:\n\t\ttable: book\n\t\t\tfields:\n\t\t\t\tfield: title\n\t\t\t\t\ttype: string\n\t\t\t\tfield: author\n\t\t\t\t\ttype: string\n' \
-		> "$demo/databases/reading-list/books.ddl"
+		> "$demo/databases/reading-list/books.shcl"
 	printf 'database:\n\ttables:\n\t\ttable: recipe\n\t\t\tfields:\n\t\t\t\tfield: name\n\t\t\t\t\ttype: string\n\t\t\t\tfield: cuisine\n\t\t\t\t\ttype: string\n' \
-		> "$demo/databases/recipes/recipes.ddl"
+		> "$demo/databases/recipes/recipes.shcl"
 
 	local d
 	for d in team-issues reading-list recipes; do
 		( cd "$demo/databases/$d" && "$exe" --config "$demo/cfg" --init . >/dev/null 2>&1 )
 	done
 
-	local ddl="$demo/databases/team-issues/issues.ddl"
+	local ddl="$demo/databases/team-issues/issues.shcl"
 	local sql="$demo/cfg/issues/issues.sqlite"
 	local log="$demo/databases/team-issues"
 	local rel a b
@@ -176,7 +181,7 @@ fMain() {
 
 	fEcho "Capture (1920x1080)"
 	mkdir -p "$dirLarge" "$dirSmall"
-	local ddl="$demo/databases/team-issues/issues.ddl"
+	local ddl="$demo/databases/team-issues/issues.shcl"
 	local sql="$demo/cfg/issues/issues.sqlite"
 	local log="$demo/databases/team-issues"
 	fShot 1-picker.png "$demo/empty" --config "$demo/cfg" --tui -- Down
@@ -200,5 +205,5 @@ fMain "$@"
 
 
 ##	Script history:
-##		- 20260704 JC: Created.
-##		- 20260704 JC: Moved to github/utility/; headless helper still in cicd/utility/. Run from cicd under a non-quick build.
+##		- 20260704: Created.
+##		- 20260704: Moved to github/utility/; headless helper still in cicd/utility/. Run from cicd under a non-quick build.

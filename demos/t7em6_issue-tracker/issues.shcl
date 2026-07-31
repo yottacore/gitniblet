@@ -22,13 +22,13 @@ database:
 					type: string
 				field: opened
 					type: datetime_local
-				field: parent_issue  ## hex id of a parent issue (epic/subtask), empty = top level
-					type: string
+				field: parent_issue  ## a parent issue (epic/subtask), empty = top level
+					type: ref
 			uniques:
-				ref
+				unique: ref
 			indexes:
-				status
-				assignee
+				index: status
+				index: assignee
 			features:
 				comments: yes
 				audit_trail: yes
@@ -45,7 +45,7 @@ database:
 				field: active
 					type: bool
 			uniques:
-				screen_name
+				unique: screen_name
 
 		table: component
 			fields:
@@ -54,7 +54,7 @@ database:
 				field: lead
 					type: string
 			uniques:
-				name
+				unique: name
 
 ui:
 	views:

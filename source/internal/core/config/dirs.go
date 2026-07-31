@@ -5,7 +5,7 @@
 // under a user (and optional system) config directory, plus the discovery that
 // startup uses to offer a "which database?" picker when no DDL was named.
 //
-// A registered database is a directory <base>/ngdb/<name>/ holding config.toml.
+// A registered database is a directory <base>/ngdb/<name>/ holding config.shcl.
 // The DDL, tx-log and attachments are the git-synced artifacts the record
 // points at; the SQLite view and encryption key are local, unsynced files that
 // default to living beside the record (both are rebuildable / re-fetchable).

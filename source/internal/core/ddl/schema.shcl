@@ -1,0 +1,284 @@
+# The DDL's own vocabulary, as an SHCL schema. shcl's validator checks a DDL
+# against this, so every "unknown key" and "value outside its allowed set"
+# diagnostic arrives with a line number without this package parsing anything.
+#
+# A schema path legalizes its own name chain and every prefix, so wrapper
+# sections (database:, tables:, fields:) need no entries of their own.
+#
+# Two shapes are not expressible here and are handled in Go instead:
+#   - layout blocks nest recursively; blockDepth in schema.go appends those
+#     paths to a fixed depth.
+#   - seed rows name a table by discriminator, not by field name, for exactly
+#     this reason (an arbitrary field name could never be validated).
+
+# -- application-level script hooks --
+
+field: code.before_open
+	type: string
+	desc: Runs before any UI appears; returning false cancels the open.
+field: code.after_open
+	type: string
+field: code.before_sync
+	type: string
+field: code.after_sync
+	type: string
+field: code.before_viewchange
+	type: string
+field: code.after_viewchange
+	type: string
+field: code.before_close
+	type: string
+field: code.after_close
+	type: string
+
+# The pre-2026-07 spelling of code:, still accepted.
+field: methods.before_open
+	type: string
+field: methods.after_open
+	type: string
+field: methods.before_sync
+	type: string
+field: methods.after_sync
+	type: string
+field: methods.before_viewchange
+	type: string
+field: methods.after_viewchange
+	type: string
+field: methods.before_close
+	type: string
+field: methods.after_close
+	type: string
+
+# -- tunables --
+
+field: tunables.git_sync_frequency
+	type: int
+	min: 0
+	desc: Seconds between automatic git syncs; 0 turns syncing off.
+field: tunables.gc_age_days
+	type: int
+	min: 0
+	desc: Age past which a deleted row may be collected from the log.
+
+# -- database level --
+
+field: database.encryption
+	type: string
+	allowed: always, never, auto
+	desc: Locks encryption for every table and field below unless auto.
+
+# -- tables --
+
+field: "database.tables.table[*]"
+	type: string
+	repeat: 0, 4096
+	desc: One table. Its value is the table name.
+field: "database.tables.table[*].aliases"
+	type: string-array
+	desc: Former names, so a renamed table still replays from the log.
+field: "database.tables.table[*].system_fields"
+	type: bool
+	desc: Set no to drop the auto-added is_active/date_created/is_deleted.
+field: "database.tables.table[*].encryption"
+	type: string
+	allowed: always, never, auto
+
+field: "database.tables.table[*].access.read.whitelist"
+	type: string-array
+field: "database.tables.table[*].access.read.blacklist"
+	type: string-array
+field: "database.tables.table[*].access.read.blaclist"
+	type: string-array
+	desc: Misspelling the original example DDL carried; still read.
+field: "database.tables.table[*].access.write.whitelist"
+	type: string-array
+field: "database.tables.table[*].access.write.blacklist"
+	type: string-array
+field: "database.tables.table[*].access.delete.whitelist"
+	type: string-array
+field: "database.tables.table[*].access.delete.blacklist"
+	type: string-array
+
+field: "database.tables.table[*].code.before_update"
+	type: string
+field: "database.tables.table[*].code.after_update"
+	type: string
+field: "database.tables.table[*].methods.before_update"
+	type: string
+field: "database.tables.table[*].methods.after_update"
+	type: string
+
+field: "database.tables.table[*].uniques.unique[*]"
+	type: string-array
+	desc: One unique group, as a comma list of field names. Also indexed.
+field: "database.tables.table[*].indexes.index[*]"
+	type: string-array
+	desc: One index, as a comma list of field names.
+
+field: "database.tables.table[*].features.local_attachments"
+	type: bool
+field: "database.tables.table[*].features.uri_attachments"
+	type: bool
+field: "database.tables.table[*].features.comments"
+	type: bool
+field: "database.tables.table[*].features.audit_trail"
+	type: bool
+field: "database.tables.table[*].features.row_level_access"
+	type: bool
+
+# -- fields --
+
+field: "database.tables.table[*].fields.field[*]"
+	type: string
+	repeat: 0, 4096
+	desc: One column. Its value is the field name.
+field: "database.tables.table[*].fields.field[*].aliases"
+	type: string-array
+field: "database.tables.table[*].fields.field[*].type"
+	type: string
+	allowed: string, int, float, bool, datetime, datetime_local, datetime_utc, binary, ref
+	desc: Column type. ref holds another row's id as raw bytes.
+field: "database.tables.table[*].fields.field[*].encryption"
+	type: string
+	allowed: always, never, auto
+field: "database.tables.table[*].fields.field[*].special"
+	type: string
+	desc: Percent or currency handling for display and storage.
+field: "database.tables.table[*].fields.field[*].is_active"
+	type: bool
+field: "database.tables.table[*].fields.field[*].defaultval"
+	desc: A literal, the sentinel @null or @previous, or a fFunction() name.
+field: "database.tables.table[*].fields.field[*].null_ok"
+	type: bool
+field: "database.tables.table[*].fields.field[*].empty_ok"
+	type: bool
+
+field: "database.tables.table[*].fields.field[*].access.read.whitelist"
+	type: string-array
+field: "database.tables.table[*].fields.field[*].access.read.blacklist"
+	type: string-array
+field: "database.tables.table[*].fields.field[*].access.write.whitelist"
+	type: string-array
+field: "database.tables.table[*].fields.field[*].access.write.blacklist"
+	type: string-array
+
+field: "database.tables.table[*].fields.field[*].validation.null_ok"
+	type: bool
+field: "database.tables.table[*].fields.field[*].validation.empty_ok"
+	type: bool
+field: "database.tables.table[*].fields.field[*].validation.required"
+	type: bool
+field: "database.tables.table[*].fields.field[*].validation.minlen"
+	type: int
+	min: 0
+field: "database.tables.table[*].fields.field[*].validation.maxlen"
+	type: int
+	min: 0
+field: "database.tables.table[*].fields.field[*].validation.minval"
+	type: float
+field: "database.tables.table[*].fields.field[*].validation.maxval"
+	type: float
+field: "database.tables.table[*].fields.field[*].validation.regex"
+	desc: Untyped: a regex is read verbatim, so commas stay content.
+field: "database.tables.table[*].fields.field[*].validation.method"
+	type: string
+field: "database.tables.table[*].fields.field[*].validation.defaultval"
+
+field: "database.tables.table[*].fields.field[*].code.before_update"
+	type: string
+field: "database.tables.table[*].fields.field[*].code.after_update"
+	type: string
+field: "database.tables.table[*].fields.field[*].methods.before_update"
+	type: string
+field: "database.tables.table[*].fields.field[*].methods.after_update"
+	type: string
+
+field: "database.tables.table[*].fields.field[*].ui.visible_form"
+	type: bool
+field: "database.tables.table[*].fields.field[*].ui.visible_list"
+	type: bool
+field: "database.tables.table[*].fields.field[*].ui.label"
+	type: string
+field: "database.tables.table[*].fields.field[*].ui.title"
+	type: string
+	desc: Earlier spelling of label.
+field: "database.tables.table[*].fields.field[*].ui.description"
+	type: string
+field: "database.tables.table[*].fields.field[*].ui.order"
+	type: float
+	desc: Display and tab order.
+field: "database.tables.table[*].fields.field[*].ui.readonly"
+	type: bool
+field: "database.tables.table[*].fields.field[*].ui.width"
+	type: int
+	min: 0
+field: "database.tables.table[*].fields.field[*].ui.widget"
+	type: string
+	allowed: listbox, editbox, radio, checkbox, image, audio
+field: "database.tables.table[*].fields.field[*].ui.format"
+	type: string
+field: "database.tables.table[*].fields.field[*].ui.list_type"
+	type: string
+	allowed: literal, sql, lookup
+field: "database.tables.table[*].fields.field[*].ui.list_source"
+	desc: Untyped: holds literals, a SQL block, or a lookups idx.
+field: "database.tables.table[*].fields.field[*].ui.lookup_in_lists"
+	type: string
+	allowed: symbol, title, both
+field: "database.tables.table[*].fields.field[*].ui.lookup_in_forms"
+	type: string
+	allowed: symbol, title, both
+
+# -- relationships --
+
+field: "database.relationships.relationship[*]"
+	desc: One relationship. Auto-named, so its own value is unused.
+field: "database.relationships.relationship[*].type"
+	type: string
+	allowed: 1:m, m:m
+field: "database.relationships.relationship[*].parent"
+	type: string
+field: "database.relationships.relationship[*].child"
+	type: string
+field: "database.relationships.relationship[*].parent_id_field"
+	type: string
+	desc: The child field holding the parent id; it gets indexed.
+field: "database.relationships.relationship[*].cascade_delete"
+	type: bool
+field: "database.relationships.relationship[*].enable_audit_trail"
+	type: bool
+
+# -- seed rows --
+# A seeded table is an instance, not a field name, so an arbitrary table name
+# stays validatable. Rows apply log-first at open when absent and never
+# overwrite: a later runtime edit wins for good.
+
+field: "database.seed.table[*]"
+	type: string
+	desc: One seeded table. Its value is the table name.
+field: "database.seed.table[*].row[*]"
+	type: string-array
+	desc: One row, as a comma list of field=value pairs.
+
+# -- views --
+
+field: ui.default_view
+	type: string
+	desc: View opened at startup; empty means the first view defined.
+field: "ui.views.view[*]"
+	type: string
+	desc: One view. Its value is the view name.
+field: "ui.views.view[*].aliases"
+	type: string-array
+field: "ui.views.view[*].startup_named_query"
+	type: string
+	desc: Named query whose dataset loads when the view opens.
+field: "ui.views.view[*].default_named_query"
+	type: string
+	desc: Pre-rename spelling of startup_named_query.
+field: "ui.views.view[*].readonly"
+	type: bool
+field: "ui.views.view[*].access.whitelist"
+	type: string-array
+field: "ui.views.view[*].access.blacklist"
+	type: string-array

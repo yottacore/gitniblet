@@ -1,7 +1,8 @@
-# Release on merge to main. The source var app.Version is authoritative. This
-# GUARDS that the version was incremented (fails the run otherwise), that the
-# README version badge agrees with it, then tags v<Version> and hands off to
-# goreleaser to cross-build, archive, and publish the Release with checksums.
+# Release on merge to main. The source var app.Version is authoritative. An
+# already-released version stops the run cleanly (nothing to publish), a version
+# that went backwards fails it, and the README version badge must agree. Past the
+# guard it tags v<Version> and hands off to goreleaser to cross-build, archive,
+# and publish the Release with checksums.
 name: Release
 
 on:
@@ -15,10 +16,10 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.26.5'
           cache-dependency-path: source/go.sum
@@ -28,16 +29,23 @@ jobs:
           version=$(grep -oP 'Version = "\K[^"]+' source/app/app.go | head -1)
           [ -n "$version" ] || { echo "::error::could not read Version from source/app/app.go"; exit 1; }
           tag="v${version}"
-          # Increment guard: the version must not already be released, and must be
-          # strictly greater than the latest release tag. A merge to main without a
-          # bump fails here rather than silently doing nothing.
+          # Increment guard. Landing on main without a bump is a legitimate no-op
+          # (a doc fix or hotfix that ships nothing), so an already-released
+          # version stops the run cleanly instead of failing it. A version that
+          # went backwards is a real mistake and still fails below.
           if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
-            echo "::error::Version ${version} already released (tag ${tag}). Bump app.Version before merging to main."
-            exit 1
+            echo "::notice::Version ${version} is already released (tag ${tag}); nothing to publish."
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-          latest=$(git tag --list 'v*' --sort=-v:refname | head -1)
+          # Ordering note: semver puts a prerelease BELOW its release (1.0.0-rc.1
+          # < 1.0.0), but neither `sort -V` nor git's version sort does that on
+          # its own - both rank the longer 1.0.0-rc.1 higher. GNU sort does honour
+          # the Debian "~ sorts before everything" rule, so map the prerelease
+          # dash to ~ for every comparison and map it back afterwards.
+          latest=$(git tag --list 'v*' | sed 's/-/~/' | sort -V | tail -1 | sed 's/~/-/')
           if [ -n "$latest" ]; then
-            top=$(printf '%s\n%s\n' "$latest" "$tag" | sort -V | tail -1)
+            top=$(printf '%s\n%s\n' "$latest" "$tag" | sed 's/-/~/' | sort -V | tail -1 | sed 's/~/-/')
             if [ "$top" != "$tag" ]; then
               echo "::error::Version ${version} is not greater than the latest release ${latest}. Bump app.Version."
               exit 1
@@ -53,13 +61,15 @@ jobs:
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
       - name: Tag
+        if: steps.v.outputs.skip != '1'
         run: |
           git config user.name "nano-git-db"
           git config user.email "release@nano-git-db.local"
           git tag -a "v${{ steps.v.outputs.version }}" -m "v${{ steps.v.outputs.version }}"
           git push origin "v${{ steps.v.outputs.version }}"
       - name: goreleaser
-        uses: goreleaser/goreleaser-action@v6
+        if: steps.v.outputs.skip != '1'
+        uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
           args: release --clean
@@ -69,6 +79,7 @@ jobs:
       # just cross-compiled into dist/ (NSIS runs on Linux, no wine), then attached
       # to the release goreleaser created.
       - name: Windows installers
+        if: steps.v.outputs.skip != '1'
         run: |
           sudo apt-get update && sudo apt-get install -y nsis
           bash cicd/utility/windows-installer.bash "${{ steps.v.outputs.version }}"

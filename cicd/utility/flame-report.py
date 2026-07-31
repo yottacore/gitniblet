@@ -9,7 +9,7 @@
 ##		startup so a look is a no-op until there is something new to read).
 ##	History: At bottom of script.
 
-##	Copyright © 2026 Jim Collier (ID: 1cv◂‡Vᛦ)
+##	Copyright © 2026 Bubbles (ID: XଌฅრX۳ᛟԃლፀƅꓩหδლც)
 ##	Licensed under The MIT License (MIT). Full text at:
 ##		https://mit-license.org/
 ##	SPDX-License-Identifier: MIT
@@ -206,4 +206,4 @@ if __name__ == "__main__":
 
 
 ##	History:
-##		- 20260709 JC: Created (adapted from the SilkTerm flame-report for Go subsystems).
+##		- 20260709: Created (adapted from the SilkTerm flame-report for Go subsystems).

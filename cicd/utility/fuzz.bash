@@ -11,7 +11,7 @@
 ##	Exit: 0 all clean, 1 a target found a crash (input saved under its testdata/).
 ##	History: At bottom of script.
 
-##	Copyright © 2026 Jim Collier (ID: 1cv◂‡Vᛦ)
+##	Copyright © 2026 Bubbles (ID: XଌฅრX۳ᛟԃლፀƅꓩหδლც)
 ##	Licensed under The MIT License (MIT). Full text at:
 ##		https://mit-license.org/
 ##	SPDX-License-Identifier: MIT
@@ -67,4 +67,4 @@ echo "fuzz.bash: all targets clean"
 
 
 ##	Script history:
-##		- 20260709 JC: Created.
+##		- 20260709: Created.

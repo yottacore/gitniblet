@@ -20,7 +20,7 @@
 ##	Purpose: CI/CD-friendly test harness that passes or fails.
 ##	History: At bottom of this file. (Note: History for this is maintained outside of [or in addition to] git project.)
 
-##	Copyright © 2026 Jim Collier (ID: 1cv◂‡Vᛦ)
+##	Copyright © 2026 Bubbles (ID: XଌฅრX۳ᛟԃლፀƅꓩหδლც)
 ##	Licensed under The MIT License (MIT). Full text at:
 ##		https://mit-license.org/
 ##	SPDX-License-Identifier: MIT
@@ -404,12 +404,12 @@ fi
 
 
 ##	Script history:
-##		- 20260420 JC: Copied for convert-base-v2.
-##		- 20260421 JC: Added polish.
-##		- 20260423 JC: Added fRunChained_TestLast() to be able to test commands that can't be piped.
-##		- 20260424 JC: Made generic.
-##		- 20260518 JC: Changed calling fMain() to fMain_Test().
-##		- 20260519 JC:
+##		- 20260420: Copied for convert-base-v2.
+##		- 20260421: Added polish.
+##		- 20260423: Added fRunChained_TestLast() to be able to test commands that can't be piped.
+##		- 20260424: Made generic.
+##		- 20260518: Changed calling fMain() to fMain_Test().
+##		- 20260519:
 ##			- Updated fEcho_* to template canonical.
 ##			- Changed license from GPL 2, to MIT.
 ##			- Fixed an egregious regression in fScrambleString() whose fix wasn't pushed upstream, where $inputSymbolList validation was validated literally as `[[ -z "" ]`.

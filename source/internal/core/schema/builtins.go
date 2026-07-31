@@ -47,7 +47,7 @@ tables:
 			field: description
 				type: string
 		uniques:  ## unique-on-live-name is what makes concurrent seeding converge
-			name
+			unique: name
 		features:
 			local_attachments: y
 			uri_attachments: y
@@ -59,29 +59,29 @@ tables:
 				type: string
 			field: table_name_2
 				type: string
-			field: parent_id_1  ## row id (hex) in table_name_1
-				type: string
-			field: parent_id_2  ## row id (hex) in table_name_2
-				type: string
+			field: parent_id_1  ## row id in table_name_1
+				type: ref
+			field: parent_id_2  ## row id in table_name_2
+				type: ref
 		uniques:  ## partial (live rows only), so is_deleted needs no folding in
-			table_name_1, table_name_2, parent_id_1, parent_id_2
+			unique: table_name_1, table_name_2, parent_id_1, parent_id_2
 	table: comments
 		fields:
 			field: table_name
 				type: string
-			field: parent_id  ## row id (hex) in table_name
-				type: string
+			field: parent_id  ## row id in table_name
+				type: ref
 			field: comment
 				type: string
 		indexes:
-			table_name, parent_id
+			index: table_name, parent_id
 	table: audit_trail  ## design: gets ONLY these fields, no system columns
 		system_fields: no
 		fields:
 			field: table_name
 				type: string
-			field: parent_id  ## row id (hex) in table_name
-				type: string
+			field: parent_id  ## row id in table_name
+				type: ref
 			field: user_id
 				type: string
 			field: date  ## stored GMT, displayed local
@@ -91,15 +91,15 @@ tables:
 			field: values  ## old values of only the fields that changed
 				type: string
 		indexes:
-			table_name, parent_id
+			index: table_name, parent_id
 	table: access_rows
 		fields:
 			field: table_name
 				type: string
-			field: parent_id  ## row id (hex) in table_name
-				type: string
+			field: parent_id  ## row id in table_name
+				type: ref
 		indexes:
-			table_name, parent_id
+			index: table_name, parent_id
 	table: attachments_uri
 		fields:
 			field: uri
@@ -118,13 +118,13 @@ tables:
 				type: string
 
 relationships:
-	relationship:  ## implied by design: every user belongs to groups
+	relationship: users_groups  ## implied by design: every user belongs to groups
 		type: m:m
 		parent: users
 		child: groups
 		cascade_delete: y
 		enable_audit_trail: y
-	relationship:  ## implied by design: row grants are held by groups
+	relationship: access_rows_groups  ## implied by design: row grants are held by groups
 		type: m:m
 		parent: access_rows
 		child: groups

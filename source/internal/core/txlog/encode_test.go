@@ -5,7 +5,6 @@ package txlog
 
 import (
 	"database/sql"
-	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,14 +120,15 @@ func TestApplyNullSetsSQLNull(t *testing.T) {
 	if err := st.Build(schema); err != nil {
 		t.Fatal(err)
 	}
+	row := testID("0a0a")
 	entries := []Entry{
-		{Op: "create", Table: "person", RowID: "0a0a", Field: "name", NewValue: "Ann"},
-		{Op: "update", Table: "person", RowID: "0a0a", Field: "name", IsNull: true},
+		{Op: "create", Table: "person", RowID: row, Field: "name", NewValue: "Ann"},
+		{Op: "update", Table: "person", RowID: row, Field: "name", IsNull: true},
 	}
 	if _, err := Apply(st, entries); err != nil {
 		t.Fatal(err)
 	}
-	id, _ := hex.DecodeString("0a0a")
+	id, _ := decodeID(row)
 	var name sql.NullString
 	if err := st.DB().QueryRow(`SELECT "name" FROM "person" WHERE "id"=?`, id).Scan(&name); err != nil {
 		t.Fatal(err)

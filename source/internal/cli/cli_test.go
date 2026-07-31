@@ -73,8 +73,8 @@ func TestCrudVerbsEndToEnd(t *testing.T) {
 	}
 
 	id := strings.TrimSpace(run("create", name, "person", "name=Ann", "nick=A"))
-	if len(id) != 32 {
-		t.Fatalf("create should print a 32-hex id, got %q", id)
+	if len(id) != 22 {
+		t.Fatalf("create should print a 22-char id, got %q", id)
 	}
 
 	got := run("get", name, "person", id)
@@ -118,8 +118,8 @@ func TestCrudSelectorForms(t *testing.T) {
 
 	// fully explicit, flags leading in mixed order; name carries an extension
 	id := strings.TrimSpace(run("create", "--table=person", "--db="+name+".ddl", "name=Bo"))
-	if len(id) != 32 {
-		t.Fatalf("flag-form create should print a 32-hex id, got %q", id)
+	if len(id) != 22 {
+		t.Fatalf("flag-form create should print a 22-char id, got %q", id)
 	}
 	// space-form flags, table before db
 	got := run("get", "-t", "person", "-d", name, id)

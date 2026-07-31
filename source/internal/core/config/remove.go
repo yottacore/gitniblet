@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-// Deregister removes just the registry record (config.toml) so the database no
+// Deregister removes just the registry record (config.shcl) so the database no
 // longer appears in discovery. The tx-log, local sqlite view, key file, and DDL
 // are all left in place; DeleteFiles removes the on-disk footprint when asked.
 func (c *DBConfig) Deregister() error {
@@ -38,7 +38,7 @@ func (c *DBConfig) HasFiles() bool {
 }
 
 // DeleteFiles removes the database's on-disk footprint: the record directory
-// (config.toml, sqlite view, key file) and the tx-log directory. The DDL schema
+// (config.shcl, sqlite view, key file) and the tx-log directory. The DDL schema
 // is deliberately kept - it is the user's authored source, often shared or in a
 // repo. Missing paths are not an error. This implies Deregister, since the
 // record directory goes with it.
