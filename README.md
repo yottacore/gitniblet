@@ -17,7 +17,7 @@
 
 <img src="assets/logo.png" alt="Nano Git DB" width="140"/>
 
-A multi-user database that syncs with `git`. The single source of truth is an append-only text-based transaction log that is conflict-free and consistent by definition. No database server, one static binary.
+A serverless, distributed, multi-user, multi-UI database that syncs with `git`. Ships a CLI, TUI, and web interface in one binary. The single source of truth is an append-only text-based transaction log that is conflict-free and consistent by definition.
 
 <img src="assets/demo.gif" width="90%" alt="Browsing a tree-grid board and editing a record in the terminal UI, then querying and adding the same data from the CLI - where the whole database is just a folder of append-only text."/>
 
@@ -25,7 +25,7 @@ A multi-user database that syncs with `git`. The single source of truth is an ap
 
 </div>
 
-`nano-git-db` is useful for one person even without `git`, on up to a global enterprise team. Use it from the command line, a terminal UI, or a web browser.
+`nano-git-db` is useful for a global enterprise team, or even one person without `git`.
 
 <!-- TOC ignore:true -->
 ## Table of contents
@@ -101,13 +101,19 @@ Plenty of tools each do some of these. None do all of them at once:
 
 `nano-git-db` is open source and complete on its own. A separately licensed enterprise edition adds features some teams need, built into the same single binary.
 
-- At-rest encryption of field values in the synced log. The git host can't read your data, while your local database stays fully queryable. Each database has its own key, kept out of the repo, with a per-field, per-table, or per-database policy set by an `encryption: always|never|auto` DDL key.
+- At-rest post-quantum encryption of field values in the synced log. The git host can't read your data, while your local database stays fully queryable. Each database has its own key, kept out of the repo, with a per-field, per-table, or per-database policy set by an `encryption: always|never|auto` DDL key.
 
 - Lua scripting. Run a script against the database with `--script`, or attach triggers and stored procedures to tables and fields through the DDL's `code:` keys. Scripts reach the data only through the same safe calls the rest of the program uses.
 
-- Coming soon: an authenticator app, passkeys, and optional Google, Microsoft, or LinkedIn sign-in for the web UI. (Basic password sign-in already ships in the open-source build.)
+- Coming soon:
 
-- Coming soon: a REST API for network access.
+	- Guaranteed leak-proof team and organization enforcement, based on (post-quantum) asymmetric encryption.
+
+	- More secure login mechanisms for the web server including 2FA and Passkey authentication, and optional third-party login token support (e.g. Google, Microsoft, etc.). Basic password sign-in already ships in the open-source build.
+
+	- REST API for application integration, custom front-ends, and mobile support.
+
+	- iOS and Android mobile applications.
 
 The open-source build can share and sync an encrypted database, but only the enterprise build can read and write the encrypted fields.
 
