@@ -56,6 +56,21 @@ func (c cursor) instance(rel string, i int) cursor {
 // optional section (`access:`, `features:`) is told from an absent one.
 func (c cursor) exists(rel string) bool { return c.doc.Exists(c.at(rel)) }
 
+// line is the source line a path was written on, 0 when it resolves to nothing
+// or to more than one node. It lets a warning about the relationship between
+// lines still point at one of them.
+func (c cursor) line(rel ...string) int {
+	if len(rel) == 0 {
+		return c.doc.Line(c.path)
+	}
+	return c.doc.Line(c.at(rel[0]))
+}
+
+// children lists a section's child names in file order, for the sections whose
+// keys are open rather than a closed vocabulary. Names come back as written, so
+// splice one into a path with shcl.QuoteSegment.
+func (c cursor) children(rel string) []string { return c.doc.Children(c.at(rel)) }
+
 // single resolves a scalar path that may have collected more than one instance,
 // which happens when a DDL restates the same key at the same level. The DDL's
 // rule is that the first value wins; SHCL reports the ambiguity as Multiple and
@@ -156,9 +171,11 @@ func (c cursor) boolOr(rel string, def bool) bool {
 	return def
 }
 
-// codeMap collects a `code:` section's function names. Every child leaf is a
-// hook name; empty ones are placeholders the example DDL is full of, so they
-// are skipped rather than recorded as an empty hook.
+// codeMap collects a `code:` section's hooks by reading the section itself, so
+// the hook a DDL actually wrote is the hook that gets recorded - schema
+// validation is what rejects a name that is not a real hook, and it does that
+// with a line number. Empty entries are placeholders the example DDL is full
+// of, so they are skipped rather than recorded as an empty hook.
 func (c cursor) codeMap(rel string) map[string]string {
 	out := map[string]string{}
 	if !c.exists(rel) {
@@ -168,21 +185,13 @@ func (c cursor) codeMap(rel string) map[string]string {
 		}
 	}
 	section := c.child(rel)
-	for _, name := range hookNames {
-		if fn := section.str(name); fn != "" {
+	for _, name := range section.children("") {
+		if _, dup := out[name]; dup {
+			continue // first wins, like every other merge
+		}
+		if fn := section.str(shcl.QuoteSegment(name)); fn != "" {
 			out[name] = fn
 		}
 	}
 	return out
-}
-
-// hookNames is the closed set of script hooks the DDL recognizes, app-level and
-// per-table/field. A path-based API cannot enumerate a section's children, so
-// the names are listed; an unknown one is caught by schema validation instead.
-var hookNames = []string{
-	"before_open", "after_open",
-	"before_sync", "after_sync",
-	"before_viewchange", "after_viewchange",
-	"before_close", "after_close",
-	"before_update", "after_update",
 }

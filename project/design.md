@@ -148,11 +148,13 @@ The language decision, and what it bought:
 
 - Its Go binding is a single dependency-free pure-Go file, so `CGO_ENABLED=0` and the one-static-binary rule are untouched (the reference implementation being Rust is irrelevant to us - we never link it).
 
-- Schema *validation* came along with it. The DDL's own key vocabulary now lives in `ddl/schema.shcl`, embedded in the binary, and SHCL checks a loaded file against it. That is what puts line numbers back on messages: the parse tree is reached only through paths, with no per-node line accessor, so an unknown key or an out-of-range value can only be reported with a line by the validator. Checks the schema file cannot express - a `unique:` naming a field that does not exist, an entity defined twice - stay in Go and name the entity instead.
+- Schema *validation* came along with it. The DDL's own key vocabulary now lives in `ddl/schema.shcl`, embedded in the binary, and SHCL checks a loaded file against it - so an unknown key or an out-of-range value is reported with its line without this codebase parsing anything. Checks the schema file cannot express - a `unique:` naming a field that does not exist, a field defined twice - stay in Go, and cite the offending entity's own line.
+
+- The vocabulary file is the whole vocabulary, because two shapes it once could not state are *fragments*: a named, reusable shape mounted at a path. Layout blocks nest without limit by mounting a shape inside itself, rather than being generated out to a fixed depth and silently unvalidated past it. And a section that may sit under the `database:`/`ui:` wrapper or at the top level is one shape mounted at both paths, instead of a second generated copy of every path beneath it.
 
 Consequences of SHCL's data model, which are load-bearing here:
 
-- **Merging is the core rule.** Nodes merge when (field-name, value) match, so restating `database:` or `tables:` re-opens that section instead of creating a second one. The old parser had a section-merging pass of its own for exactly that readability win; this comes free. It extends further, though: restating an *entity* merges it too, so two `table: t` sections are one table. A duplicate is therefore invisible to the mapper, and there is no longer an "already defined, first wins" warning to give.
+- **Merging is the core rule.** Nodes merge when (field-name, value) match, so restating `database:` or `tables:` re-opens that section instead of creating a second one. The old parser had a section-merging pass of its own for exactly that readability win; this comes free. It extends further, though: restating an *entity* merges it too, so two `table: t` sections are one table. The mapper cannot see that - by the time it walks the document the two are one node - so the report comes from shcl itself, which flags any binding that combines with a non-adjacent earlier one and cites both lines. That report is deliberately passed through unfiltered even for the wrapper sections a schema is meant to re-open: when a wrapper and an entity inside it both merge, only the outermost is reported, so filtering the wrappers would take the entity case with it. The shipped `example.shcl` opens each section once so it stays quiet, which is the layout worth copying.
 
 - **Empty values merge too**, so unnamed instances collapse into one. Relationships must be named for that reason; the name is otherwise just a label.
 
@@ -164,7 +166,7 @@ Consequences of SHCL's data model, which are load-bearing here:
 
 - **Wrapper levels** `database:` (over `tables:`/`relationships:`) and `ui:` (over `views:`, plus `default_view`) are transparent; flat schemas without them still parse. Same for `methods:`, renamed to `code:` - both keys are read.
 
-- **Values containing commas need the verbatim read.** An unquoted comma splits a value into a list, and quoting is not an escape (a read strips outer quotes). SQL and regexes therefore go in a raw block or single-line backticks; sentinels like `@null` are reserved words in default position with no quoted spelling.
+- **Values containing commas need the verbatim read.** An unquoted comma splits a value into a list, so SQL and regexes go in a raw block or single-line backticks, which come back exactly as authored. Quoting distinguishes a sentinel from its own text: `@null` is the sentinel, `"@null"` is the five characters.
 
 Also:
 
@@ -290,7 +292,7 @@ The `--init`, `--config`, and `--encrypt` CLI flags drive the same registry from
 	- `visible` splits into `visible_form` and `visible_list`. Presentation only, never access control - a hidden field stays fully readable via CLI/query/SQL; the `access:` lists are the only thing that gates data.
 	- `title` becomes `label`; `list_type` values are `literal|sql|lookup` (`sql` replaces `dynamic`); `lookup` wires a field to the built-in lookup tables (see Lookups).
 	- A DDL field entry naming a system field (`id`, `is_active`, `date_created`) merges its `ui:` block onto it instead of being dropped. Presentation-only merge: `type:`, `validation:`, `defaultval:` on a system field warn and are ignored - system fields stay structurally immutable, presentationally customizable.
-	- `defaultval` takes three forms: a static value, a sentinel from a closed set (`@null`, `@previous`), or a script function `"fFunc()"`. The `@` marker was chosen over brackets because `[` `]` are reserved value characters in shcl. `@previous` (value from the previously entered row, this session) applies in interactive front-ends only - programmatic writes never inherit a sticky session value; an omitted field is null or a required-field error.
+	- `defaultval` takes three forms: a static value, a sentinel from a closed set (`@null`, `@previous`), or a script function `"fFunc()"`. The `@` marker was chosen over brackets because `[` `]` are reserved value characters in shcl. Quoting escapes a sentinel, so `"@null"` is the literal text. `@previous` (value from the previously entered row, this session) applies in interactive front-ends only - programmatic writes never inherit a sticky session value; an omitted field is null or a required-field error.
 
 ### Predefined queries
 
