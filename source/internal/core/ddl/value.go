@@ -37,9 +37,10 @@ const (
 // IsSentinel reports whether a default is one of the reserved sentinels. Both
 // mean "the app computes this", so neither is ever emitted as a SQL default.
 //
-// There is no quoted escape: SHCL strips a value's outer quotes on read, so
-// "@null" and @null are indistinguishable by the time this sees them. The two
-// sentinel spellings are therefore reserved words in default position.
+// Quoting escapes them: a default arrives here as its source text, so `@null`
+// is the sentinel and `"@null"` is the four-character string, which falls
+// through to the ordinary literal path and has its quotes stripped there. Do
+// not unquote before this test, or the escape closes.
 func IsSentinel(s string) bool {
 	switch strings.TrimSpace(s) {
 	case SentinelNull, SentinelPrevious:

@@ -483,4 +483,107 @@ func TestSentinelDefaults(t *testing.T) {
 			t.Errorf("%q should be an ordinary default", literal)
 		}
 	}
+	// Quoting escapes a sentinel, which is what the DDL has always documented.
+	for _, quoted := range []string{`"@null"`, `'@null'`, `"@previous"`} {
+		if IsSentinel(quoted) || IsNull(quoted) {
+			t.Errorf("%s is a quoted literal, not a sentinel", quoted)
+		}
+	}
+}
+
+// The escape only works if a default reaches IsSentinel as its source text, so
+// this walks the real path: parse a DDL, and check what each spelling became.
+func TestQuotedSentinelSurvivesParse(t *testing.T) {
+	src := "tables:\n\ttable: t\n\t\tfields:\n" +
+		"\t\t\tfield: bare\n\t\t\t\ttype: string\n\t\t\t\tdefaultval: @null\n" +
+		"\t\t\tfield: quoted\n\t\t\t\ttype: string\n\t\t\t\tdefaultval: \"@null\"\n" +
+		"\t\t\tfield: plain\n\t\t\t\ttype: string\n\t\t\t\tdefaultval: general\n"
+	s, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{"bare": true, "quoted": false, "plain": false}
+	table := s.Tables[0]
+	for _, f := range table.Fields {
+		got := IsSentinel(f.Default)
+		if got != want[f.Name] {
+			t.Errorf("field %s: default %q sentinel=%v, want %v", f.Name, f.Default, got, want[f.Name])
+		}
+	}
+	// The quoted one has to end up as the literal four characters, not with its
+	// quotes baked into the value.
+	for _, f := range table.Fields {
+		if f.Name != "quoted" {
+			continue
+		}
+		if unquoted, was := Unquote(f.Default); !was || unquoted != "@null" {
+			t.Errorf("quoted default %q should unquote to @null", f.Default)
+		}
+	}
+}
+
+// shcl hints on a repeated bare leaf ("did you mean an array?"). For the keys
+// whose whole design is to recur, the schema declares a repeat bound and shcl's
+// own filter drops the hint - so a correct DDL stays quiet and the hint keeps
+// working where a repeat really is the mistake.
+func TestDeclaredRepeatsStaySilent(t *testing.T) {
+	quiet := "tables:\n\ttable: t\n\t\tfields:\n\t\t\tfield: a\n\t\t\t\ttype: string\n" +
+		"\t\t\tfield: b\n\t\t\t\ttype: string\n" +
+		"\t\tuniques:\n\t\t\tunique: a\n\t\t\tunique: b\n" +
+		"\t\tindexes:\n\t\t\tindex: a\n\t\t\tindex: b\n"
+	s, _ := Parse([]byte(quiet))
+	for _, w := range s.Warnings {
+		t.Errorf("repeated unique/index should not warn: %s", w)
+	}
+
+	// aliases is not declared repeating, so doubling it is still flagged.
+	noisy := "tables:\n\ttable: t\n\t\taliases: old1\n\t\taliases: old2\n"
+	s, _ = Parse([]byte(noisy))
+	if len(s.Warnings) == 0 {
+		t.Error("a repeated aliases: should still be hinted")
+	}
+}
+
+// Restating a section combines it with the earlier one. That is legal and often
+// what was meant, but it is also how two tables of the same name silently become
+// one, so it has to be reported either way - the whole point of the hint.
+func TestSectionMergeIsReported(t *testing.T) {
+	// Same table named twice under one section: the entity itself is named.
+	sameSection := "tables:\n\ttable: dup\n\t\tfields:\n\t\t\tfield: a\n\t\t\t\ttype: string\n" +
+		"\ttable: other\n\ttable: dup\n"
+	s, _ := Parse([]byte(sameSection))
+	if !hasWarning(s, "merged with 'table'") {
+		t.Errorf("a restated table should be reported, got %v", s.Warnings)
+	}
+
+	// Across two sections shcl reports the outer wrapper only, and the table
+	// underneath merges silently - which is exactly why the wrapper report is
+	// kept rather than filtered as noise.
+	across := "tables:\n\ttable: dup\n\t\tfields:\n\t\t\tfield: a\n\t\t\t\ttype: string\n" +
+		"\ntunables:\n\tgc_age_days: 30\n" +
+		"\ntables:\n\ttable: dup\n\t\tfields:\n\t\t\tfield: b\n\t\t\t\ttype: string\n"
+	s, _ = Parse([]byte(across))
+	if len(s.Tables) != 1 {
+		t.Fatalf("the two dup tables should have merged into one, got %d", len(s.Tables))
+	}
+	if !hasWarning(s, "merged with 'tables'") {
+		t.Errorf("the merge should be reported, got %v", s.Warnings)
+	}
+
+	// A schema written in one pass says nothing, which is what the shipped
+	// example and the built-in schema rely on.
+	clean := "tables:\n\ttable: a\n\t\tfields:\n\t\t\tfield: x\n\t\t\t\ttype: string\n\ttable: b\n"
+	s, _ = Parse([]byte(clean))
+	for _, w := range s.Warnings {
+		t.Errorf("a single-pass schema should be quiet: %s", w)
+	}
+}
+
+func hasWarning(s *Schema, substr string) bool {
+	for _, w := range s.Warnings {
+		if strings.Contains(w, substr) {
+			return true
+		}
+	}
+	return false
 }
