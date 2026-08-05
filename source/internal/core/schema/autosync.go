@@ -37,7 +37,11 @@ func (c *Client) StartAutoSync(freq int, onWarn func(string)) func() {
 			return err
 		}
 		ApplyAliases(entries, c.Schema, builtins)
-		applyWarns, err := txlog.Apply(c.Store, entries)
+		// Through the API, not txlog.Apply: a pull rebuilds the whole view, and
+		// doing that on the sync goroutine could land between a write's log
+		// append and its own apply - the interleaving the write lock exists to
+		// prevent.
+		applyWarns, err := c.API.Replay(entries)
 		for _, warn := range append(readWarns, applyWarns...) {
 			onWarn(warn)
 		}

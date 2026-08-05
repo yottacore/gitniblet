@@ -57,6 +57,25 @@ var symChar = func() map[string]rune {
 	return m
 }()
 
+// Clean drops the characters the log cannot carry, so a caller can hold the
+// same text the log will. Everything else about a value survives the round
+// trip, so this is the whole difference between what is written and what comes
+// back; a writer that skips it puts one value in the view and a different one
+// in the log, and the two only disagree once the view is rebuilt.
+func Clean(s string) string {
+	if !strings.ContainsFunc(s, isIllegal) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if !isIllegal(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // encodeSym renders a field value for the log file. Control characters other
 // than newline/return/tab carry no data worth logging and are scrubbed.
 func encodeSym(s string) string {
