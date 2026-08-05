@@ -17,7 +17,9 @@
 
 <img src="assets/logo.png" alt="Nano Git DB" width="140"/>
 
-A serverless, distributed, multi-user, multi-UI database that syncs with `git`. Ships a CLI, TUI, and web interface in one binary. The single source of truth is an append-only text-based transaction log that is conflict-free and consistent by definition.
+A multi-user database you sync with `git`. No server, no SQL, and one static binary that gives you a command line, a terminal UI, and a local web UI.
+
+The database itself is a folder of append-only text. When two people edit at once, git merges it the way it merges any text file - and because each write is its own line, that merge happens field by field instead of clobbering a record.
 
 <img src="assets/demo.gif" width="90%" alt="Browsing a tree-grid board and editing a record in the terminal UI, then querying and adding the same data from the CLI - where the whole database is just a folder of append-only text."/>
 
@@ -25,7 +27,7 @@ A serverless, distributed, multi-user, multi-UI database that syncs with `git`. 
 
 </div>
 
-`nano-git-db` is useful for a global enterprise team, or even one person without `git`.
+It scales down to one person with no remote at all, and up to a team spread across the world.
 
 <!-- TOC ignore:true -->
 ## Table of contents
@@ -37,12 +39,15 @@ A serverless, distributed, multi-user, multi-UI database that syncs with `git`. 
 - [Enterprise edition](#enterprise-edition)
 - [What a database is, on disk](#what-a-database-is-on-disk)
 - [Example use cases](#example-use-cases)
-- [Installing](#installing)
-- [Building from source](#building-from-source)
+- [Installation](#installation)
+	- [Packages and installers](#packages-and-installers)
+	- [Install script](#install-script)
+	- [Do it yourself](#do-it-yourself)
 - [Quick start](#quick-start)
 	- [A minimal schema](#a-minimal-schema)
 	- [A minimal to-do database](#a-minimal-to-do-database)
 	- [Basic CLI](#basic-cli)
+- [Set up a development environment](#set-up-a-development-environment)
 - [Full syntax reference](#full-syntax-reference)
 - [Support nano-git-db](#support-nano-git-db)
 - [Copyright and license](#copyright-and-license)
@@ -75,7 +80,7 @@ Plenty of tools each do some of these. None do all of them at once:
 	- a full CRUD command line,
 	- a terminal UI that works fine over SSH, with built-in light and dark themes,
 	- a self-hosted web UI, local-only or shared to your network with password sign-in.
-- Schema defined in a plain text file - a friendly YAML-style DDL, no SQL to write.
+- Schema defined in a plain text file - indent-nested `key: value` lines, no SQL to write.
 
 - Change the schema anytime. Old and new records stay compatible both ways, so there's never a migration.
 
@@ -89,13 +94,13 @@ Plenty of tools each do some of these. None do all of them at once:
 
 - Users and groups, with permissions down to the table, field, and row.
 
-- Old deleted records are cleaned out of the log automatically, so it doesn't grow forever.
+- A `gc` pass drops the log entries of long-deleted records, so the history doesn't grow forever.
 
 - Register a database once, then refer to it by name and pick from a list at startup.
 
 - SQLite under the hood as a rebuildable local view - the `.sqlite` file stays out of the repo; only the text log is synced.
 
-- Runs on Linux and Windows. macOS builds from source (no prebuilt binary yet).
+- Prebuilt for Linux, Windows, macOS and FreeBSD, on both x86-64 and ARM64.
 
 ## Enterprise edition
 
@@ -117,7 +122,7 @@ Plenty of tools each do some of these. None do all of them at once:
 
 The open-source build can share and sync an encrypted database, but only the enterprise build can read and write the encrypted fields.
 
-The existing functionality and feature set in this open-source version will never shrink or be nerfed (only grow and improve). This version will always be free and open-source. (As required by the license. And this project can be forked for presevation at any time - public repos help keep promises like these honest.)
+The existing functionality and feature set in this open-source version will never shrink or be nerfed (only grow and improve). This version will always be free and open-source. (As required by the license. And this project can be forked for preservation at any time - public repos help keep promises like these honest.)
 
 ## What a database is, on disk
 
@@ -126,7 +131,7 @@ A database is just a few files. You register it once with `ngdb --init`, then re
 - `schema.shcl` - your schema. Keep it with your project, inside the git repo if you want syncing. Edit it anytime; the local database migrates itself.
 - `txlog.csv` - the append-only transaction log (a folder of segments). The source of truth, synced and auto-merged by git. For sharing, this *is* the database.
 - `<name>.queries.shcl` - optional saved queries, next to the schema.
-- `db.sqlite` - the local, rebuildable view of the log. Derived, never synced, kept outside the repo (defaults under `~/.local/share/ngdb/`).
+- `db.sqlite` - the local, rebuildable view of the log. Derived, never synced, kept outside the repo (next to the registry record, under your OS config dir).
 - `config.shcl` - ngdb's own registry record for the database, in your OS config dir. Written by `--init`; you won't normally touch it.
 - `ngdb` - the one binary, anywhere on your `PATH`.
 
@@ -135,13 +140,65 @@ A database is just a few files. You register it once with `ngdb --init`, then re
 - A team issue tracker, one per git repo, shared through the same repo the code lives in. Automate it from the command line, or let each person use the TUI (even over SSH), a shared web UI, or their own local-only web UI. A ready-to-run issue-tracker schema is included in [`demos/`](demos/).
 - Any small shared database a GitHub project wants its contributors to keep - they install one small binary to take part, and it rides along in the repo.
 
-## Installing
+## Installation
 
-Grab a release binary (once releases start), or build from source. It's one static executable, so installing is just copying it anywhere on your `PATH`. (`go install` is not supported: the Go module root deliberately lives under `source/` to keep the repo root clean.)
+`ngdb` is a single static executable with nothing to configure and no runtime to install. Any of these gets you one.
 
-## Building from source
+### Packages and installers
 
-`./cicd/build.bash` produces a size-optimized, fully static `./bin/ngdb`. Requirements: Go only - `CGO_ENABLED=0` and committed vendored dependencies mean no C toolchain and no network. Cross-compile by exporting `GOOS`/`GOARCH` first (pure Go, so every target builds from any machine).
+Pick your platform from the [latest release](https://github.com/jim-collier/nano-git-db/releases/latest):
+
+| Platform | What to download
+| :--      | :--
+| Debian, Ubuntu | `ngdb_<version>_linux_<arch>.deb`
+| Fedora, RHEL, openSUSE | `ngdb_<version>_linux_<arch>.rpm`
+| Windows | `ngdb-<version>-windows-<arch>-setup.exe` (updates an existing install in place)
+| macOS, FreeBSD, other Linux | the matching `.tar.gz`, then copy `ngdb` onto your `PATH`
+
+Every release also carries a `checksums.txt` if you'd like to verify what you downloaded.
+
+### Install script
+
+The script picks the right build, checks it against the published checksum, tells you what it is about to do, and asks first. Re-running it is safe - an install already at the newest version is left alone.
+
+Linux, macOS, FreeBSD, WSL:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/jim-collier/nano-git-db/main/install.bash)
+```
+
+Windows, or anywhere with PowerShell 7:
+
+```powershell
+& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/jim-collier/nano-git-db/main/install.ps1')))
+```
+
+Both accept the same options:
+
+| Option | Effect
+| :--    | :--
+| `--release stable` / `-Release stable` | the newest full release (the default, when one exists)
+| `--release dev` / `-Release dev` | the newest release of any kind, pre-releases included
+| `--target user` / `-Target user` | install for you alone (the default)
+| `--target system` / `-Target system` | install for everyone; asks for sudo, or needs an elevated session
+| `--arch x64\|arm64` / `-Arch x64\|arm64` | override the detected CPU architecture
+| `--list` / `-List` | show the available releases and stop
+| `--yes` / `-Yes` | skip the confirmation prompt
+
+Where it puts things:
+
+| OS | User install | System install
+| :-- | :-- | :--
+| Linux, macOS, FreeBSD | `~/.local/bin/ngdb` | `/usr/local/bin/ngdb`
+| Windows | `%LOCALAPPDATA%\Programs\ngdb\ngdb.exe` | `%ProgramFiles%\ngdb\ngdb.exe`
+
+The Windows user install adds its directory to your `PATH`; the others assume the standard local `bin` is already there.
+
+### Do it yourself
+
+Copy the executable anywhere on your `PATH` - that is the whole install. To build it instead, see [Set up a development environment](#set-up-a-development-environment).
+
+`go install` is not supported: the Go module lives under `source/` to keep the repo root readable, so its path doesn't match its location in the repo.
 
 ## Quick start
 
@@ -226,6 +283,37 @@ ngdb query todo "SELECT title, status FROM task WHERE is_deleted = 0"
 The database name is the first argument; if you'd rather be explicit, `--db=todo --table=task` flags work in any order too. Run a bare `ngdb` to see a picker of your registered databases.
 
 Prefer a UI? `ngdb --tui todo` opens the terminal UI over that database, and `ngdb --serve todo` serves a local web UI on `127.0.0.1:8765`. Run `--init` inside a git repo to auto-place the synced tx-log under it. See [Startup discovery](syntax.md#startup-discovery-and-the-database-registry).
+
+## Set up a development environment
+
+Building needs Go and nothing else. Dependencies are vendored into the repo and `CGO_ENABLED=0` is set, so there is no C toolchain to install and no network fetch during a build.
+
+Prerequisites:
+
+- Go 1.25 or newer. `source/go.mod` pins the exact toolchain, which Go fetches on its own if you don't have it.
+- `git`, for the repo and for the sync feature's own tests.
+
+Build and test:
+
+```bash
+git clone https://github.com/jim-collier/nano-git-db
+cd nano-git-db
+
+# size-optimized static binary at ./bin/ngdb
+./cicd/build.bash
+
+# from source/, the module root
+cd source
+go test -mod=vendor ./...
+go vet  -mod=vendor ./...
+gofmt -l cmd internal        # must print nothing
+```
+
+Cross-compile by exporting `GOOS` and `GOARCH` before `./cicd/build.bash`. Every target builds from any machine, because it is all pure Go.
+
+`./cicd/cicd.bash` runs the full local pipeline: build, lint, test, fuzz, a vulnerability and security scan, a profiling pass, and packaging. `--quick` skips the slow stages. Its extra tools are fetched on demand by `go run`, except the flamegraph renderer (`cargo install inferno`), which the profiling stage skips if missing.
+
+Contributions are welcome - see [contributing.md](contributing.md).
 
 ## Full syntax reference
 

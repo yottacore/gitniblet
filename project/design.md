@@ -103,10 +103,10 @@ One static binary, a shared core with four thin front-end adapters over it. Buil
 main dispatch:     CLI      Lua host      TUI         Web server
 ~~~
 
-- **CLI arg API** - stdlib `flag`, calls core directly.
-- **Lua native API** - `gopher-lua` registers Go funcs so scripts call the *same* core CRUD API (not a second code path).
-- **TUI** - `tview`/`tcell`.
-- **Web UI** - stdlib `net/http` + `html/template` + `embed`, htmx for dynamic grid/form swaps.
+- **CLI arg API**: stdlib `flag`, calls core directly.
+- **Lua native API**: `gopher-lua` registers Go funcs so scripts call the *same* core CRUD API (not a second code path).
+- **TUI**: `tview`/`tcell`.
+- **Web UI**: stdlib `net/http` + `html/template` + `embed`, htmx for dynamic grid/form swaps.
 
 The four are different run modes, not concurrent contenders (`<verb>` = CLI, `--tui`, `--serve`); the web server is just goroutines. Lua is callable from any mode. Every front-end is a thin adapter - all real logic lives in the core, so behavior can't drift between interfaces.
 
@@ -156,7 +156,12 @@ The language decision, and what it bought:
 
 Consequences of SHCL's data model, which are load-bearing here:
 
-- **Merging is the core rule.** Nodes merge when (field-name, value) match, so restating `database:` or `tables:` re-opens that section instead of creating a second one. The old parser had a section-merging pass of its own for exactly that readability win; this comes free. It extends further, though: restating an *entity* merges it too, so two `table: t` sections are one table. The mapper cannot see that - by the time it walks the document the two are one node - so the report comes from shcl itself, which flags any binding that combines with a non-adjacent earlier one and cites both lines. That report is deliberately passed through unfiltered even for the wrapper sections a schema is meant to re-open: when a wrapper and an entity inside it both merge, only the outermost is reported, so filtering the wrappers would take the entity case with it. The shipped `example.shcl` opens each section once so it stays quiet, which is the layout to copy.
+- **Merging is the core rule.** Nodes merge when the field name and value both match.
+	- Restating `database:` or `tables:` re-opens that section rather than making a second one. The old parser had a pass of its own for that readability win; here it comes free.
+	- It goes further than sections: restating an entity merges it too, so two `table: t` blocks are one table.
+	- The mapper cannot see that, because the two are already one node by the time it walks the document. The report comes from shcl instead, which flags any binding that combines with a non-adjacent earlier one and cites both lines.
+	- That report is passed through unfiltered, even for wrapper sections a schema is meant to re-open. When a wrapper and an entity inside it both merge, only the outermost is reported - so filtering out the wrappers would hide the entity case with them.
+	- `example.shcl` opens each section once and stays quiet, which is the layout to copy.
 
 - **Empty values merge too**, so unnamed instances collapse into one. Relationships must be named for that reason; the name is otherwise just a label.
 
@@ -289,7 +294,18 @@ The `--init`, `--config`, and `--encrypt` CLI flags drive the same registry from
 
 - When a view specifies `startup_named_query`, that named query's dataset loads as soon as the view opens. Only when it is empty or unspecified does the view open with no records shown - then you have to query, e.g. via "All" button, or via predefined query dropdown.
 - The default view (`ui:` -> `default_view`, else the first view defined) opens on startup in both UIs. Its blocks still load empty per the no-records-until-asked rule; a `default_view` naming an unusable view warns and falls back to the first one.
-- View rendering (v1): the DDL's layout blocks render as nested splits in both UIs (TUI flexes, web flexbox). A location hint's direction and percent set each split's axis and share; the relative-to element is ignored for now (blocks place in DDL order). Leaf blocks are `grid`, `tree_grid` (rows ordered depth-first along `parent_field`, indented by depth; orphaned or cyclic parents degrade to extra roots rather than hiding rows), `form` (single-record panel; shows the first record until block linking exists), or `comments` (a detail pane over the table's built-in comments component - it follows a sibling list block's selected row, listing that row's thread with an add affordance, and stays empty until a row is picked). The comments pane surfaces the 1:m `comments` feature a table opted into, without ever adding a column to the list view; a `comments` block over a table that has no comments feature is dropped with a warning. Blocks over unknown tables are dropped with a warning, a bad `tree_grid` degrades to a plain grid, and `readonly` (view-level, overridable per block) removes the edit affordances. Editing from a web view block currently jumps to the table's form; returning into the view is future polish.
+- View rendering (v1): the schema's layout blocks render as nested splits in both UIs (TUI flexes, web flexbox).
+
+	- A location hint's direction and percent set each split's axis and share. The relative-to element is ignored for now, so blocks place in the order the schema lists them.
+	- Leaf block types:
+		- `grid`: a plain list.
+		- `tree_grid`: rows ordered depth-first along `parent_field`, indented by depth. An orphaned or cyclic parent becomes an extra root rather than hiding the row.
+		- `form`: a single-record panel. It shows the first record until block linking exists.
+		- `comments`: a detail pane over a table's built-in comments. It follows a sibling list block's selected row and stays empty until one is picked.
+	- The comments pane is how a table's opted-in comments reach a view without adding a column to the list.
+	- Anything the schema asks for that cannot be built degrades rather than failing: a block over an unknown table is dropped with a warning, a `comments` block over a table with no comments feature is dropped with a warning, and a bad `tree_grid` falls back to a plain grid.
+	- `readonly` removes the edit affordances. It is set per view and can be overridden per block.
+	- Editing from a web view block jumps to the table's form for now; returning into the view is future polish.
 - Field UI metadata (spec settled 2026-07, implementation waits for the shcl syntax migration; current vocabulary in [example.shcl](example.shcl)):
 	- `visible` splits into `visible_form` and `visible_list`. Presentation only, never access control - a hidden field stays fully readable via CLI/query/SQL; the `access:` lists are the only thing that gates data.
 	- `title` becomes `label`; `list_type` values are `literal|sql|lookup` (`sql` replaces `dynamic`); `lookup` wires a field to the built-in lookup tables (see Lookups).

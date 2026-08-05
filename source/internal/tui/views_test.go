@@ -97,7 +97,7 @@ func TestViewsListedBeforeTables(t *testing.T) {
 	}
 }
 
-// TestViewOpensAndLoadsOnSimulationScreen: the default view (first defined,
+// TestViewOpensAndLoadsOnSimulationScreen drives the default view (first defined,
 // no explicit default_view) auto-opens at boot; Esc back to the list, reopen
 // it with Enter, load the tree_grid with 'a', hop to the second block with
 // Tab and load it too, then back out and quit.
@@ -160,7 +160,7 @@ func TestViewOpensAndLoadsOnSimulationScreen(t *testing.T) {
 	}
 }
 
-// TestStartupQueryAndPicker: a view with startup_named_query loads that
+// TestStartupQueryAndPicker checks that a view with startup_named_query loads that
 // query's dataset the moment it opens; 'p' offers the view's queries.
 func TestStartupQueryAndPicker(t *testing.T) {
 	src := strings.Replace(orgDDL, "view: \"org\"\n",

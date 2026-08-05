@@ -75,11 +75,11 @@ database:
 
 ### Special values
 
-- **Booleans** - `true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0`, and also `y`/`n`, `t`/`f`, `enable[d]`/`disable[d]`.
-- **Numbers** - `10`, `.1`, `1.`, `1.0`, `0x1f`. A leading currency symbol or a trailing `%` is accepted and stripped, and a fraction where a whole number is wanted rounds rather than failing.
-- **Sentinels** - `@null` and `@previous`, in `defaultval:` position. `@null` means no default. `@previous` repeats the value from the last row entered this session, and only in the interactive front-ends - a programmatic write never inherits it. To mean the literal text instead of the sentinel, quote it: `defaultval: "@null"` stores the five characters.
-- **Function refs** - `some_function()` names a script function to call rather than a literal to store.
-- **SQL and regexes** - use a raw block or single-line backticks, so commas and quotes survive intact.
+- **Booleans**: `true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0`, and also `y`/`n`, `t`/`f`, `enable[d]`/`disable[d]`.
+- **Numbers**: `10`, `.1`, `1.`, `1.0`, `0x1f`. A leading currency symbol or a trailing `%` is accepted and stripped, and a fraction where a whole number is wanted rounds rather than failing.
+- **Sentinels**: `@null` and `@previous`, in `defaultval:` position. `@null` means no default. `@previous` repeats the value from the last row entered this session, and only in the interactive front-ends - a programmatic write never inherits it. To mean the literal text instead of the sentinel, quote it: `defaultval: "@null"` stores the five characters.
+- **Function refs**: `some_function()` names a script function to call rather than a literal to store.
+- **SQL and regexes**: use a raw block or single-line backticks, so commas and quotes survive intact.
 
 ## Tables
 

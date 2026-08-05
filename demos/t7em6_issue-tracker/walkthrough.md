@@ -7,7 +7,7 @@
 
 This is a "script" for demonstrating the tool through the CLI, the terminal UI, and the local web UI, using the small issue-tracker schema in this folder (`issues.shcl` + `issues.queries.shcl`). All three front-ends share one core, so the same database opens identically in any of them.
 
-The story to land: *the append-only tx-log is the database*. SQLite is a disposable local view rebuilt from the log, and the log is plain text that lives in git - so the whole database syncs, merges, and diffs like source code.
+The point to make: *the append-only tx-log is the database*. SQLite is a disposable local view rebuilt from the log, and the log is plain text that lives in git - so the whole database syncs, merges, and diffs like source code.
 
 ## Setup
 
@@ -15,9 +15,9 @@ The built binary is at `../bin/ngdb` (run `cicd/build.bash` if it's missing). Ev
 
 Pick one starting point:
 
-- **Do the CLI part first** (recommended) - it creates the data by hand, then you open that same database in the terminal and web UIs. One continuous story.
+- **Do the CLI part first** (recommended). It creates the data by hand, then you open that same database in the terminal and web UIs. One continuous story.
 
-- **Jump straight to a UI** - run `./seed.bash` first to populate a database, then start at [Part B](#part-b---tui) or [Part C](#part-c---web-ui).
+- **Jump straight to a UI**: run `./seed.bash` first to populate a database, then start at [Part B](#part-b---tui) or [Part C](#part-c---web-ui).
 
 The schema at a glance: one `issue` table (with subtasks via a self-referencing `parent_issue`, plus comments, an audit trail, and URI attachments turned on), a `person` table, and a `component` table. Two views: a **board** (hierarchical issue tree) and a **people** grid.
 
