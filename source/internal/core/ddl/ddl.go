@@ -22,6 +22,7 @@ package ddl
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	shcl "github.com/jim-collier/shcl/source/go"
 )
@@ -220,12 +221,26 @@ func ParseFile(path string) (*Schema, error) {
 // never sees it; project/example.shcl is written that way for the same reason.
 func (s *Schema) addDiagnostics(diags []shcl.Diagnostic) {
 	for _, d := range shcl.SuppressDeclaredRepeats(schemaDoc(), diags) {
+		if isSchemaFault(d) {
+			// A fault's line is a line of the built-in vocabulary, not of the
+			// DDL in front of the user, so it must not read like one. Only a
+			// build that shipped a broken schema.shcl can produce these, and
+			// the surviving constraints still check the document around them.
+			s.Warnings = append(s.Warnings, "built-in schema fault: "+d.Message)
+			s.Errors++
+			continue
+		}
 		s.Warnings = append(s.Warnings, fmt.Sprintf("line %d: %s", d.Line, d.Message))
 		if d.Severity == shcl.SeverityError {
 			s.Errors++
 		}
 	}
 }
+
+// isSchemaFault tells a complaint about the validation schema (V09x) from one
+// about the document being loaded. They share a diagnostics list but not a line
+// numbering.
+func isSchemaFault(d shcl.Diagnostic) bool { return strings.HasPrefix(d.Code, "V09") }
 
 // warn records a cross-cutting problem: one about the relationship between
 // lines rather than about a single line. It still cites the entity's own line

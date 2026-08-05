@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright © 2026 Jim Collier
+// Copyright © 2026 Jim Collier (CryptogID: ѳ6ᴚ℈𐀘𐇦ɛ𐊁¥Mﾏb϶Δ𐌞)
 
 // Package shcl is the Go binding of SHCL: parser, accessor, writer/formatter.
 // Single file on purpose - the drop-in story is "copy this file into your tree".
@@ -492,6 +492,10 @@ type nodeData struct {
 	// a run trailing a block's last child stays put instead of re-attaching
 	// dedented. Emitted after the subtree at this node's depth.
 	after []lead
+	// Whole-line comments written inside this node's block when no bound child
+	// could take them - a header whose children are all commented still owns
+	// those lines. Emitted after the subtree one level deeper than this node.
+	inside []lead
 	// Blank-line grouping is the other half of hand-authored layout: set when
 	// a blank line preceded this node's binding line (runs collapse to one).
 	blankBefore bool
@@ -539,6 +543,9 @@ func foldNodeInto(arena []nodeData, survivor, loser int) {
 	after := arena[loser].after
 	arena[loser].after = nil
 	arena[survivor].after = append(arena[survivor].after, after...)
+	inside := arena[loser].inside
+	arena[loser].inside = nil
+	arena[survivor].inside = append(arena[survivor].inside, inside...)
 }
 
 // MaxDepth is the maximum nesting depth (levels below the document root),
@@ -1187,11 +1194,13 @@ func (p *parser) attachTrivia(node int, trailing string) {
 }
 
 // hangDeeperPending: comments written deeper than the incoming line belong to
-// the block they sit in, not to the next binding: hang each on the deepest open
-// level whose indent prefixes the comment's, so a run trailing a block's last
-// child stays with that block instead of re-attaching dedented at the next
-// node. Runs before the incoming line resolves (and at end of parse with the
-// empty indent, so indented tail comments keep their block).
+// the block they sit in, not to the next binding: hang each on the deepest node
+// whose bound indent prefixes the comment's, among the levels the incoming
+// line is closing. Written at that node's own level the comment trails it
+// (after); written deeper it sits inside the node's block (inside) - so a
+// header whose children are all commented still owns them at their depth. Runs
+// before the incoming line resolves (and at end of parse with the empty
+// indent, so tail comments keep their block).
 func (p *parser) hangDeeperPending(newIndent string) {
 	if len(p.pending) == 0 {
 		return
@@ -1200,16 +1209,26 @@ func (p *parser) hangDeeperPending(newIndent string) {
 	p.pending = nil
 	for _, pn := range taken {
 		if len(pn.indent) > len(newIndent) {
+			// A level shallower than the incoming line stays open and may
+			// still gain children, so a comment must not hang there - it
+			// would emit below the child; keep it pending instead.
 			target := -1
+			atOwnLevel := false
 			for j := len(p.stack) - 1; j >= 0; j-- {
 				ent := p.stack[j]
-				if ent.node != root && ent.indent != "" && len(ent.indent) > len(newIndent) && strings.HasPrefix(pn.indent, ent.indent) {
+				if ent.node != root && len(ent.indent) >= len(newIndent) && strings.HasPrefix(pn.indent, ent.indent) {
 					target = ent.node
+					atOwnLevel = len(ent.indent) == len(pn.indent)
 					break
 				}
 			}
 			if target >= 0 {
-				p.arena[target].after = append(p.arena[target].after, lead{text: pn.text, blankBefore: pn.blankBefore})
+				l := lead{text: pn.text, blankBefore: pn.blankBefore}
+				if atOwnLevel {
+					p.arena[target].after = append(p.arena[target].after, l)
+				} else {
+					p.arena[target].inside = append(p.arena[target].inside, l)
+				}
 				continue
 			}
 		}
@@ -1862,6 +1881,16 @@ func (d *Document) emitNode(idx, depth int, wouldMerge bool, out *strings.Builde
 		out.WriteByte('\n')
 	}
 	d.emitChildren(d.arena[idx].children, depth+1, out)
+	// Comments this block owns with no child to carry them, one deeper.
+	ipad := strings.Repeat("\t", depth+1)
+	for _, c := range d.arena[idx].inside {
+		if c.blankBefore && out.Len() > 0 {
+			out.WriteByte('\n')
+		}
+		out.WriteString(ipad)
+		out.WriteString(c.text)
+		out.WriteByte('\n')
+	}
 	// Comments that hung on this block after its last child.
 	for _, c := range d.arena[idx].after {
 		if c.blankBefore && out.Len() > 0 {
@@ -2245,6 +2274,38 @@ func (d *Document) Line(path string) int {
 		return 0
 	}
 	return d.arena[r.one].line
+}
+
+// Lines is the plural Line(): 1-based source lines at a path, in file order,
+// so a repeated field - the case that most wants a citable line - yields
+// every binding's. Wildcard slots that did not resolve stay in the list as 0,
+// and a writer-built node is 0, so indices keep matching Count().
+func (d *Document) Lines(path string) []int {
+	r, ok := d.resolve(path)
+	if !ok {
+		return nil
+	}
+	switch r.kind {
+	case resOne:
+		return []int{d.arena[r.one].line}
+	case resMany:
+		out := make([]int, 0, len(r.many))
+		for _, n := range r.many {
+			out = append(out, d.arena[n].line)
+		}
+		return out
+	case resSlots:
+		out := make([]int, 0, len(r.slots))
+		for _, s := range r.slots {
+			if s >= 0 {
+				out = append(out, d.arena[s].line)
+			} else {
+				out = append(out, 0)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // Children returns the child field names under a path, in file order,
@@ -2897,6 +2958,7 @@ func (d *Document) adoptTrivia(base int, over *Document, ok int) {
 		}
 	}
 	d.arena[base].after = append(d.arena[base].after, src.after...)
+	d.arena[base].inside = append(d.arena[base].inside, src.inside...)
 }
 
 func (d *Document) overlay(baseParent int, over *Document, overParent int) {
@@ -3011,6 +3073,7 @@ func (d *Document) cloneSubtree(over *Document, oi, parent int) int {
 		leading:     append([]lead(nil), src.leading...),
 		trailing:    src.trailing,
 		after:       append([]lead(nil), src.after...),
+		inside:      append([]lead(nil), src.inside...),
 		blankBefore: src.blankBefore,
 		src:         srcCopy,
 	}
@@ -3778,7 +3841,7 @@ func (d *Document) ReadStringArray(path string) Read[[]string] {
 }
 
 // Full tier, status form: the value is only meaningful when the status is
-// Good. Empty still surfaces as non-Good here; use Read* to also get the
+// Good. Empty still comes back as non-Good here; use Read* to also get the
 // empty value.
 
 // GetInt is ReadInt reduced to (value, status).
@@ -3917,8 +3980,10 @@ func (d *Document) GetDateTimeArrayOr(path string, def []DateTime) []DateTime {
 // The schema is an ordinary parsed document: a flat list of `field: <path>`
 // instances whose children are the constraints (closed vocabulary - see
 // spec.md "Schema validation"). Validation reuses the accessor's path scan and
-// the typed coercions, so document strictness composes for free. Any schema
-// fault (V09x) suppresses data validation - one line-number space per result.
+// the typed coercions, so document strictness composes for free. Schema faults
+// (V09x) come first and the surviving constraints still check the document;
+// only the unknown-field sweep needs a fault-free schema. One line-number
+// space per result.
 
 var schemaTypes = []string{
 	"int",
@@ -4006,8 +4071,10 @@ func dtEqual(a, b DateTime) bool {
 }
 
 // buildSchema interprets a parsed schema document into constraints and
-// fragments. A non-empty fault list (V09x, schema-file lines) means the caller
-// reports those and validates nothing.
+// fragments, plus any schema faults (V09x, schema-file lines). Whatever parsed
+// cleanly is kept even when faults are present - a broken key drops that key,
+// a broken field drops that field - so a caller can still check the document
+// against the surviving constraints.
 func buildSchema(schema *Document) (schemaDef, []Diagnostic) {
 	var faults []Diagnostic
 	var cons []constraint
@@ -4063,12 +4130,9 @@ func buildSchema(schema *Document) (schemaDef, []Diagnostic) {
 			checkMount(&fcs[i])
 		}
 	}
-	if len(faults) > 0 {
-		// One constraint per line in practice, so line order = file order.
-		sort.SliceStable(faults, func(i, j int) bool { return faults[i].Line < faults[j].Line })
-		return schemaDef{}, faults
-	}
-	return schemaDef{cons: cons, frags: frags}, nil
+	// One constraint per line in practice, so line order = file order.
+	sort.SliceStable(faults, func(i, j int) bool { return faults[i].Line < faults[j].Line })
+	return schemaDef{cons: cons, frags: frags}, faults
 }
 
 // parseField turns one `field:` instance (top-level or inside a fragment) into
@@ -4425,8 +4489,10 @@ func genDefaultText(v string) string {
 // flag is negative so leaving it alone writes the footer. faults != nil =
 // schema faults (V09x), same as Validate / check --schema.
 func Generate(schema *Document, noBanner bool) (string, []Diagnostic) {
+	// Generation lays the whole schema out, so unlike validation it has no
+	// safe partial mode: any fault fails it.
 	def, faults := buildSchema(schema)
-	if faults != nil {
+	if len(faults) > 0 {
 		return "", faults
 	}
 	cons, cuts := expandMounts(&def)
@@ -4724,17 +4790,20 @@ func min3(a, b, c int) int {
 // Validate checks this document against a schema document (itself plain SHCL -
 // spec.md "Schema validation"). An empty result means the document conforms.
 // Diagnostic lines are document lines (0 = document scope); schema faults
-// (V09x, schema-file lines) suppress data validation entirely.
+// (V09x, schema-file lines) come first, and the surviving constraints still
+// check the document. Only the unknown-field sweep needs a fault-free schema:
+// a dropped constraint would turn the fields it declared into false unknowns,
+// so that check skips rather than misfire.
 func (d *Document) Validate(schema *Document) []Diagnostic {
 	def, faults := buildSchema(schema)
-	if len(faults) > 0 {
-		return faults
-	}
-	var out []Diagnostic
+	schemaOK := len(faults) == 0
+	out := faults
 	for i := range def.cons {
 		d.vCheck(&def.cons[i], &def, &out)
 	}
-	d.vUnknown(&def, &out)
+	if schemaOK {
+		d.vUnknown(&def, &out)
+	}
 	return out
 }
 

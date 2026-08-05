@@ -78,3 +78,43 @@ func TestRenameField(t *testing.T) {
 		t.Fatal("pets has no age field")
 	}
 }
+
+// A rename re-emits the whole file, so anything the formatter mislays is lost
+// from the schema the user wrote. Commenting a section's contents out while
+// keeping the header is ordinary editing, and those comments have to come back
+// inside their section - dedented, they would read as belonging to whatever
+// follows.
+func TestRenameKeepsCommentedOutSectionIntact(t *testing.T) {
+	src := "tables:\n" +
+		"\ttable: person\n" +
+		"\t\tfields:\n" +
+		"\t\t\tfield: name\n" +
+		"\t\t\t\ttype: string\n" +
+		"\t\tfeatures:\n" +
+		"\t\t\t# comments: yes\n" +
+		"\t\t\t# audit_trail: yes\n" +
+		"\ttable: pets\n" +
+		"\t\tfields:\n" +
+		"\t\t\tfield: name\n" +
+		"\t\t\t\ttype: string\n"
+
+	out, found := RenameField([]byte(src), "person", "name", "full_name")
+	if !found {
+		t.Fatal("field not found")
+	}
+	text := string(out)
+	for _, line := range []string{"\t\t\t# comments: yes\n", "\t\t\t# audit_trail: yes\n"} {
+		if !strings.Contains(text, line) {
+			t.Fatalf("commented-out feature left its section:\n%s", text)
+		}
+	}
+	// Uncommenting them again has to give person the features, not pets.
+	revived := strings.ReplaceAll(text, "# comments:", "comments:")
+	s, err := Parse([]byte(revived))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.Tables[0].Features.Comments {
+		t.Fatalf("revived feature landed on the wrong table:\n%s", revived)
+	}
+}
