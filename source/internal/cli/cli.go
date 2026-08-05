@@ -12,6 +12,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -75,6 +76,7 @@ func Run(args []string) error {
 func crudSelect(args []string) (paths []string, table string, rest []string, err error) {
 	var name string
 	// consume any leading --db/--table flags, in any order
+selectors:
 	for len(args) > 0 {
 		arg := args[0]
 		switch {
@@ -93,20 +95,19 @@ func crudSelect(args []string) (paths []string, table string, rest []string, err
 				name, args = val, args[1:]
 			} else if val, ok := cutFlag(arg, "--table", "-t"); ok {
 				table, args = val, args[1:]
-			} else if name == "" { // first bare word is the database name
-				name, args = arg, args[1:]
+			} else if name == "" && !strings.Contains(arg, "=") {
+				name, args = arg, args[1:] // first bare word is the database name
 			} else {
-				goto done // remaining bare words are the verb's positionals
+				break selectors // the rest are the verb's positionals
 			}
 		}
 	}
-done:
 	if name == "" {
 		return nil, "", nil, fmt.Errorf("missing database name")
 	}
 	cfg := config.FindByName(name)
 	if cfg == nil {
-		return nil, "", nil, fmt.Errorf("unknown database %q; register it with --init or list the known ones by running ngdb with no arguments", name)
+		return nil, "", nil, config.UnknownDatabase(name)
 	}
 	_ = cfg.Touch() // best-effort last-opened stamp
 	return []string{cfg.DDLPath, cfg.SQLitePath, cfg.LogDir}, table, args, nil
@@ -298,59 +299,72 @@ func doRenameField(args []string) error {
 	return usage()
 }
 
-func usage() error {
-	fmt.Println("usage: ngdb <verb> ...")
-	fmt.Println("  setup and run modes:")
-	fmt.Println("    --init [repo-or-dir]           register the $PWD .shcl as a database")
-	fmt.Println("    --config <dir> ...             use an alternate registry dir, then run")
-	if enc.Available() { // enterprise build only
-		fmt.Println("    --encrypt[=on|off|auto] ...    set the local encryption preference,")
-		fmt.Println("                                   then run (--init --encrypt=on mints a key)")
-	}
-	fmt.Println("    --tui [<db>]                   terminal UI (no name: pick/create a db)")
-	fmt.Println("    --serve [<db>]                 local web UI on 127.0.0.1:8765")
-	fmt.Println("    webuser <username>             set a proxied-mode web login")
-	fmt.Println("                                   (password from NGDB_WEB_PASSWORD or prompt)")
-	fmt.Println("    --script <f.lua> <ddl> <sqlite> <dir>   run a Lua script")
-	if donate.Enabled { // open-source-only feature
-		fmt.Println("    --donate                       ways to support the project")
-	}
-	fmt.Println("    --version, -v                  print the version and exit")
-	fmt.Println("  <db> is a registered database name (extension optional). Register one")
-	fmt.Println("  with --init; run ngdb with no arguments to see the ones you have.")
-	fmt.Println("  schema and log:")
-	fmt.Println("    ddl <file>                     parse a DDL file and print a summary")
-	fmt.Println("    build <db>                     build/migrate the SQLite view")
-	fmt.Println("    replay <db>                    rebuild the view from the tx-log")
-	fmt.Println("    sync <db>                      sync the log, then migrate and replay")
-	fmt.Println("    gc <db>                         collect entries of long-deleted rows")
-	fmt.Println("                                   (gc_age_days tunable, default 90)")
-	fmt.Println("  data (each takes a <db>, then a <table>; e.g. create issues task f=v):")
-	fmt.Println("    create <db> <table> f=v [f=v...]     insert a row; prints its id")
-	fmt.Println("    get <db> <table> <id>                print one row")
-	fmt.Println("    update <db> <table> <id> f=v [...]   set fields")
-	fmt.Println("    setnull <db> <table> <id> <field>    set a field to SQL NULL")
-	fmt.Println("    markdelete <db> <table> <id>         soft-delete")
-	fmt.Println("    delete <db> <table> <id>             hard-delete")
-	fmt.Println("    query <db> <sql>                     read-only SQL against the view")
-	fmt.Println("    the db and table may also be given explicitly as flags in any order:")
-	fmt.Println("      --db=<name> / -d <name>,  --table=<name> / -t <name>")
-	fmt.Println("  schema ops (rewrite the DDL file and the SQLite view; the old name")
-	fmt.Println("  becomes an alias so existing tx-log entries still replay):")
-	fmt.Println("    --rename-table <db> <old> <new>")
-	fmt.Println("    --rename-field <db> <table> <old> <new>")
-	fmt.Println("  opt-in features (table must enable them in its DDL features: block):")
-	fmt.Println("    comment <db> <table> <id> <text>           add a comment to a row")
-	fmt.Println("    comments <db> <table> <id>                 list a row's comments")
-	fmt.Println("    attachuri <db> <table> <id> <uri> [desc]   attach a link-in-place URI")
-	fmt.Println("    attachfile <db> <table> <id> <path> [desc] copy a file in and attach it")
-	fmt.Println("    attachments <db> <table> <id>              list a row's attachments")
-	fmt.Println("  writes are stamped with NANOGITDB_USER (default: the OS username)")
+// Help prints the usage block on stdout and succeeds - what an explicit --help
+// asks for.
+func Help() error {
+	printUsage(os.Stdout)
 	return nil
 }
 
-// dumpDDL parses a DDL file and prints a short summary - a stand-in until the
-// real CRUD CLI lands, and a handy parser smoke test.
+// usage reports a command that could not be run. The block goes to stderr so a
+// script's stdout stays clean, and the error makes the exit status non-zero.
+func usage() error {
+	printUsage(os.Stderr)
+	return fmt.Errorf("unknown or incomplete command")
+}
+
+func printUsage(w io.Writer) {
+	fmt.Fprintln(w, "usage: ngdb <verb> ...")
+	fmt.Fprintln(w, "  setup and run modes:")
+	fmt.Fprintln(w, "    --init [repo-or-dir]           register the $PWD .shcl as a database")
+	fmt.Fprintln(w, "    --config <dir> ...             use an alternate registry dir, then run")
+	if enc.Available() { // enterprise build only
+		fmt.Fprintln(w, "    --encrypt[=on|off|auto] ...    set the local encryption preference,")
+		fmt.Fprintln(w, "                                   then run (--init --encrypt=on mints a key)")
+	}
+	fmt.Fprintln(w, "    --tui [<db>]                   terminal UI (no name: pick/create a db)")
+	fmt.Fprintln(w, "    --serve [<db>]                 local web UI on 127.0.0.1:8765")
+	fmt.Fprintln(w, "    webuser <username>             set a proxied-mode web login")
+	fmt.Fprintln(w, "                                   (password from NGDB_WEB_PASSWORD or prompt)")
+	fmt.Fprintln(w, "    --script <f.lua> <ddl> <sqlite> <dir>   run a Lua script")
+	if donate.Enabled { // open-source-only feature
+		fmt.Fprintln(w, "    --donate                       ways to support the project")
+	}
+	fmt.Fprintln(w, "    --version, -v                  print the version and exit")
+	fmt.Fprintln(w, "  <db> is a registered database name (extension optional). Register one")
+	fmt.Fprintln(w, "  with --init; run ngdb with no arguments to see the ones you have.")
+	fmt.Fprintln(w, "  schema and log:")
+	fmt.Fprintln(w, "    ddl <file>                     parse a DDL file and print a summary")
+	fmt.Fprintln(w, "    build <db>                     build/migrate the SQLite view")
+	fmt.Fprintln(w, "    replay <db>                    rebuild the view from the tx-log")
+	fmt.Fprintln(w, "    sync <db>                      sync the log, then migrate and replay")
+	fmt.Fprintln(w, "    gc <db>                         collect entries of long-deleted rows")
+	fmt.Fprintln(w, "                                   (gc_age_days tunable, default 90)")
+	fmt.Fprintln(w, "  data (each takes a <db>, then a <table>; e.g. create issues task f=v):")
+	fmt.Fprintln(w, "    create <db> <table> f=v [f=v...]     insert a row; prints its id")
+	fmt.Fprintln(w, "    get <db> <table> <id>                print one row")
+	fmt.Fprintln(w, "    update <db> <table> <id> f=v [...]   set fields")
+	fmt.Fprintln(w, "    setnull <db> <table> <id> <field>    set a field to SQL NULL")
+	fmt.Fprintln(w, "    markdelete <db> <table> <id>         soft-delete")
+	fmt.Fprintln(w, "    delete <db> <table> <id>             hard-delete")
+	fmt.Fprintln(w, "    query <db> <sql>                     read-only SQL against the view")
+	fmt.Fprintln(w, "    the db and table may also be given explicitly as flags in any order:")
+	fmt.Fprintln(w, "      --db=<name> / -d <name>,  --table=<name> / -t <name>")
+	fmt.Fprintln(w, "  schema ops (rewrite the DDL file and the SQLite view; the old name")
+	fmt.Fprintln(w, "  becomes an alias so existing tx-log entries still replay):")
+	fmt.Fprintln(w, "    --rename-table <db> <old> <new>")
+	fmt.Fprintln(w, "    --rename-field <db> <table> <old> <new>")
+	fmt.Fprintln(w, "  opt-in features (table must enable them in its DDL features: block):")
+	fmt.Fprintln(w, "    comment <db> <table> <id> <text>           add a comment to a row")
+	fmt.Fprintln(w, "    comments <db> <table> <id>                 list a row's comments")
+	fmt.Fprintln(w, "    attachuri <db> <table> <id> <uri> [desc]   attach a link-in-place URI")
+	fmt.Fprintln(w, "    attachfile <db> <table> <id> <path> [desc] copy a file in and attach it")
+	fmt.Fprintln(w, "    attachments <db> <table> <id>              list a row's attachments")
+	fmt.Fprintln(w, "  writes are stamped with NANOGITDB_USER (default: the OS username)")
+
+}
+
+// dumpDDL parses a schema file and prints a short summary of what it declares.
 func dumpDDL(path string) error {
 	sch, err := ddl.ParseFile(path)
 	if err != nil {
@@ -421,9 +435,11 @@ func replay(ddlPath, dbPath, logDir string) error {
 	if err != nil {
 		return err
 	}
-	if builtins, err := schema.Builtins(); err == nil {
-		schema.ApplyAliases(entries, sch, builtins) // pre-rename entries -> current names
+	builtins, err := schema.Builtins()
+	if err != nil {
+		return err
 	}
+	schema.ApplyAliases(entries, sch, builtins) // pre-rename entries -> current names
 	// Decrypt field values before applying, using this DDL's registered key
 	// (else a key beside the DDL); unreadable ones stay empty in the view.
 	keyFile, _ := config.ResolveEncryptionForDDL(ddlPath)

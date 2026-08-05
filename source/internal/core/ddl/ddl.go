@@ -568,8 +568,6 @@ func accessFlat(c cursor) AccessRule {
 	}
 }
 
-// -- resolvers over a parsed schema --
-
 // TunableInt reads a tunable as an integer, falling back on absent or
 // non-numeric values.
 func (s *Schema) TunableInt(key string, def int) int {

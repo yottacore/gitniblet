@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright © 2026 Jim Collier
 
-// Selectable, high-readability colour themes. Colours are explicit RGB, not the
-// named terminal-palette colours (ColorBlack/White) tview defaults to - those
+// Selectable, high-readability color themes. Colors are explicit RGB, not the
+// named terminal-palette colors (ColorBlack/White) tview defaults to - those
 // map to whatever the terminal theme happens to be, which is exactly what makes
 // the default hard to read. Fixed RGB keeps every theme legible regardless of
 // the surrounding terminal. 'T' opens the picker; the choice persists globally.
@@ -26,7 +26,7 @@ type theme struct {
 
 func hx(hex int32) tcell.Color { return tcell.NewHexColor(hex) }
 
-// mk builds a theme from a small, readable set of colours; the rest of
+// mk builds a theme from a small, readable set of colors; the rest of
 // tview.Theme is derived so callers only pick the ones that matter here.
 func mk(name string, dark bool, bg, text, dim, border, title, fieldBg, selBg, selFg int32) theme {
 	return theme{
@@ -76,7 +76,7 @@ func themeIndexByName(name string) int {
 // afterwards (forms, modals) inherits it.
 func applyTheme(i int) { tview.Styles = themes[i].styles }
 
-// styleWidgets sets the long-lived primitives' colours explicitly - tview
+// styleWidgets sets the long-lived primitives' colors explicitly - tview
 // captures Styles at construction, and these three outlive a theme switch, so
 // they need repainting directly (and selection has no Styles slot).
 func (a *App) styleWidgets() {
@@ -124,14 +124,13 @@ func (a *App) setTheme(i int) {
 func (a *App) themePicker() {
 	prev := a.app.GetFocus()
 	list := tview.NewList().ShowSecondaryText(false)
-	close := func() {
+	closeForm := func() {
 		a.pages.RemovePage("theme")
 		if prev != nil {
 			a.app.SetFocus(prev)
 		}
 	}
 	for i := range themes {
-		i := i
 		mark := "  "
 		if i == a.themeIdx {
 			mark = "* "
@@ -145,7 +144,7 @@ func (a *App) themePicker() {
 			a.setTheme(i)
 		})
 	}
-	list.SetDoneFunc(close)
+	list.SetDoneFunc(closeForm)
 	list.SetBorder(true).SetTitle(" theme (enter=apply, esc=cancel) ")
 	a.pages.AddPage("theme", modal(list, 44, len(themes)+4), true, true)
 	a.app.SetFocus(list)

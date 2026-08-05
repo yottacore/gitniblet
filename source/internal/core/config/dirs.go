@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright © 2026 Jim Collier
 
-// Package config is the on-disk database registry: per-database TOML records
+// Package config is the on-disk database registry: per-database SHCL records
 // under a user (and optional system) config directory, plus the discovery that
 // startup uses to offer a "which database?" picker when no DDL was named.
 //
@@ -30,7 +30,7 @@ var baseOverride string
 func SetBaseOverride(path string) { baseOverride = path }
 
 // UserBase is the writable registry root: the --config override if set, else
-// <os-user-config>/ngdb. On Linux the OS part honours $XDG_CONFIG_HOME (else
+// <os-user-config>/ngdb. On Linux the OS part honors $XDG_CONFIG_HOME (else
 // ~/.config); on Windows it is %AppData%; on macOS ~/Library/Application
 // Support - os.UserConfigDir picks the per-OS location, we only append appDir.
 func UserBase() (string, error) {

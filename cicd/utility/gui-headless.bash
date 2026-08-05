@@ -75,10 +75,9 @@ start() {
 			>"$run_dir/xvfb-${num}.log" 2>&1 &
 		echo $! > "$xvfb_pid"
 		# Wait for the server to accept connections before returning - and for OURS,
-		# not just any. One on its way out keeps answering for a moment and one that
-		# is squatting answers instantly, so probing the display alone reports
-		# success and then the display vanishes mid-run. The lock file settles it:
-		# it holds the pid of the server that actually owns the display.
+		# not just any - probing the display alone is not enough, since a server on
+		# its way out and a server squatting on the number both answer. The lock
+		# file settles it: it holds the pid of the server that owns the display.
 		local ok="" mine holder=""
 		mine="$(cat "$xvfb_pid")"
 		for _ in $(seq 1 50); do

@@ -16,8 +16,8 @@ const recordFile = "config.shcl"
 
 // DBConfig is one registered database's record. Paths are stored absolute so a
 // record stays valid regardless of the working directory it is opened from.
-// Encryption and KeyFile are parsed now for a stable file format; the crypto
-// behavior itself lands with the encryption feature.
+// Encryption and KeyFile drive the per-database encryption policy and where its
+// key is kept.
 type DBConfig struct {
 	Name       string // database name
 	DDLPath    string // git-synced schema file

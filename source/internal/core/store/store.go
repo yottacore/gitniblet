@@ -35,16 +35,18 @@ type Store struct {
 }
 
 // Open opens or creates the SQLite view at path.
+//
+// The pragmas go in the DSN rather than through Exec: the driver replays them on
+// every pooled connection, while an Exec would only reach whichever one it
+// happened to get. busy_timeout matters most - a second ngdb process holding the
+// file would otherwise fail a write immediately instead of waiting its turn.
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
 	if err := db.Ping(); err != nil {
-		db.Close()
-		return nil, err
-	}
-	if _, err := db.Exec("PRAGMA foreign_keys=ON;"); err != nil {
 		db.Close()
 		return nil, err
 	}

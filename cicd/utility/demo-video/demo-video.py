@@ -47,7 +47,7 @@ DEMO_DB = ME_DIR / "demo-db.bash"
 
 BORDER   = 4                                      # black outline around the window
 WM_THEME = "Demo-square"                           # squared Greybird-dark copy (prep_home)
-FRAME_L, FRAME_R, FRAME_T, FRAME_B = 1, 1, 26, 1  # xfwm4 decoration extents (measured)
+FRAME_L, FRAME_R, FRAME_T, FRAME_B = 1, 1, 26, 1  # xfwm4 decoration extents
 
 # the faux terminal look
 ROOT_HEX = "#000000"       # the 4px outline around the frame is pure black
@@ -194,8 +194,8 @@ class Rec:
 	# --- typing cadence calibration -------------------------------------------
 	def calibrate_spawn(self):
 		# Every keystroke is its own xdotool process, and that spawn plus X connect
-		# lands between keys on top of the sleep the typist asked for. Measure it
-		# instead of assuming: it spans an order of magnitude across machines, and
+		# sits between keys on top of the sleep the typist asked for. Measured at
+		# run time, since it spans an order of magnitude across machines, and
 		# guessing high silently types far above the wpm band (a 40ms overshoot on
 		# a 75ms key turns 160 wpm into 330). Runs with no window up and before the
 		# capture starts, so the throwaway keystrokes are never on camera.
@@ -319,9 +319,7 @@ NEIGH = {
 
 # Typing pace, and the main knob for how long the recording runs (the script itself
 # is fixed). Deliberately brisk - a demo reads better than real-time typing does.
-# Keep the wander and jitter proportional to the pace: the earlier recorder got its
-# speed by subtracting a flat 40ms per key instead, which left the mean here but
-# tripled the relative jitter, and that is what made the cursor stutter.
+# Keep the wander and jitter proportional to the pace, or the cursor stutters.
 WPM_BAND   = (260.0, 420.0)   # letters drift within this
 WPM_START  = (300.0, 360.0)   # ... starting somewhere in here
 WPM_DRIFT  = 20.0             # per-key wander inside the band
@@ -366,7 +364,7 @@ class Typist:
 			if ch == "-" and (i == 0 or text[i - 1] == " "):
 				time.sleep(self.rng.uniform(0.14, 0.34))
 			self._pause(self._delay(ch) * (1.6 if ch == " " else 1.0))
-			# an expert's slip: wrong neighbour, catch it, fix it (letters only)
+			# an expert's slip: wrong neighbor, catch it, fix it (letters only)
 			if ch.lower() in NEIGH and self.rng.random() < typos:
 				wrong = self.rng.choice(NEIGH[ch.lower()])
 				self._emit(wrong)
@@ -468,9 +466,8 @@ def seg_tui(r, t):
 	# launch into the tree_grid board; a comments pane sits below it and follows
 	# the selected task. Walk to one that already has a synced discussion, then
 	# add a comment - a 1:m detail the board list never shows as a column.
-	# beats are either a wait for the app to paint (kept just long enough) or a
-	# beat for the viewer to read (kept longer) - trimming the two alike is what
-	# makes a demo feel either sluggish or unreadable
+	# two kinds of beat: waiting for a paint, and holding for something to be
+	# read. Trim them separately.
 	t.cmd(f"ngdb --tui {DB}", settle=1.5)
 	t.key("a"); time.sleep(1.1)              # load the task list
 	t.keys("Down", 3, hz=2.6); time.sleep(1.3)  # onto a task with a comment thread
@@ -483,7 +480,7 @@ def seg_tui(r, t):
 
 def seg_cli(r, t):
 	# the same data from the shell; a write shows up on the next read
-	t.cmd("# The CLI also supports full CRUD and query operations ...",
+	t.cmd("# same data, from the shell",
 		settle=0.5, typos=0.0)
 	t.cmd(f'ngdb query --db={DB} "{QUERY_OPEN}"', settle=1.8)
 	t.cmd(f'ngdb create --db={DB} --table=task title="Screen flashing on refresh" '

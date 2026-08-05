@@ -111,7 +111,7 @@ func (l *Log) Rotate(keep []Entry) (string, error) {
 // files lists the log's on-disk parts in read order: retired-in segments
 // (name-sorted, so oldest rotation first) then the live append file.
 func (l *Log) files() []string {
-	segs, _ := filepath.Glob(filepath.Join(l.Dir(), "txlog-*.csv"))
+	segs, _ := filepath.Glob(filepath.Join(l.Dir(), "txlog-*.csv")) // the pattern is a constant, so it cannot be malformed
 	sort.Strings(segs)
 	if _, err := os.Stat(l.path); err == nil {
 		segs = append(segs, l.path)

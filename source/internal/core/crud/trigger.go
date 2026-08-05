@@ -5,7 +5,7 @@
 // script-agnostic: it fires these around every write and the scripting host
 // plugs in the sidecar-backed implementation. Order per the design: field-level
 // before_update runs first (it may replace the value), then table-level
-// (it may veto); after hooks mirror that once the commit lands.
+// (it may veto); after hooks mirror that once the commit is written.
 package crud
 
 // Trigger receives write events. id is "" on create (not yet issued when the

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 
 	"github.com/jim-collier/nano-git-db/internal/core/crud"
 	"github.com/jim-collier/nano-git-db/internal/core/ddl"
@@ -96,7 +97,7 @@ func TestViewsListedBeforeTables(t *testing.T) {
 	}
 }
 
-// TestViewOpensAndLoadsOnSimulationScreen: the default view (first defined,
+// TestViewOpensAndLoadsOnSimulationScreen drives the default view (first defined,
 // no explicit default_view) auto-opens at boot; Esc back to the list, reopen
 // it with Enter, load the tree_grid with 'a', hop to the second block with
 // Tab and load it too, then back out and quit.
@@ -159,7 +160,7 @@ func TestViewOpensAndLoadsOnSimulationScreen(t *testing.T) {
 	}
 }
 
-// TestStartupQueryAndPicker: a view with startup_named_query loads that
+// TestStartupQueryAndPicker checks that a view with startup_named_query loads that
 // query's dataset the moment it opens; 'p' offers the view's queries.
 func TestStartupQueryAndPicker(t *testing.T) {
 	src := strings.Replace(orgDDL, "view: \"org\"\n",
@@ -283,6 +284,18 @@ func TestCommentsPaneLinksAndAdds(t *testing.T) {
 		a.Stop()
 		t.Fatalf("%q never appeared:\n%s", sub, screenText(screen))
 	}
+	waitForButton := func(label string) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			if button, ok := a.app.GetFocus().(*tview.Button); ok && button.GetLabel() == label {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		a.Stop()
+		t.Fatalf("focus never reached the %q button", label)
+	}
 	typeText := func(s string) {
 		for _, r := range s {
 			screen.InjectKey(tcell.KeyRune, r, tcell.ModNone)
@@ -302,7 +315,7 @@ func TestCommentsPaneLinksAndAdds(t *testing.T) {
 	typeText("shipped it")
 	waitFor("shipped it") // text is in the input field
 	screen.InjectKey(tcell.KeyTab, 0, tcell.ModNone)
-	time.Sleep(30 * time.Millisecond)                  // let focus land on Add
+	waitForButton("Add")                               // Enter in the field only moves focus
 	screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone) // press Add
 	waitFor("comments: 2")                             // pane reloaded after the append
 

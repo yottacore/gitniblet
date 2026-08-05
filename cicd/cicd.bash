@@ -301,8 +301,7 @@ fMain(){
 	## skips them (the offline checks all live in test.bash). Real findings fail.
 	##
 	## gosec excludes below are all justified for this local-first, single-user,
-	## git-synced tool (documented so a future maintainer sees the reasoning, not a
-	## silent blanket-disable):
+	## git-synced tool:
 	##   G104            unchecked errors on cleanup/stderr paths - idiomatic Go
 	##   G204            subprocess with variable args - we shell out to git by design
 	##   G304/G703       open user-named DDL/log/config paths - that IS the program
@@ -327,8 +326,7 @@ fMain(){
 
 	popd 1>/dev/null
 
-	## Install locally (dogfood it)
-	fEcho_Section "Dogfood (install locally)"
+		fEcho_Section "Dogfood (install locally)"
 
 	## Linux x86_64
 	for nextPath in "${preferredInstallPaths_Linux_x8664[@]}"; do
@@ -534,7 +532,6 @@ fEcho_Clean()        { local -r toEcho="${1:-}"; fEcho_Clean_byref toEcho; }
 fEcho()              { { [[ -z "${1:-}" ]] && fEcho_Clean ""; } || { local -r toEcho="[ ${1:-} ]"; fEcho_Clean_byref toEcho; }; }
 fEcho_Force()        { _wasLastEchoBlank=0; fEcho "${1:-}"; }
 fEcho_Clean_Force()  { _wasLastEchoBlank=0; local -r toEcho="${1:-}"; fEcho_Clean_byref toEcho; }
-## Section header: a blank line, the letterbox rule, then the bracketed title.
 declare -r _hr="••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
 fEcho_Section()      { fEcho_Clean; fEcho_Clean_Force "${_hr}"; fEcho "${1:-}"; }
 

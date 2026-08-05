@@ -37,7 +37,7 @@ esac; done
 
 fSkip(){ echo "profile.bash: skipped: $1"; exit 0; }   ## non-gating artifact
 
-## inferno-flamegraph renders the SVG; it lands in ~/.cargo/bin. Missing tool =>
+## inferno-flamegraph renders the SVG; it installs to ~/.cargo/bin. Missing tool =>
 ## skip (the stage is optional).
 inferno="$(command -v inferno-flamegraph || true)"
 [[ -x "${inferno}" ]] || inferno="${HOME}/.cargo/bin/inferno-flamegraph"
@@ -73,7 +73,7 @@ fi
 ## returns non-zero on empty matches, which would otherwise abort here).
 gfs_rotate "${profDir}" flame svg || true
 ## The just-written file keeps its timestamp; rotation only changes the role
-## suffix, so resolve the actual name rather than assuming one.
+## suffix, so resolve the actual name.
 newest="$(ls -1 "${profDir}"/flame_"${stamp}"_*.svg 2>/dev/null | head -1)"
 echo "flamegraph: ${newest:-${out}}"
 echo

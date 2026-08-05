@@ -9,10 +9,10 @@ import (
 	"testing"
 )
 
-// The DDL parser reads whatever a user hands it, so it must degrade to warnings
-// or an error on any input, never panic or hang. The seed corpus pulls in the
-// real example.ddl when present, plus a few shapes that stress the indentation
-// tree and normalize pass.
+// The schema parser reads whatever a user hands it, so it must degrade to
+// warnings or an error on any input, never panic or hang. The seed corpus pulls
+// in the real example.shcl when present, plus a few shapes that stress
+// indentation, restated sections and the path shorthand.
 
 func seedDDL(f *testing.F) {
 	f.Helper()
@@ -26,7 +26,7 @@ func seedDDL(f *testing.F) {
 	} {
 		f.Add([]byte(s))
 	}
-	if b, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "project", "example.ddl")); err == nil {
+	if b, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "project", "example.shcl")); err == nil {
 		f.Add(b)
 	}
 }
