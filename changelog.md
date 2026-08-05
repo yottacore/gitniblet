@@ -22,6 +22,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - For a database kept beside its schema, sync committed the derived SQLite file, and would have committed an encryption key placed there.
 - The name of an attachment's working copy could point outside the temporary directory.
 - Collecting old entries from the log could bring back a record whose table had been renamed, drop a write made while the collection ran, and leave a peer's sync permanently stuck.
+- A write the view refused - a duplicate value in a `unique:` group - printed a new id and exited 0, leaving the field empty for good. It is now reported.
+- Editing a hard-deleted record made a record holding only that field, which vanished again at the next rebuild.
+- A control character in a value was kept in the view but could not be stored in the log, so a rebuild silently changed the value.
+- A misspelled field name in `uniques:` or `indexes:` let a database list as fine and then fail to open with a raw SQL error.
+- The web sign-in had no rate limit, so a burst of attempts could tie up the machine.
+- A background sync could rebuild the view in the middle of another write.
 
 ## v1.0.0-beta.1
 

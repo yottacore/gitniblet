@@ -6,6 +6,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -212,4 +213,43 @@ func chdir(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chdir(old) })
+}
+
+// A schema that lost something on the way in is not a database to open
+// silently. This is the far end of the DDL error count: a unique group naming
+// a field that does not exist used to list as fine and then fail to open with
+// a raw SQLite error.
+func TestListFlagsASchemaWithErrors(t *testing.T) {
+	isolate(t)
+	dir := t.TempDir()
+	broken := filepath.Join(dir, "broken.ddl")
+	if err := os.WriteFile(broken, []byte(miniDDL+
+		"\t\tuniques:\n\t\t\tunique: ttile\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Create("broken", broken, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	listed := List()
+	if len(listed) != 1 {
+		t.Fatalf("listed %d databases, want 1", len(listed))
+	}
+	if listed[0].Err == nil {
+		t.Fatal("a schema with errors should list as unopenable, with a reason")
+	}
+	if !strings.Contains(listed[0].Err.Error(), "ttile") {
+		t.Errorf("the reason should name the problem: %v", listed[0].Err)
+	}
+}
+
+// The control: a sound schema still lists clean.
+func TestListAcceptsASoundSchema(t *testing.T) {
+	isolate(t)
+	if _, err := Create("fine", writeDDL(t, t.TempDir()), t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	listed := List()
+	if len(listed) != 1 || listed[0].Err != nil {
+		t.Fatalf("sound schema did not list clean: %+v", listed)
+	}
 }

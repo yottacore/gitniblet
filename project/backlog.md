@@ -58,32 +58,7 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Bugs
 
-- 🔘 Code Review 20260805 item 15: a write the view rejects still reports success.
-	- Cause: a write is appended to the log and then applied to the view. When the view rejects it - a duplicate value in a `unique:` group, say - that is turned into a warning and the warning is discarded.
-	- Effect: the command prints a new id and exits 0, but the field is empty, and stays empty on every future replay.
-	- Probable fix: return those warnings from the write path so each front-end can say the write reached the log but not the view.
-
-- 🔘 Code Review 20260805 item 16: editing a hard-deleted record makes a ghost.
-	- Cause: replay refuses to resurrect a deleted record, but it only knows about deletes in the batch it is handed, and a single edit is its own batch.
-	- Effect: an update naming a hard-deleted id creates a record with just that field set. It is visible until the next full replay, which then removes it.
-	- Probable fix: check the record still exists before writing, or seed the deleted set from the view.
-
-- 🔘 Code Review 20260805 item 17: a typo in `uniques:` or `indexes:` makes a database impossible to open.
-	- Cause: naming a field that does not exist is reported as a warning, but the entry is kept and handed to SQLite anyway.
-	- Effect: the database lists as openable, then opening it fails with a raw SQL error. Everywhere else a typo costs one line, not the whole schema.
-	- Probable fix: drop the unresolvable name and count it as an error, so the picker greys the database out with a reason.
-
-- 🔘 Code Review 20260805 item 18: control characters in a value are dropped from the log but kept in the view.
-	- Effect: the two disagree until the next rebuild, which silently changes the value.
-	- Probable fix: strip them when the write is built, so both copies match.
-
-- 🔘 Code Review 20260805 item 19: the background sync replays outside the write lock.
-	- Effect: a pull can rebuild the view in the middle of another write's log-then-view sequence, which is the interleaving the lock exists to prevent.
-	- Probable fix: run the replay through the same lock the write path takes.
-
-- 🔘 Code Review 20260805 item 20: no rate limit on the web login.
-	- Effect: each attempt is deliberately expensive to check, so a handful of parallel attempts can saturate the machine. Only affects the proxied mode that asks for a password.
-	- Probable fix: throttle failed attempts per source and per username.
+None open.
 
 ### New features and enhancements
 
@@ -109,6 +84,28 @@ In each section, items are listed approximately from newest to oldest.
 ### Done
 
 #### Done - Bugs
+
+- ✅ Code Review 20260805 item 15: a write the view refused reported success.
+	- A duplicate value in a `unique:` group was turned into a warning and the warning was thrown away, so the command printed a new id and exited 0 while the field stayed empty for good.
+	- Done: the write path reports it. A create still hands back its id - the record is in the log and worth naming - alongside a message saying which part the view refused.
+
+- ✅ Code Review 20260805 item 16: editing a hard-deleted record made a ghost.
+	- Replay recreates a record it has an edit for, so that a rebuild can tolerate entries arriving before the create they belong to. It could not tell that from an edit of something already deleted, and made a record holding only the edited field - visible until the next rebuild quietly removed it again.
+	- Done: a field write against a record the view no longer holds is refused, checked under the write lock so a delete cannot slip in alongside. Soft-deleted records are still there, so they stay editable.
+
+- ✅ Code Review 20260805 item 17: a typo in `uniques:` or `indexes:` made a database impossible to open.
+	- A name matching no field was reported but kept, then handed to SQLite, so a database that had just listed as fine failed to open with a raw SQL error.
+	- Done: it counts as an error, which is what greys the database out with the name and its line. The entry is dropped whole rather than one name at a time - pruning the typo out of a two-field group would leave a stricter rule than was written.
+
+- ✅ Code Review 20260805 item 18: control characters were dropped from the log but kept in the view.
+	- Done: they are dropped when the write is built, so the view holds what a rebuild will produce instead of the two disagreeing until the value silently changed.
+
+- ✅ Code Review 20260805 item 19: the background sync replayed outside the write lock.
+	- Done: a sync's rebuild goes through the same lock a write takes, so it can no longer land between a write's log append and its own view update.
+
+- ✅ Code Review 20260805 item 20: no rate limit on the web login.
+	- Each attempt is meant to be expensive to check, so an open endpoint was a way to spend the machine's CPU for free.
+	- Done: a failure count per username and per source address refuses a run of wrong guesses before any of the expensive work happens, and a cap on how many are checked at once covers the burst the counts cannot (attempts arriving together all pass the count before any has failed). Counts age out on their own, so nothing locks an account.
 
 - ✅ Code Review 20260805 items 13 and 14: garbage collection could lose records.
 	- Item 13: collection grouped a row's entries by the table name as written, so a table renamed mid-life split one record into two groups. The group holding its delete could be collected while the group holding its create survived, and the record reappeared on the next rebuild - permanently.

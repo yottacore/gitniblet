@@ -22,7 +22,7 @@ func proxiedServer(t *testing.T) *server {
 	if err := creds.Set("alice", "s3cret"); err != nil {
 		t.Fatal(err)
 	}
-	s.auth = &authState{proxied: true, creds: creds, sessions: newSessions(time.Now)}
+	s.auth = &authState{proxied: true, creds: creds, sessions: newSessions(time.Now), limit: newThrottle(time.Now)}
 	return s
 }
 
@@ -83,7 +83,7 @@ func TestProxiedLoginThenReachAsUser(t *testing.T) {
 	if err := creds.Set("alice", "s3cret"); err != nil {
 		t.Fatal(err)
 	}
-	s.auth = &authState{proxied: true, creds: creds, sessions: newSessions(time.Now)}
+	s.auth = &authState{proxied: true, creds: creds, sessions: newSessions(time.Now), limit: newThrottle(time.Now)}
 
 	// Good login -> 303 + a session cookie.
 	w := do(t, s.routes(), "POST", "/login", url.Values{"username": {"alice"}, "password": {"s3cret"}})
