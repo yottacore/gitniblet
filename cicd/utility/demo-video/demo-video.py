@@ -317,11 +317,15 @@ NEIGH = {
 	"v": "cb", "w": "qe", "x": "zc", "y": "tu", "z": "x",
 }
 
-# Typing pace, and the one knob for how long the recording runs (the script itself
-# is fixed): letters drift inside the band, digits are hunted at a steadier rate.
-WPM_BAND   = (120.0, 200.0)   # letters drift within this
-WPM_START  = (140.0, 180.0)   # ... starting somewhere in here
-WPM_DIGITS = 120.0
+# Typing pace, and the main knob for how long the recording runs (the script itself
+# is fixed). Deliberately brisk - a demo reads better than real-time typing does.
+# Keep the wander and jitter proportional to the pace: the earlier recorder got its
+# speed by subtracting a flat 40ms per key instead, which left the mean here but
+# tripled the relative jitter, and that is what made the cursor stutter.
+WPM_BAND   = (260.0, 420.0)   # letters drift within this
+WPM_START  = (300.0, 360.0)   # ... starting somewhere in here
+WPM_DRIFT  = 20.0             # per-key wander inside the band
+WPM_DIGITS = 200.0            # digits are hunted a touch slower and steadier
 
 class Typist:
 	def __init__(self, rec, rng):
@@ -333,10 +337,9 @@ class Typist:
 		time.sleep(max(0.0, secs - self.rec.spawn_comp))
 
 	def _delay(self, ch):
-		# digits are hunted a touch slower and steadier; letters drift
 		if ch.isdigit():
 			return (12.0 / WPM_DIGITS) * self.rng.lognormvariate(0.0, 0.14)
-		self.wpm += self.rng.uniform(-10, 10)
+		self.wpm += self.rng.uniform(-WPM_DRIFT, WPM_DRIFT)
 		self.wpm = max(WPM_BAND[0], min(WPM_BAND[1], self.wpm))
 		return (12.0 / self.wpm) * self.rng.lognormvariate(0.0, 0.22)
 
@@ -465,35 +468,39 @@ def seg_tui(r, t):
 	# launch into the tree_grid board; a comments pane sits below it and follows
 	# the selected task. Walk to one that already has a synced discussion, then
 	# add a comment - a 1:m detail the board list never shows as a column.
-	t.cmd(f"ngdb --tui {DB}", settle=2.2)
-	t.key("a"); time.sleep(1.6)              # load the task list
-	t.keys("Down", 3, hz=2.6); time.sleep(1.8)  # onto a task with a comment thread
-	t.key("Tab"); time.sleep(0.8)            # focus the comments pane below
-	t.key("Return"); time.sleep(1.0)         # open the new-comment prompt
-	t.type("Deployed the fix to staging"); time.sleep(0.5)
-	t.key("Tab"); time.sleep(0.4)            # onto Add
-	t.key("Return"); time.sleep(2.2)         # add; the thread reloads with it
-	t.key("q"); time.sleep(1.0)              # back out of the TUI
+	# beats are either a wait for the app to paint (kept just long enough) or a
+	# beat for the viewer to read (kept longer) - trimming the two alike is what
+	# makes a demo feel either sluggish or unreadable
+	t.cmd(f"ngdb --tui {DB}", settle=1.5)
+	t.key("a"); time.sleep(1.1)              # load the task list
+	t.keys("Down", 3, hz=2.6); time.sleep(1.3)  # onto a task with a comment thread
+	t.key("Tab"); time.sleep(0.5)            # focus the comments pane below
+	t.key("Return"); time.sleep(0.7)         # open the new-comment prompt
+	t.type("Deployed the fix to staging"); time.sleep(0.35)
+	t.key("Tab"); time.sleep(0.3)            # onto Add
+	t.key("Return"); time.sleep(1.6)         # add; the thread reloads with it
+	t.key("q"); time.sleep(0.7)              # back out of the TUI
 
 def seg_cli(r, t):
 	# the same data from the shell; a write shows up on the next read
 	t.cmd("# The CLI also supports full CRUD and query operations ...",
-		settle=0.6, typos=0.0)
-	t.cmd(f'ngdb query --db={DB} "{QUERY_OPEN}"', settle=2.4)
+		settle=0.5, typos=0.0)
+	t.cmd(f'ngdb query --db={DB} "{QUERY_OPEN}"', settle=1.8)
 	t.cmd(f'ngdb create --db={DB} --table=task title="Screen flashing on refresh" '
-		'status=open priority=high assignee=demo', settle=2.0)
-	t.cmd(f'ngdb query --db={DB} "{QUERY_OPEN}"', settle=2.4)
+		'status=open priority=high assignee=demo', settle=1.3)
+	# longer: this is where the new row has to be spotted in the re-read
+	t.cmd(f'ngdb query --db={DB} "{QUERY_OPEN}"', settle=1.9)
 	# the payoff: the whole database is this folder - schema, view, append-only log
-	t.cmd("ls -1", settle=2.6)
+	t.cmd("ls -1", settle=1.9)
 
 def seg_outro(r, t):
 	(r.home / ".ngdb-gray").touch()
 	r.xdo("windowactivate", r.win)
 	time.sleep(0.3)
 	r.xdo("key", "--clearmodifiers", "Return")   # fresh prompt picks up the gray flag
-	time.sleep(0.6)
-	t.cmd("# nano-git-db.", settle=0.4, typos=0.0)
-	time.sleep(2.4)
+	time.sleep(0.5)
+	t.cmd("# nano-git-db.", settle=0.3, typos=0.0)
+	time.sleep(1.8)                              # hold the closing line before the seam
 
 SCRIPT = [
 	("tui",   seg_tui),
@@ -603,7 +610,7 @@ def record(args, name, seed):
 		rec.calibrate_spawn()
 		rec.start_capture()
 		rec.launch_term(cols, rows, rec.p["font_pt"])
-		time.sleep(1.5)
+		time.sleep(1.0)
 		rec.t0_e = time.time() - LEAD_S
 
 		t = Typist(rec, rng)
@@ -664,3 +671,6 @@ if __name__ == "__main__":
 ##		  into a 3,3,4cs judder), typing cadence compensates for a measured
 ##		  xdotool spawn instead of a hardcoded 42ms, and the gif emits only the
 ##		  changed rectangle per frame.
+##		- 20260804: Brisk typing is set by the wpm band now rather than falling
+##		  out of the spawn subtraction, so the pace keeps proportional jitter.
+##		  Fixed beats trimmed, holding the ones that exist to be read.
