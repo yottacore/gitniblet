@@ -58,17 +58,6 @@ In each section, items are listed approximately from newest to oldest.
 
 ### Bugs
 
-- 🔘 Code Review 20260805 item 13: a renamed table can bring a deleted record back.
-	- Cause: garbage collection groups log entries by the table name as written, and does not map old names to current ones the way every other replay path does.
-	- Effect: after a rename, a record's delete and its create fall into separate groups. The delete can be collected while the create survives, so the next rebuild shows the record again.
-	- Probable fix: resolve aliases before grouping, as the other paths already do.
-
-- 🔘 Code Review 20260805 item 14: garbage collection can drop a write made while it runs.
-	- Cause: the pass reads the whole log, works out what to keep, then deletes the files it read - with nothing stopping a write in between.
-	- Effect: anything appended during the pass is not in the kept set and its file is removed, so the write is gone from the source of truth. A running TUI or web UI writes on its own schedule, which makes this reachable in normal use.
-	- Also: removing the live log file is a deletion git cannot union-merge, so a peer who appended to the same file gets a conflict that wedges their sync.
-	- Probable fix: hold a lock over the log directory for the pass, or re-check each file before removing it.
-
 - 🔘 Code Review 20260805 item 15: a write the view rejects still reports success.
 	- Cause: a write is appended to the log and then applied to the view. When the view rejects it - a duplicate value in a `unique:` group, say - that is turned into a warning and the warning is discarded.
 	- Effect: the command prints a new id and exits 0, but the field is empty, and stays empty on every future replay.
@@ -120,6 +109,13 @@ In each section, items are listed approximately from newest to oldest.
 ### Done
 
 #### Done - Bugs
+
+- ✅ Code Review 20260805 items 13 and 14: garbage collection could lose records.
+	- Item 13: collection grouped a row's entries by the table name as written, so a table renamed mid-life split one record into two groups. The group holding its delete could be collected while the group holding its create survived, and the record reappeared on the next rebuild - permanently.
+	- Done: grouping resolves former names to current ones, the same way replay does. The entries themselves are copied through untouched, since the log is immutable and a table name is part of what an encrypted value is sealed against.
+	- Item 14: a pass read the whole log, decided what to keep, then deleted the files it had read. Anything written in between went with them, which a running terminal or web UI made reachable in ordinary use.
+	- Done: a pass now starts by sealing the live file, so an appending process immediately gets a fresh one. It then works only over sealed segments, which it records by name and size. A write made during a pass is in the new live file, which the pass never reads or removes; the recorded sizes are re-checked before anything is deleted, which catches an append that already had a file open and aborts rather than taking the write with it.
+	- Done: after a rotation the live file is left in place holding just its header, instead of deleted. A peer who appended to it on the same commit now sees a change the union driver merges, rather than a modify/delete conflict that no driver resolves and that wedged every later sync.
 
 - ✅ Code Review 20260805 items 1 to 12.
 	- Item 1: another site the browser had open could drive the local web UI, and a page pointing a name it owned at the loopback address could read the whole database. Writes now have to prove they came from the UI, and the UI only answers under the address it was bound to. A reverse proxy legitimately rewrites that name, so the proxied mode keeps the write check and skips the address check.

@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A second process writing at the same time failed instead of waiting for the database file.
 - For a database kept beside its schema, sync committed the derived SQLite file, and would have committed an encryption key placed there.
 - The name of an attachment's working copy could point outside the temporary directory.
+- Collecting old entries from the log could bring back a record whose table had been renamed, drop a write made while the collection ran, and leave a peer's sync permanently stuck.
 
 ## v1.0.0-beta.1
 

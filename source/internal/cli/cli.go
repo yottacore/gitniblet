@@ -593,11 +593,22 @@ func parseAssigns(args []string) (map[string]string, error) {
 // gcLog collects tx-log entries of rows hard-deleted more than gc_age_days
 // ago, via segment rotation (never editing a log file in place). The next
 // sync commits the rotation.
+//
+// The log is read twice on a pass that collects something. The first read only
+// answers "is there anything to do", so an idle pass leaves the log untouched.
+// The second is taken from a snapshot of the sealed segments, so what gets
+// decided is exactly what gets retired - anything written from the seal onward
+// goes to a fresh live file this pass never reads or touches.
 func gcLog(ddlPath, logDir string) error {
 	sch, err := ddl.ParseFile(ddlPath)
 	if err != nil {
 		return err
 	}
+	builtins, err := schema.Builtins()
+	if err != nil {
+		return err
+	}
+	canon := schema.TableCanon(sch, builtins)
 	lg, err := txlog.Open(logDir)
 	if err != nil {
 		return err
@@ -610,12 +621,32 @@ func gcLog(ddlPath, logDir string) error {
 		fmt.Println("warning:", w)
 	}
 	days := sch.TunableInt("gc_age_days", 90)
-	keep, collected := txlog.GC(entries, txlog.CutoffDays(days))
-	if collected == 0 {
+	cutoff := txlog.CutoffDays(days)
+	if _, collected := txlog.GC(entries, cutoff, canon); collected == 0 {
 		fmt.Printf("nothing to collect (threshold: deleted > %d days ago)\n", days)
 		return nil
 	}
-	seg, err := lg.Rotate(keep)
+
+	if _, err := lg.Seal(); err != nil {
+		return err
+	}
+	snap, err := lg.Snapshot()
+	if err != nil {
+		return err
+	}
+	entries, warns, err = snap.ReadAll()
+	if err != nil {
+		return err
+	}
+	for _, w := range warns {
+		fmt.Println("warning:", w)
+	}
+	keep, collected := txlog.GC(entries, cutoff, canon)
+	if collected == 0 { // everything eligible was already taken by another pass
+		fmt.Printf("nothing to collect (threshold: deleted > %d days ago)\n", days)
+		return nil
+	}
+	seg, err := lg.Rotate(keep, snap)
 	if err != nil {
 		return err
 	}

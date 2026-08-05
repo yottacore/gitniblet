@@ -12,6 +12,31 @@ import (
 	"github.com/jim-collier/nano-git-db/internal/core/txlog"
 )
 
+// TableCanon returns a lookup from a table's former name to its current one,
+// for callers that must group entries the way replay would but cannot rewrite
+// them. Tx-log GC is the case: it decides what belongs to the same row, then
+// copies the surviving entries through untouched, since the log is immutable
+// and an entry's table name is part of what its encrypted values are sealed
+// against. Unknown names come back unchanged.
+func TableCanon(schemas ...*ddl.Schema) func(string) string {
+	aliases := map[string]string{}
+	for _, s := range schemas {
+		for _, table := range s.Tables {
+			for _, alias := range table.Aliases {
+				if alias != "" && aliases[alias] == "" {
+					aliases[alias] = table.Name
+				}
+			}
+		}
+	}
+	return func(table string) string {
+		if current := aliases[table]; current != "" {
+			return current
+		}
+		return table
+	}
+}
+
 // ApplyAliases rewrites entries in place. First definition wins on
 // conflicting aliases, matching every other schema merge in the project.
 func ApplyAliases(entries []txlog.Entry, schemas ...*ddl.Schema) {
