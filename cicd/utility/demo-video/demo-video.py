@@ -6,7 +6,8 @@
 ##		realistic pace (variable wpm, occasional fixed typos, a beat before flags),
 ##		and encode two deliverables from one script:
 ##		  video: 1920x1080 mp4 (h264), kept in private/ (not committed)
-##		  gif:   960x540 looping, hard cut to a 2s black loop seam, -> assets/demo.gif
+##		  gif:   960x540 looping at 50fps, hard cut to a 2s black loop seam,
+##		         -> assets/demo.gif
 ##		The terminal is a plain faux window (Monaspace Argon SemiBold, dark-gray
 ##		bg, pale-green text, an anonymous colorized user@host prompt); nothing real
 ##		- fake user `demo`, host `workstation`, /tmp paths - ever reaches a frame.
@@ -63,9 +64,12 @@ HOSTS = ["nimbus", "vela", "atlas", "birch", "cobalt", "delta", "ember", "flint"
 LEAD_S      = 0.7          # quiet lead kept before the first keystroke
 BLACK_S     = 2.0          # hard cut to a solid black hold at the loop seam
 
+# gif fps must divide 100: a gif frame delay is whole centiseconds, so 50 lands on
+# an exact 2cs and every frame holds the same time. 30 does not - it quantizes to a
+# repeating 3,3,4cs pattern, which is a permanent 10ms judder on every third frame.
 PROFILES = {
 	"video": dict(size=(1920, 1080), fps=60, font_pt=22, ext="mp4"),
-	"gif":   dict(size=(960, 540),   fps=30, font_pt=13, ext="gif"),
+	"gif":   dict(size=(960, 540),   fps=50, font_pt=13, ext="gif"),
 }
 GIF_ASSET_MAX_MB = 14
 
@@ -98,6 +102,7 @@ class Rec:
 		self.app     = None
 		self.ff      = None
 		self.win     = ""
+		self.spawn_comp = 0.0   # measured before capture, see calibrate_spawn
 		self.flash_e = 0.0
 		self.t0_e    = 0.0
 		self.seg_marks = {}
@@ -185,6 +190,25 @@ class Rec:
 				env=self.env(), capture_output=True, text=True).stdout.split():
 			self.xdo("windowkill", w)
 		time.sleep(0.3)
+
+	# --- typing cadence calibration -------------------------------------------
+	def calibrate_spawn(self):
+		# Every keystroke is its own xdotool process, and that spawn plus X connect
+		# lands between keys on top of the sleep the typist asked for. Measure it
+		# instead of assuming: it spans an order of magnitude across machines, and
+		# guessing high silently types far above the wpm band (a 40ms overshoot on
+		# a 75ms key turns 160 wpm into 330). Runs with no window up and before the
+		# capture starts, so the throwaway keystrokes are never on camera.
+		samples = []
+		for _ in range(25):
+			started = time.time()
+			subprocess.run(["xdotool", "type", "--delay", "0", "--", "x"],
+				env=self.env(), check=False,
+				stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+			samples.append(time.time() - started)
+		samples.sort()
+		self.spawn_comp = samples[len(samples) // 2]   # median shrugs off a stray stall
+		log(f"xdotool spawn {self.spawn_comp * 1000:.1f}ms (typing cadence compensates)")
 
 	# --- capture --------------------------------------------------------------
 	def start_capture(self):
@@ -293,25 +317,27 @@ NEIGH = {
 	"v": "cb", "w": "qe", "x": "zc", "y": "tu", "z": "x",
 }
 
-# each xdotool key/type spawns a process (~45ms here); that latency lands between
-# keystrokes on top of our sleep, so subtract it to keep the real cadence on target
-SPAWN_COMP = 0.042
+# Typing pace, and the one knob for how long the recording runs (the script itself
+# is fixed): letters drift inside the band, digits are hunted at a steadier rate.
+WPM_BAND   = (120.0, 200.0)   # letters drift within this
+WPM_START  = (140.0, 180.0)   # ... starting somewhere in here
+WPM_DIGITS = 120.0
 
 class Typist:
 	def __init__(self, rec, rng):
 		self.rec = rec
 		self.rng = rng
-		self.wpm = rng.uniform(140, 180)          # letters: 120-200 band, drifting
+		self.wpm = rng.uniform(*WPM_START)
 
 	def _pause(self, secs):
-		time.sleep(max(0.0, secs - SPAWN_COMP))
+		time.sleep(max(0.0, secs - self.rec.spawn_comp))
 
 	def _delay(self, ch):
-		# digits are hunted a touch slower and steadier (~120 wpm); letters drift
+		# digits are hunted a touch slower and steadier; letters drift
 		if ch.isdigit():
-			return (12.0 / 120.0) * self.rng.lognormvariate(0.0, 0.14)
+			return (12.0 / WPM_DIGITS) * self.rng.lognormvariate(0.0, 0.14)
 		self.wpm += self.rng.uniform(-10, 10)
-		self.wpm = max(120.0, min(200.0, self.wpm))
+		self.wpm = max(WPM_BAND[0], min(WPM_BAND[1], self.wpm))
 		return (12.0 / self.wpm) * self.rng.lognormvariate(0.0, 0.22)
 
 	def _emit(self, ch):
@@ -519,8 +545,12 @@ def encode(rec, video_end_e):
 		pal = rec.work / "pal.png"
 		run(["ffmpeg", "-v", "error", "-y", *cut, "-i", str(rec.raw),
 			"-vf", f"{vf},palettegen=stats_mode=full:max_colors=160", str(pal)])
+		# diff_mode=rectangle emits only the changed rectangle per frame, which is a
+		# few cells for most of a terminal recording - that is what pays for the
+		# higher frame rate instead of the file growing with it.
 		run(["ffmpeg", "-v", "error", "-y", *cut, "-i", str(rec.raw), "-i", str(pal),
-			"-lavfi", f"{vf}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=4",
+			"-lavfi", f"{vf}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=4"
+			":diff_mode=rectangle",
 			"-loop", "0", str(out)])
 	return out
 
@@ -570,6 +600,7 @@ def record(args, name, seed):
 		rec.start_display()
 		cols, rows = rec.fit_geometry(rec.p["font_pt"])
 		log(f"[{name}] terminal {cols}x{rows} @ {rec.p['font_pt']}pt")
+		rec.calibrate_spawn()
 		rec.start_capture()
 		rec.launch_term(cols, rows, rec.p["font_pt"])
 		time.sleep(1.5)
@@ -629,3 +660,7 @@ if __name__ == "__main__":
 ##		  with a lead-in comment, shorter outro line.
 ##		- 20260717: TUI beat now adds a comment in the board's comments pane
 ##		  (a linked 1:m detail) instead of editing status.
+##		- 20260804: Gif runs at 50fps (an exact 2cs frame delay, where 30 fell
+##		  into a 3,3,4cs judder), typing cadence compensates for a measured
+##		  xdotool spawn instead of a hardcoded 42ms, and the gif emits only the
+##		  changed rectangle per frame.
