@@ -48,19 +48,41 @@ if ((${#targets[@]} == 0)); then
 	echo "fuzz.bash: no fuzz targets found"; exit 0
 fi
 
+out="/tmp/ngdb-fuzz.$$"
+
+fRunTarget() {   ## $1 = import path, $2 = target name
+	go test -mod=vendor -p "${NGDB_JOBS}" -run '^$' -fuzz="^${2}\$" -fuzztime="${fuzzTime}" "$1" >"${out}" 2>&1
+}
+
+## go1.26's fuzzing coordinator can report the -fuzztime deadline itself as the
+## failure: the deadline error escapes because the worker context has not been
+## cancelled yet when the event loop wakes (golang/go#75804, fixed in go1.27, no
+## backport). A genuine crash always saves the offending input, so a bare
+## "context deadline exceeded" with nothing written is the toolchain, not us.
+## Drop this once the toolchain pin reaches 1.27.
+fSpuriousDeadline() {
+	grep -q 'context deadline exceeded' "${out}" && ! grep -q 'Failing input written to' "${out}"
+}
+
 fails=0
 for t in "${targets[@]}"; do
 	pkg="${t%% *}"; fn="${t##* }"
 	printf '  %-52s %-20s ' "${pkg#github.com/jim-collier/nano-git-db/}" "${fn} (${fuzzTime})"
-	if go test -mod=vendor -p "${NGDB_JOBS}" -run '^$' -fuzz="^${fn}\$" -fuzztime="${fuzzTime}" "${pkg}" >/tmp/ngdb-fuzz.$$ 2>&1; then
-		echo "ok"
+	note=""
+	rc=0; fRunTarget "${pkg}" "${fn}" || rc=$?
+	if ((rc != 0)) && fSpuriousDeadline; then
+		note=" (deadline flake, rerun)"
+		rc=0; fRunTarget "${pkg}" "${fn}" || rc=$?
+	fi
+	if ((rc == 0)); then
+		echo "ok${note}"
 	else
 		echo "CRASH"
-		sed 's/^/      /' /tmp/ngdb-fuzz.$$
+		sed 's/^/      /' "${out}"
 		fails=$((fails + 1))
 	fi
 done
-rm -f /tmp/ngdb-fuzz.$$
+rm -f "${out}"
 
 ((fails == 0)) || { echo "fuzz.bash: ${fails} target(s) crashed"; exit 1; }
 echo "fuzz.bash: all targets clean"
@@ -68,3 +90,4 @@ echo "fuzz.bash: all targets clean"
 
 ##	Script history:
 ##		- 20260709: Created.
+##		- 20260804: Rerun a target once when the fuzz budget expires as a failure.
