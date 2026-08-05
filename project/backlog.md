@@ -115,7 +115,8 @@ In each section, items are listed approximately from newest to oldest.
 	- Done: theme beat dropped; in its place a real TUI action - a task with an existing comment thread is selected and a comment is added in the board's comments pane (a linked detail the list view never shows).
 	- Done: CLI part opens with a comment line, uses `--db=`/`--table=` explicitly, and the closing line is `# nano-git-db.`
 	- Done: the faux window has square corners and fills the frame except a 4px black outline; terminal scrolls smooth (no jump scroll) with a blinking cursor.
-	- Done: the gif runs at 50fps, where 30 could not hold a steady frame delay. Typing was also running at roughly twice the pace it was set to, so the cursor now moves at the intended speed.
+	- Done: the gif runs at 50fps, where 30 could not hold a steady frame delay. The brisk typing pace is now asked for directly rather than falling out of a fixed per-key subtraction, so its jitter scales with it and the cursor stops stuttering.
+	- Done: fixed beats trimmed to ~50s, keeping the longer holds where there is output to read.
 
 - ✅ Enterprise license validation. Phones home to confirm an active subscription and allows a set number of copies at once. Does not fail if it cannot reach the server for a while, and does not bind to specific hardware.
 	- Note: scheme decided in the enterprise repo; implementation is a later phase.
