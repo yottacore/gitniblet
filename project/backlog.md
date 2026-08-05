@@ -62,14 +62,6 @@ None open.
 
 ### New features and enhancements
 
-- 🔘 Code Review 20260805 item 21: replay prepares a fresh SQL statement for every log entry.
-	- Effect: this is the hot path for opening a database and for every sync that brings changes, and the cost grows with the log.
-	- Probable fix: reuse a prepared statement per table and per field for the duration of the replay.
-
-- 🔘 Code Review 20260805 item 22: the CLI passes a database's three paths around as an unlabeled list.
-	- Effect: a dozen functions index it by position, so there is no name to search for when tracing where the log directory or the SQLite path is used.
-	- Probable fix: a small named type; the registry record already has these three fields.
-
 - 🛠️ Optional encrypted data in the transaction log. The local SQLite copy is always decrypted.
 	- Reason: keep the log unreadable to the git host, or to anyone who gets the repo.
 	- Note: some columns stay clear so git can still merge and replay (table and field names, row id, user, host, counts). Only the field values are private.
@@ -129,6 +121,12 @@ None open.
 	- Item 12: for a database kept in the same folder as its schema, sync committed and pushed the derived SQLite file, and would have pushed an encryption key placed beside it. Both are now ignored in the log directory.
 
 #### Done - New features and enhancements
+
+- ✅ Code Review 20260805 item 21: replay prepared a fresh SQL statement for every log entry.
+	- Done: a pass reuses its statements, which are one shape per table and one per field however long the log is. Rebuilding a 5000-entry log went from about 240ms to about 97ms, on the path every open and every sync that brings changes takes.
+
+- ✅ Code Review 20260805 item 22: the CLI passed a database's three paths around as an unlabeled list.
+	- Done: a named type with a field per file, so which one is which reads at every use and searching for the log directory or the view finds them.
 
 - ✅ Use sister project 'SHCL' as the engine for config and DDL files.
 	- Done: one language now covers the schema, the queries sidecar, and ngdb's own registry, settings and web-credential files. The TOML dependency is gone, and so is the hand-rolled indent parser.

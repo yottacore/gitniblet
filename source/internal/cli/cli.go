@@ -63,6 +63,16 @@ func Run(args []string) error {
 	return usage()
 }
 
+// dbPaths is where one database's three files live, as its registry record
+// gives them. Named rather than carried around as a positional list, so that
+// which one is which is readable at every use, and so a search for the log
+// directory or the view finds them.
+type dbPaths struct {
+	DDL    string // the schema file
+	SQLite string // the derived view
+	Log    string // the tx-log directory
+}
+
 // crudSelect pulls the leading database and (optional) table selectors off a
 // data verb's args. Each can be given two ways: the database positionally
 // (the first bare word) or as --db/-d, the table positionally (the next bare
@@ -70,10 +80,10 @@ func Run(args []string) error {
 // "--db=name" and may lead in any order. Data verbs are name-only by design -
 // the raw ddl/sqlite/log paths are never spelled out for CRUD.
 //
-// It returns the database's open triple, the table (empty when the verb reads
-// it positionally, filled when a --table flag supplied it), and the remaining
-// positional args (id, assignments, sql...).
-func crudSelect(args []string) (paths []string, table string, rest []string, err error) {
+// It returns where the database's files are, the table (empty when the verb
+// reads it positionally, filled when a --table flag supplied it), and the
+// remaining positional args (id, assignments, sql...).
+func crudSelect(args []string) (paths dbPaths, table string, rest []string, err error) {
 	var name string
 	// consume any leading --db/--table flags, in any order
 selectors:
@@ -82,12 +92,12 @@ selectors:
 		switch {
 		case arg == "--db" || arg == "-d":
 			if len(args) < 2 {
-				return nil, "", nil, fmt.Errorf("%s needs a database name", arg)
+				return dbPaths{}, "", nil, fmt.Errorf("%s needs a database name", arg)
 			}
 			name, args = args[1], args[2:]
 		case arg == "--table" || arg == "-t":
 			if len(args) < 2 {
-				return nil, "", nil, fmt.Errorf("%s needs a table name", arg)
+				return dbPaths{}, "", nil, fmt.Errorf("%s needs a table name", arg)
 			}
 			table, args = args[1], args[2:]
 		default:
@@ -103,14 +113,14 @@ selectors:
 		}
 	}
 	if name == "" {
-		return nil, "", nil, fmt.Errorf("missing database name")
+		return dbPaths{}, "", nil, fmt.Errorf("missing database name")
 	}
 	cfg := config.FindByName(name)
 	if cfg == nil {
-		return nil, "", nil, config.UnknownDatabase(name)
+		return dbPaths{}, "", nil, config.UnknownDatabase(name)
 	}
 	_ = cfg.Touch() // best-effort last-opened stamp
-	return []string{cfg.DDLPath, cfg.SQLitePath, cfg.LogDir}, table, args, nil
+	return dbPaths{DDL: cfg.DDLPath, SQLite: cfg.SQLitePath, Log: cfg.LogDir}, table, args, nil
 }
 
 // cutFlag matches "--db=value" / "-d=value" style selectors.
@@ -123,14 +133,15 @@ func cutFlag(arg string, names ...string) (value string, ok bool) {
 	return "", false
 }
 
-// nameTriple resolves a registered database name to its (ddl, sqlite, logdir)
-// paths; ok is false when no such name is registered. The low-level verbs use
-// it to accept a name yet still fall back to their explicit-path form.
-func nameTriple(name string) (ddlPath, sqlitePath, logDir string, ok bool) {
-	if cfg := config.FindByName(name); cfg != nil {
-		return cfg.DDLPath, cfg.SQLitePath, cfg.LogDir, true
+// pathsForName resolves a registered database name to its files; ok is false
+// when no such name is registered. The low-level verbs use it to accept a name
+// yet still fall back to their explicit-path form.
+func pathsForName(name string) (paths dbPaths, ok bool) {
+	cfg := config.FindByName(name)
+	if cfg == nil {
+		return dbPaths{}, false
 	}
-	return "", "", "", false
+	return dbPaths{DDL: cfg.DDLPath, SQLite: cfg.SQLitePath, Log: cfg.LogDir}, true
 }
 
 // doData resolves the named database and dispatches one CRUD verb over it. The
@@ -215,8 +226,8 @@ func doData(verb string, args []string) error {
 // doBuild builds/migrates a view: build <db>, or the explicit build <ddl> <sqlite>.
 func doBuild(args []string) error {
 	if len(args) == 1 {
-		if ddlPath, sqlitePath, _, ok := nameTriple(args[0]); ok {
-			return buildDB(ddlPath, sqlitePath)
+		if paths, ok := pathsForName(args[0]); ok {
+			return buildDB(paths.DDL, paths.SQLite)
 		}
 		return fmt.Errorf("unknown database %q (or use build <ddl> <sqlite>)", args[0])
 	}
@@ -229,8 +240,8 @@ func doBuild(args []string) error {
 // doReplay rebuilds a view from its log: replay <db>, or replay <ddl> <sqlite> <dir>.
 func doReplay(args []string) error {
 	if len(args) == 1 {
-		if ddlPath, sqlitePath, logDir, ok := nameTriple(args[0]); ok {
-			return replay(ddlPath, sqlitePath, logDir)
+		if paths, ok := pathsForName(args[0]); ok {
+			return replay(paths.DDL, paths.SQLite, paths.Log)
 		}
 		return fmt.Errorf("unknown database %q (or use replay <ddl> <sqlite> <logdir>)", args[0])
 	}
@@ -244,8 +255,8 @@ func doReplay(args []string) error {
 // only reconciles the log; sync <ddl> <sqlite> <dir> is the explicit full cycle.
 func doSync(args []string) error {
 	if len(args) == 1 {
-		if ddlPath, sqlitePath, logDir, ok := nameTriple(args[0]); ok {
-			return syncAndReplay(ddlPath, sqlitePath, logDir)
+		if paths, ok := pathsForName(args[0]); ok {
+			return syncAndReplay(paths.DDL, paths.SQLite, paths.Log)
 		}
 		return syncLog(args[0]) // not a name: treat it as a log directory
 	}
@@ -258,8 +269,8 @@ func doSync(args []string) error {
 // doGC collects long-deleted entries: gc <db>, or gc <ddl> <logdir>.
 func doGC(args []string) error {
 	if len(args) == 1 {
-		if ddlPath, _, logDir, ok := nameTriple(args[0]); ok {
-			return gcLog(ddlPath, logDir)
+		if paths, ok := pathsForName(args[0]); ok {
+			return gcLog(paths.DDL, paths.Log)
 		}
 		return fmt.Errorf("unknown database %q (or use gc <ddl> <logdir>)", args[0])
 	}
@@ -273,8 +284,8 @@ func doGC(args []string) error {
 // --rename-table <ddl> <sqlite> <old> <new>.
 func doRenameTable(args []string) error {
 	if len(args) == 3 {
-		if ddlPath, sqlitePath, _, ok := nameTriple(args[0]); ok {
-			return renameTable(ddlPath, sqlitePath, args[1], args[2])
+		if paths, ok := pathsForName(args[0]); ok {
+			return renameTable(paths.DDL, paths.SQLite, args[1], args[2])
 		}
 		return fmt.Errorf("unknown database %q (or use --rename-table <ddl> <sqlite> <old> <new>)", args[0])
 	}
@@ -288,8 +299,8 @@ func doRenameTable(args []string) error {
 // --rename-field <ddl> <sqlite> <table> <old> <new>.
 func doRenameField(args []string) error {
 	if len(args) == 4 {
-		if ddlPath, sqlitePath, _, ok := nameTriple(args[0]); ok {
-			return renameField(ddlPath, sqlitePath, args[1], args[2], args[3])
+		if paths, ok := pathsForName(args[0]); ok {
+			return renameField(paths.DDL, paths.SQLite, args[1], args[2], args[3])
 		}
 		return fmt.Errorf("unknown database %q (or use --rename-field <ddl> <sqlite> <table> <old> <new>)", args[0])
 	}
@@ -525,12 +536,12 @@ func syncAndReplay(ddlPath, dbPath, logDir string) error {
 // migrate the view (build + built-ins are idempotent, so the schema is always
 // current), open the log. It does NOT replay - keeping the view current across
 // clients is what replay/sync are for. Callers must Close the store.
-func openAPI(paths []string) (*store.Store, *crud.API, error) {
-	sch, err := ddl.ParseFile(paths[0])
+func openAPI(paths dbPaths) (*store.Store, *crud.API, error) {
+	sch, err := ddl.ParseFile(paths.DDL)
 	if err != nil {
 		return nil, nil, err
 	}
-	st, err := store.Open(paths[1])
+	st, err := store.Open(paths.SQLite)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -542,7 +553,7 @@ func openAPI(paths []string) (*store.Store, *crud.API, error) {
 		st.Close()
 		return nil, nil, err
 	}
-	lg, err := txlog.Open(paths[2])
+	lg, err := txlog.Open(paths.Log)
 	if err != nil {
 		st.Close()
 		return nil, nil, err
@@ -556,7 +567,7 @@ func openAPI(paths []string) (*store.Store, *crud.API, error) {
 	}
 	// Encryption for writes: find this DDL's registry record (its key lives in
 	// the unsynced config dir), else fall back to a key beside the DDL.
-	keyFile, pref := config.ResolveEncryptionForDDL(paths[0])
+	keyFile, pref := config.ResolveEncryptionForDDL(paths.DDL)
 	cipher, _, err := enc.LoadCipher(keyFile)
 	if err != nil {
 		st.Close()
@@ -564,7 +575,7 @@ func openAPI(paths []string) (*store.Store, *crud.API, error) {
 	}
 	api.EnableEncryption(cipher, pref, sch)
 	api.EnableFeatures(sch, builtins)
-	attachWarns, err := script.Attach(api, paths[0], paths[2], sch, builtins)
+	attachWarns, err := script.Attach(api, paths.DDL, paths.Log, sch, builtins)
 	if err != nil {
 		st.Close()
 		return nil, nil, err
@@ -722,7 +733,7 @@ func alterView(dbPath, table, stmt string) error {
 	return err
 }
 
-func crudComment(paths []string, table, id, text string) error {
+func crudComment(paths dbPaths, table, id, text string) error {
 	st, api, err := openAPI(paths)
 	if err != nil {
 		return err
@@ -736,7 +747,7 @@ func crudComment(paths []string, table, id, text string) error {
 	return nil
 }
 
-func crudComments(paths []string, table, id string) error {
+func crudComments(paths dbPaths, table, id string) error {
 	st, api, err := openAPI(paths)
 	if err != nil {
 		return err
@@ -752,7 +763,7 @@ func crudComments(paths []string, table, id string) error {
 	return nil
 }
 
-func crudAttach(paths []string, table, id, target, desc string, copyIn bool) error {
+func crudAttach(paths dbPaths, table, id, target, desc string, copyIn bool) error {
 	st, api, err := openAPI(paths)
 	if err != nil {
 		return err
@@ -771,7 +782,7 @@ func crudAttach(paths []string, table, id, target, desc string, copyIn bool) err
 	return nil
 }
 
-func crudAttachments(paths []string, table, id string) error {
+func crudAttachments(paths dbPaths, table, id string) error {
 	st, api, err := openAPI(paths)
 	if err != nil {
 		return err
@@ -787,7 +798,7 @@ func crudAttachments(paths []string, table, id string) error {
 	return nil
 }
 
-func crudCreate(paths []string, table string, assigns []string) error {
+func crudCreate(paths dbPaths, table string, assigns []string) error {
 	fields, err := parseAssigns(assigns)
 	if err != nil {
 		return err
@@ -806,7 +817,7 @@ func crudCreate(paths []string, table string, assigns []string) error {
 	return err
 }
 
-func crudGet(paths []string, table, id string) error {
+func crudGet(paths dbPaths, table, id string) error {
 	st, api, err := openAPI(paths)
 	if err != nil {
 		return err
@@ -830,7 +841,7 @@ func crudGet(paths []string, table, id string) error {
 	return nil
 }
 
-func crudUpdate(paths []string, table, id string, assigns []string) error {
+func crudUpdate(paths dbPaths, table, id string, assigns []string) error {
 	fields, err := parseAssigns(assigns)
 	if err != nil {
 		return err
@@ -843,7 +854,7 @@ func crudUpdate(paths []string, table, id string, assigns []string) error {
 	return api.Update(table, id, fields)
 }
 
-func crudSetNull(paths []string, table, id, field string) error {
+func crudSetNull(paths dbPaths, table, id, field string) error {
 	st, api, err := openAPI(paths)
 	if err != nil {
 		return err
@@ -852,7 +863,7 @@ func crudSetNull(paths []string, table, id, field string) error {
 	return api.SetFieldNull(table, id, field)
 }
 
-func crudDelete(verb string, paths []string, table, id string) error {
+func crudDelete(verb string, paths dbPaths, table, id string) error {
 	st, api, err := openAPI(paths)
 	if err != nil {
 		return err
@@ -864,7 +875,7 @@ func crudDelete(verb string, paths []string, table, id string) error {
 	return api.Delete(table, id)
 }
 
-func crudQuery(paths []string, query string) error {
+func crudQuery(paths dbPaths, query string) error {
 	st, api, err := openAPI(paths)
 	if err != nil {
 		return err

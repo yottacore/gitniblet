@@ -23,9 +23,12 @@ func Script(args []string) error {
 	if !script.Available() {
 		return fmt.Errorf("--script requires the enterprise build; the open-source build has no scripting host")
 	}
-	keyFile, pref := config.ResolveEncryption(args[1], nil)
+	// This form spells the paths out rather than naming a registered database,
+	// so name them here instead of indexing the arg list at every use.
+	scriptFile, paths := args[0], dbPaths{DDL: args[1], SQLite: args[2], Log: args[3]}
+	keyFile, pref := config.ResolveEncryption(paths.DDL, nil)
 	c, err := schema.OpenClientWith(schema.OpenOpts{
-		DDLPath: args[1], DBPath: args[2], LogDir: args[3], KeyFile: keyFile, EncryptPref: pref,
+		DDLPath: paths.DDL, DBPath: paths.SQLite, LogDir: paths.Log, KeyFile: keyFile, EncryptPref: pref,
 	})
 	if err != nil {
 		return err
@@ -35,12 +38,12 @@ func Script(args []string) error {
 	if err != nil {
 		return err
 	}
-	attachWarns, err := script.Attach(c.API, args[1], args[3], c.Schema, builtins)
+	attachWarns, err := script.Attach(c.API, paths.DDL, paths.Log, c.Schema, builtins)
 	if err != nil {
 		return err
 	}
 	for _, w := range append(c.Warnings, attachWarns...) {
 		fmt.Fprintln(os.Stderr, "warning:", w)
 	}
-	return script.RunFile(c.API, args[0])
+	return script.RunFile(c.API, scriptFile)
 }

@@ -29,6 +29,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The web sign-in had no rate limit, so a burst of attempts could tie up the machine.
 - A background sync could rebuild the view in the middle of another write.
 
+### Changed
+
+- Rebuilding a view from the log is about two and a half times faster, which shows up when opening a database and on every sync that brings changes.
+
 ## v1.0.0-beta.1
 
 First public beta.
