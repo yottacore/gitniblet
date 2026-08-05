@@ -54,6 +54,18 @@ auth="$run_dir/Xauthority-${num}"
 
 alive() { [[ -f "$1" ]] && kill -0 "$(cat "$1")" 2>/dev/null; }
 
+# Wait for a pid to be really gone. An X server holds /tmp/.X<n>-lock until it
+# finishes exiting, so a restart that beats it there dies with "already active".
+reap() {
+	local pid="$1"
+	for _ in $(seq 1 100); do
+		kill -0 "$pid" 2>/dev/null || return 0
+		sleep 0.1
+	done
+	kill -9 "$pid" 2>/dev/null || true
+	sleep 0.3
+}
+
 start() {
 	if alive "$xvfb_pid"; then
 		echo "Xvfb already on $display (pid $(cat "$xvfb_pid"))"
@@ -62,13 +74,29 @@ start() {
 		Xvfb "$display" -screen 0 "$size" -nolisten tcp -auth "$auth" \
 			>"$run_dir/xvfb-${num}.log" 2>&1 &
 		echo $! > "$xvfb_pid"
-		# Wait for the server to accept connections before returning.
-		local ok=""
+		# Wait for the server to accept connections before returning - and for OURS,
+		# not just any. One on its way out keeps answering for a moment and one that
+		# is squatting answers instantly, so probing the display alone reports
+		# success and then the display vanishes mid-run. The lock file settles it:
+		# it holds the pid of the server that actually owns the display.
+		local ok="" mine holder=""
+		mine="$(cat "$xvfb_pid")"
 		for _ in $(seq 1 50); do
+			kill -0 "$mine" 2>/dev/null || break
 			if DISPLAY="$display" xdpyinfo >/dev/null 2>&1; then ok=1; break; fi
 			sleep 0.1
 		done
-		[[ -n "$ok" ]] || { echo "Xvfb did not come up; see $run_dir/xvfb-${num}.log" >&2; exit 1; }
+		if [[ -e "/tmp/.X${num}-lock" ]]; then
+			holder="$(tr -dc '0-9' < "/tmp/.X${num}-lock")"
+		fi
+		if [[ -z "$ok" ]] || { [[ -n "$holder" ]] && [[ "$holder" != "$mine" ]]; }; then
+			echo "Xvfb did not come up on $display; see $run_dir/xvfb-${num}.log" >&2
+			grep -v _XSERVTransmkdir "$run_dir/xvfb-${num}.log" >&2 || true
+			[[ -n "$holder" ]] && echo "$display is held by pid $holder" >&2
+			kill "$mine" 2>/dev/null || true
+			rm -f "$xvfb_pid"
+			exit 1
+		fi
 		echo "Started Xvfb on $display (pid $(cat "$xvfb_pid"), $size)"
 	fi
 	if [[ "${1:-}" == "--wm" ]] && ! alive "$wm_pid"; then
@@ -100,8 +128,17 @@ stop() {
 		rm -f "$apps_pids"
 	fi
 	for f in "$wm_pid" "$xvfb_pid"; do
-		[[ -f "$f" ]] && { kill "$(cat "$f")" 2>/dev/null || true; rm -f "$f"; }
+		[[ -f "$f" ]] || continue
+		local p; p="$(cat "$f")"
+		kill "$p" 2>/dev/null || true
+		reap "$p"          # synchronous, or an immediate start races the lock
+		rm -f "$f"
 	done
+	# a killed server leaves its lock behind, and that blocks the next start.
+	# /tmp is sticky, so somebody else's lock simply is not ours to clear.
+	if [[ -e "/tmp/.X${num}-lock" ]] && ! DISPLAY="$display" xdpyinfo >/dev/null 2>&1; then
+		rm -f "/tmp/.X${num}-lock" 2>/dev/null || true
+	fi
 	echo "Stopped headless session on $display"
 }
 
@@ -117,3 +154,5 @@ esac
 
 ##	Script history:
 ##		- 20260701: Created.
+##		- 20260804: Stop waits for the server to be gone; start checks the display
+##			answering is the one it just launched.
