@@ -135,6 +135,8 @@ A table can opt out of these with `system_fields: no` (used internally by the au
 
 Each constraint is its own `unique:` or `index:` entry; the fields in one entry are a comma-separated list. Unique constraints are partial (they ignore soft-deleted rows) and auto-named `ux_<table>__<fields>`. Declaring an index identical to a unique warns (the unique already indexes it).
 
+Every name in an entry has to be a field of that table (a system column counts). One that is not is an error, not a warning: the whole entry is dropped and the database reports as unopenable with the offending name and its line. The entry goes as a unit rather than one name at a time, because pruning the typo out of `unique: title, slgu` would leave `unique: title` - a stricter rule than was written, which would then refuse perfectly good rows.
+
 ### Opt-in table features
 
 ```

@@ -34,6 +34,7 @@ type authState struct {
 	proxied   bool             // proxied mode requires a login; local does not
 	creds     *config.WebCreds // proxied credential store
 	sessions  *sessions        // proxied session table
+	limit     *throttle        // failed-login counters (throttle.go)
 	localUser string           // the fixed identity in local mode
 }
 
@@ -41,7 +42,11 @@ type authState struct {
 // also stamps the API with the resolved single user; in proxied mode the acting
 // user is set per request by authGuard instead.
 func newAuth(settings *config.Settings, logDir string, api *crud.API) *authState {
-	au := &authState{proxied: settings.WebModeProxied(), sessions: newSessions(time.Now)}
+	au := &authState{
+		proxied:  settings.WebModeProxied(),
+		sessions: newSessions(time.Now),
+		limit:    newThrottle(time.Now),
+	}
 	if au.proxied {
 		au.creds = config.LoadWebCreds()
 	} else {
@@ -133,12 +138,22 @@ func (s *server) loginSubmit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	user := r.PostForm.Get("username")
-	if user == "" || !s.auth.creds.Verify(user, r.PostForm.Get("password")) {
+	user, addr := r.PostForm.Get("username"), clientAddr(r)
+	if s.auth.limit.blocked(user, addr) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		s.renderLogin(w, "Too many attempts. Wait a minute and try again.")
+		return
+	}
+	release := s.auth.limit.enter() // rations the expensive part
+	ok := user != "" && s.auth.creds.Verify(user, r.PostForm.Get("password"))
+	release()
+	if !ok {
+		s.auth.limit.fail(user, addr)
 		w.WriteHeader(http.StatusUnauthorized)
 		s.renderLogin(w, "Wrong username or password.")
 		return
 	}
+	s.auth.limit.pass(user, addr)
 	id, err := s.auth.sessions.create(user)
 	if err != nil {
 		http.Error(w, "session error", http.StatusInternalServerError)

@@ -249,6 +249,14 @@ func (s *Schema) warn(format string, args ...any) {
 	s.Warnings = append(s.Warnings, fmt.Sprintf(format, args...))
 }
 
+// errAt is warnAt for something the load could not repair, so callers that ask
+// HasErrors() report the database unopenable rather than letting it fail later
+// with a raw SQLite error.
+func (s *Schema) errAt(c cursor, format string, args ...any) {
+	s.warnAt(c, format, args...)
+	s.Errors++
+}
+
 // warnAt is warn with a line number, for the cases holding the offending
 // entity's cursor. Line 0 means shcl could not place it; the message still goes
 // out, just without the prefix.
@@ -426,10 +434,25 @@ func (s *Schema) parseKeyGroups(c cursor, t *Table, section, entry string) [][]s
 		if len(group) == 0 {
 			continue
 		}
+		// A name matching no field would reach SQLite verbatim and take the
+		// whole open down with a raw error, from a schema the picker had just
+		// listed as fine. Counting it as an error is what greys the database
+		// out with a reason instead.
+		//
+		// The group is dropped whole rather than one name at a time: pruning
+		// the bad name from `unique: a, b` leaves `unique: a`, a stricter rule
+		// the schema never asked for, which would then refuse rows that are
+		// perfectly legal.
+		bad := false
 		for _, name := range group {
 			if !t.hasField(name) {
-				s.warnAt(gc, "%s on table %q names unknown field %q", section, t.Name, name)
+				s.errAt(gc, "%s on table %q names unknown field %q; the group is dropped",
+					section, t.Name, name)
+				bad = true
 			}
+		}
+		if bad {
+			continue
 		}
 		out = append(out, group)
 	}

@@ -99,7 +99,7 @@ func TestForeignHostIsRefusedWhenBound(t *testing.T) {
 func TestProxiedModeIgnoresTheHostPin(t *testing.T) {
 	srv, _ := newTestServer(t)
 	srv.hostPin = "127.0.0.1:8765"
-	srv.auth = &authState{proxied: true, sessions: newSessions(time.Now)}
+	srv.auth = &authState{proxied: true, sessions: newSessions(time.Now), limit: newThrottle(time.Now)}
 	h := srv.routes()
 
 	req := httptest.NewRequest(http.MethodGet, "/login", nil)
