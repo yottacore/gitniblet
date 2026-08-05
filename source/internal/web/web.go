@@ -33,15 +33,17 @@ func resolveArgs(args []string) (ddlPath, sqlitePath, logDir string, err error) 
 	if len(args) == 1 {
 		cfg := config.FindByName(args[0])
 		if cfg == nil {
-			return "", "", "", fmt.Errorf("unknown database %q; register it with --init or run ngdb with no arguments to see the known ones", args[0])
+			return "", "", "", config.UnknownDatabase(args[0])
 		}
 		return cfg.DDLPath, cfg.SQLitePath, cfg.LogDir, nil
 	}
-	if len(args) >= 3 {
+	if len(args) == 3 {
 		return args[0], args[1], args[2], nil
 	}
-	if d, s, l, ok := config.PWDTriple(); ok {
-		return d, s, l, nil
+	if len(args) == 0 {
+		if d, s, l, ok := config.PWDTriple(); ok {
+			return d, s, l, nil
+		}
 	}
 	return "", "", "", fmt.Errorf("usage: ngdb --serve <db> (or run from a directory containing a .shcl schema)")
 }
@@ -102,6 +104,7 @@ func Run(args []string) error {
 	defer stop()
 
 	addr := "127.0.0.1:8765" // local UI - do not bind to all interfaces
+	srv.hostPin = addr       // reject requests arriving under any other name
 	// Explicit timeouts: the stdlib defaults are infinite, so a stalled client
 	// could pin connections open forever.
 	httpSrv := &http.Server{
@@ -126,7 +129,13 @@ type server struct {
 	auth *authState
 	umu  sync.Mutex
 
-	// startup-notice state (gate.go). now is injectable for tests.
+	// hostPin is the address Run bound to; the Host header must match it in
+	// local mode. Empty when no listener was started (tests, embedders).
+	hostPin string
+
+	// startup-notice state (gate.go), read on every request and written by the
+	// /gate/ handlers, so gmu guards it. now is injectable for tests.
+	gmu      sync.Mutex
 	now      func() time.Time
 	gated    bool      // holding on the start screen until continue/dismiss
 	unlockAt time.Time // read/write is withheld until this time
@@ -152,7 +161,7 @@ func newServer(api *crud.API, cat *schema.Catalog) (*server, error) {
 
 func (s *server) routes() http.Handler {
 	mux := http.NewServeMux()
-	sub, _ := fs.Sub(assetsFS, "assets")
+	sub, _ := fs.Sub(assetsFS, "assets") // embedded at build time, so it is always there
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(sub))))
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /v/{view}", s.viewPage)
@@ -176,9 +185,10 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /login", s.loginPage)
 	mux.HandleFunc("POST /login", s.loginSubmit)
 	mux.HandleFunc("POST /logout", s.logout)
-	// authGuard is outermost: it decides who may reach anything, then the gate
-	// layer (license notice) runs, then the app routes.
-	return s.authGuard(s.gateGuard(mux))
+	// originGuard is outermost - a request from somewhere else never reaches the
+	// login layer. Then authGuard decides who may reach anything, then the gate
+	// layer (license notice), then the app routes.
+	return s.originGuard(s.authGuard(s.gateGuard(mux)))
 }
 
 // table pulls and validates the table path segment; "" means already handled.
@@ -200,14 +210,14 @@ func (s *server) render(w http.ResponseWriter, name string, data any) {
 func (s *server) index(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "layout.html", map[string]any{
 		"Tables": s.cat.Tables, "Views": s.cat.Views, "DefaultView": s.cat.DefaultView,
-		"Banner": s.banner, "ReadOnly": s.api.ReadOnly(),
+		"Banner": s.bannerText(), "ReadOnly": s.api.ReadOnly(),
 		"Proxied": s.auth != nil && s.auth.proxied, "User": s.api.UserID,
 		"Donate": donate.Enabled,
 	})
 }
 
 // rows renders the grid partial - also the response to every write, so the
-// user always lands back on the refreshed table.
+// user always returns to the refreshed table.
 func (s *server) rows(w http.ResponseWriter, r *http.Request) {
 	table := s.table(w, r)
 	if table == "" {
@@ -272,7 +282,7 @@ func (s *server) form(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "form.html", data)
 }
 
-// comment adds a comment and lands back on the refreshed form.
+// comment adds a comment and returns to the refreshed form.
 func (s *server) comment(w http.ResponseWriter, r *http.Request) {
 	table := s.table(w, r)
 	if table == "" {

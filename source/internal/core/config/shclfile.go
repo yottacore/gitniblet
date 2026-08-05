@@ -12,7 +12,7 @@ import (
 // Shared load/save plumbing for the three registry files. They differ only in
 // how strict they are about a garbled file, which mirrors what each one costs
 // if it is silently half-read: a database record must be reported broken so the
-// picker can grey it out, while settings and logins fall back to defaults.
+// picker can gray it out, while settings and logins fall back to defaults.
 
 // loadStrict reads an SHCL file and refuses anything with an error diagnostic.
 // Used for the per-database record, where a corrupt file has to surface as
@@ -43,8 +43,10 @@ func save(path string, doc *shcl.Document, perm os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 	_, err = f.WriteString(doc.ToCanonical())
+	if cerr := f.Close(); err == nil {
+		err = cerr // a close error here means a truncated record on disk
+	}
 	return err
 }
 

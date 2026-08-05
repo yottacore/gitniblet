@@ -221,7 +221,7 @@ var defaultGroups = []struct{ Name, Desc string }{
 }
 
 // SeedDefaults creates the default groups rows when missing. It goes through
-// CRUD so the seed lands in the tx-log truth and replicates; call it AFTER the
+// CRUD so the seed goes into the tx-log truth and replicates; call it after the
 // log has been applied to the view, or an already-seeded log seeds twice.
 // Two clients seeding concurrently still converge: the union-merged log replays
 // both creates and the partial unique on name skips the loser.

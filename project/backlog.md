@@ -51,12 +51,14 @@ In each section, items are listed approximately from newest to oldest.
 
 - 🛠️ Need to research, decide, and document how to separate different concerns in the enterprise repo (and identify what the concerns even are), e.g.:
 	- Customer-facing enterprise product
-	- Our owned side used to (possibly) generate license keys, process payment, check subscription status, etc. This would basically be a completely separate company precense, ecommerce, and validation system.
+	- Our owned side used to (possibly) generate license keys, process payment, check subscription status, etc. This would basically be a completely separate company presence, ecommerce, and validation system.
 		- Basic requirements:
-			- 🔘 Minimal web dependencies. (To minimize contant cascading updates pulling in potentially hundreds of unknown/untrusted dependencies, near-constant churn with breaking and deprecating third-party updates; and also the growing threat of "supply-chain attack" risk.)
+			- 🔘 Minimal web dependencies. (To minimize constant cascading updates pulling in potentially hundreds of unknown/untrusted dependencies, near-constant churn with breaking and deprecating third-party updates; and also the growing threat of "supply-chain attack" risk.)
 	- Decisions captured in the enterprise repo (`research-enterprise-concerns.md`); implementation is phased (see the folder-hierarchy item below).
 
 ### Bugs
+
+None open.
 
 ### New features and enhancements
 
@@ -75,7 +77,56 @@ In each section, items are listed approximately from newest to oldest.
 
 #### Done - Bugs
 
+- ✅ Code Review 20260805 item 15: a write the view refused reported success.
+	- A duplicate value in a `unique:` group was turned into a warning and the warning was thrown away, so the command printed a new id and exited 0 while the field stayed empty for good.
+	- Done: the write path reports it. A create still hands back its id - the record is in the log and worth naming - alongside a message saying which part the view refused.
+
+- ✅ Code Review 20260805 item 16: editing a hard-deleted record made a ghost.
+	- Replay recreates a record it has an edit for, so that a rebuild can tolerate entries arriving before the create they belong to. It could not tell that from an edit of something already deleted, and made a record holding only the edited field - visible until the next rebuild quietly removed it again.
+	- Done: a field write against a record the view no longer holds is refused, checked under the write lock so a delete cannot slip in alongside. Soft-deleted records are still there, so they stay editable.
+
+- ✅ Code Review 20260805 item 17: a typo in `uniques:` or `indexes:` made a database impossible to open.
+	- A name matching no field was reported but kept, then handed to SQLite, so a database that had just listed as fine failed to open with a raw SQL error.
+	- Done: it counts as an error, which is what greys the database out with the name and its line. The entry is dropped whole rather than one name at a time - pruning the typo out of a two-field group would leave a stricter rule than was written.
+
+- ✅ Code Review 20260805 item 18: control characters were dropped from the log but kept in the view.
+	- Done: they are dropped when the write is built, so the view holds what a rebuild will produce instead of the two disagreeing until the value silently changed.
+
+- ✅ Code Review 20260805 item 19: the background sync replayed outside the write lock.
+	- Done: a sync's rebuild goes through the same lock a write takes, so it can no longer land between a write's log append and its own view update.
+
+- ✅ Code Review 20260805 item 20: no rate limit on the web login.
+	- Each attempt is meant to be expensive to check, so an open endpoint was a way to spend the machine's CPU for free.
+	- Done: a failure count per username and per source address refuses a run of wrong guesses before any of the expensive work happens, and a cap on how many are checked at once covers the burst the counts cannot (attempts arriving together all pass the count before any has failed). Counts age out on their own, so nothing locks an account.
+
+- ✅ Code Review 20260805 items 13 and 14: garbage collection could lose records.
+	- Item 13: collection grouped a row's entries by the table name as written, so a table renamed mid-life split one record into two groups. The group holding its delete could be collected while the group holding its create survived, and the record reappeared on the next rebuild - permanently.
+	- Done: grouping resolves former names to current ones, the same way replay does. The entries themselves are copied through untouched, since the log is immutable and a table name is part of what an encrypted value is sealed against.
+	- Item 14: a pass read the whole log, decided what to keep, then deleted the files it had read. Anything written in between went with them, which a running terminal or web UI made reachable in ordinary use.
+	- Done: a pass now starts by sealing the live file, so an appending process immediately gets a fresh one. It then works only over sealed segments, which it records by name and size. A write made during a pass is in the new live file, which the pass never reads or removes; the recorded sizes are re-checked before anything is deleted, which catches an append that already had a file open and aborts rather than taking the write with it.
+	- Done: after a rotation the live file is left in place holding just its header, instead of deleted. A peer who appended to it on the same commit now sees a change the union driver merges, rather than a modify/delete conflict that no driver resolves and that wedged every later sync.
+
+- ✅ Code Review 20260805 items 1 to 12.
+	- Item 1: another site the browser had open could drive the local web UI, and a page pointing a name it owned at the loopback address could read the whole database. Writes now have to prove they came from the UI, and the UI only answers under the address it was bound to. A reverse proxy legitimately rewrites that name, so the proxied mode keeps the write check and skips the address check.
+	- Item 2: the notice screen's dismiss action worked even when there was no notice, so any page could turn a running server read-only for the rest of its life. Both notice actions now refuse when nothing is being held.
+	- Item 3: the web login answered in microseconds for an unknown user against a tenth of a second for a real one, which told an attacker which accounts exist. Both paths now do the same work. Pinned by a test that fails against the old behavior.
+	- Item 4: the read-only flag and the notice state were changed from one request while others read them, with no synchronization.
+	- Item 5: the name of an attachment's working copy came from a record and was used as written, so it could point outside the temporary directory.
+	- Item 6: a second process writing at the same time failed straight away instead of waiting its turn for the database file.
+	- Item 7: an unknown verb, or one missing its arguments, printed usage on standard output and exited 0, so `ngdb ddl "$f" || ...` in a script never fired. Usage now goes to standard error with a failing status, and `--help` prints it on standard output and succeeds.
+	- Item 8: `--table` without a database took the first `field=value` as the database name and reported the field value as a bad database.
+	- Item 9: `--tui` with two arguments matched neither accepted form and silently opened the picker instead of saying so.
+	- Item 10: the password typed at the `webuser` prompt was echoed, leaving it in terminal scrollback. A piped password still reads as a plain line, so setup scripts are unaffected.
+	- Item 11: the schema fuzzer's seed corpus pointed at a file name from before the syntax migration, so it had silently been skipping the real example.
+	- Item 12: for a database kept in the same folder as its schema, sync committed and pushed the derived SQLite file, and would have pushed an encryption key placed beside it. Both are now ignored in the log directory.
+
 #### Done - New features and enhancements
+
+- ✅ Code Review 20260805 item 21: replay prepared a fresh SQL statement for every log entry.
+	- Done: a pass reuses its statements, which are one shape per table and one per field however long the log is. Rebuilding a 5000-entry log went from about 240ms to about 97ms, on the path every open and every sync that brings changes takes.
+
+- ✅ Code Review 20260805 item 22: the CLI passed a database's three paths around as an unlabeled list.
+	- Done: a named type with a field per file, so which one is which reads at every use and searching for the log directory or the view finds them.
 
 - ✅ Use sister project 'SHCL' as the engine for config and DDL files.
 	- Done: one language now covers the schema, the queries sidecar, and ngdb's own registry, settings and web-credential files. The TOML dependency is gone, and so is the hand-rolled indent parser.
@@ -84,6 +135,16 @@ In each section, items are listed approximately from newest to oldest.
 	- Done: renames go through the writer rather than editing lines of text, so comments survive by construction. The file comes back canonical, which does reflow hand-tuned column alignment once.
 	- Note: syntax changes to existing schemas - `unique:`/`index:` entries instead of bare comma rows, `.` instead of `/` for path shorthand, relationships need names, seeds name their table. Details in syntax.md.
 	- Note: restating a table or a query now merges it rather than dropping the repeat, since that is how the language joins nodes.
+
+- ✅ Track the shcl 1.1 release.
+	- Done: a section that combines with an earlier one is now reported with both line numbers, so a second `table: t` folding into the first is no longer silent. `example.shcl` was reorganized to open each section once.
+	- Done: quoting a default escapes it again - `@null` is the sentinel, `"@null"` is the text. The schema file had documented this all along; it just could not be honored before.
+	- Done: cross-cutting messages (a table defined twice, a `unique:` naming a missing field) now cite a line like every other message.
+	- Done: layout blocks validate at any nesting depth, and each section is described once instead of twice. Both were generated in code before, one only as deep as eight blocks.
+
+- ✅ Track the shcl 1.2 release.
+	- Done: a fault in the built-in vocabulary no longer switches schema checking off wholesale, so a mistake there can no longer hide real mistakes in a user's file. Faults now read as faults rather than pointing at a line number the user cannot see.
+	- Done: renaming a field or table no longer pulls a commented-out section out of the block it was written in. Uncommenting it afterwards would have attached it to the wrong table.
 
 - ✅ Shorter row and transaction ids in the log.
 	- Done: ids are written as 22 characters of base64url instead of 32 of hex. Two ride on every line, so the log gets smaller to read and replay; the git repo barely changes, since both forms hold the same bits.
@@ -97,7 +158,7 @@ In each section, items are listed approximately from newest to oldest.
 	- Done: hand-written SQL gets `id()` and `idtext()` to convert between an id's text and stored forms. `id()` rejects a malformed id rather than returning nothing.
 	- Done: the id format moved to its own package, shared by the log and the view instead of owned by either.
 
-- ✅ Comments pane in views: a `type: comments` layout block surfaces a table's built-in 1:m comments component as a detail pane.
+- ✅ Comments pane in views: a `type: comments` layout block shows a table's built-in comments as a detail pane.
 	- Done: the pane follows a sibling list block's selected row, lists that row's thread, and adds to it - in the TUI (Tab to the pane, Enter to add) and the web UI (a per-row comments link loads the thread, an add form posts it). Comments never become a list column, and a comments block over a table without the feature is dropped with a warning.
 	- Done: the demo board view gained the pane and the recorder's TUI beat adds a comment there.
 
@@ -105,6 +166,8 @@ In each section, items are listed approximately from newest to oldest.
 	- Done: theme beat dropped; in its place a real TUI action - a task with an existing comment thread is selected and a comment is added in the board's comments pane (a linked detail the list view never shows).
 	- Done: CLI part opens with a comment line, uses `--db=`/`--table=` explicitly, and the closing line is `# nano-git-db.`
 	- Done: the faux window has square corners and fills the frame except a 4px black outline; terminal scrolls smooth (no jump scroll) with a blinking cursor.
+	- Done: the gif runs at 50fps, where 30 could not hold a steady frame delay. The brisk typing pace is now asked for directly rather than falling out of a fixed per-key subtraction, so its jitter scales with it and the cursor stops stuttering.
+	- Done: fixed beats trimmed to ~50s, keeping the longer holds where there is output to read.
 
 - ✅ Enterprise license validation. Phones home to confirm an active subscription and allows a set number of copies at once. Does not fail if it cannot reach the server for a while, and does not bind to specific hardware.
 	- Note: scheme decided in the enterprise repo; implementation is a later phase.
@@ -112,10 +175,10 @@ In each section, items are listed approximately from newest to oldest.
 - ✅ Address a database by name on the CLI and in the UIs, not by its file paths.
 	- Done: every CRUD verb now names a registered database (`ngdb create issues task ...`) and looks up its ddl/sqlite/log from the registry; the old three-path form is gone for data verbs. The name is the first positional, or `--db`/`--table` flags (both accepted, in any order), and resolves with or without a file extension.
 	- Done: `build`/`replay`/`sync`/`gc` and the rename verbs take a name too, keeping an explicit-path form for pre-registration use; `--tui <db>` and `--serve <db>` open a registered database directly.
-	- Done: demo recorder, `demos/` walkthrough + `seed.bash`, README, and syntax.md all switched to the name-based form; the recorder's TUI beat lands on a standard dark theme instead of high-contrast.
+	- Done: demo recorder, `demos/` walkthrough + `seed.bash`, README, and syntax.md all switched to the name-based form; the recorder's TUI beat uses a standard dark theme instead of high-contrast.
 
 - ✅ Animated README demo (faux terminal, in cicd, skippable with `--quick`).
-	- Done: `cicd/utility/demo-video/demo-video.py` drives a real ngdb (TUI first, then the same data from the CLI) inside a decorated xterm on a private Xvfb, typing at a realistic pace with the odd fixed typo. It renders a 1920x1080 mp4 and a looping 960x540 gif with a fade-to-black loop seam.
+	- Done: `cicd/utility/demo-video/demo-video.py` drives a real ngdb (TUI first, then the same data from the CLI) inside a decorated xterm on a private Xvfb, typing at a realistic pace with the odd fixed typo. It renders a 1920x1080 mp4 and a looping 960x540 50fps gif with a hard black loop seam.
 	- Done: the mp4 and full gif go to `../private/demo-video/{video,gif}` and GFS-rotate; the latest gif is copied to `assets/demo.gif` for the README. All content is anonymous (fake user/host, /tmp paths).
 	- Note: adapted from the sister silkterm recorder, minus its GPU and audio work; deps are python3 stdlib + ffmpeg + xterm/xdotool/Xvfb/xfwm4. A web-UI leg can be added later.
 
@@ -148,7 +211,7 @@ In each section, items are listed approximately from newest to oldest.
 	- Approach decided in the enterprise repo docs. Folder layout now in place: the repos are renamed and the additional private repo is created and scaffolded; the concern implementations follow in later phases.
 
 - ✅ Make opening menu look more like a menu. Better spacing around and in beteen items.
-	- Done: the startup picker is now a centred, bordered panel with margins instead of a full-screen list, and blank spacer rows sit between entries. Up/Down skip the spacers so the highlight only lands on real entries.
+	- Done: the startup picker is now a centered, bordered panel with margins instead of a full-screen list, and blank spacer rows sit between entries. Up/Down skip the spacers so the highlight only stops on real entries.
 
 - ✅ When defining a db in the TUI or CLI, allow just pointing to a top-level repo - then figure everything else out (i.e. "[repo dir]/ngdb/[short spaceless db name]/") If the dir is not a github repo, use the directory exactly as entered (assuming it's empty or nonexistent). Don't ask for txlog or config files, just create them in the dir.
 	- Done: the CLI `--init` already derived this; pulled the logic into shared `config.LogDirFor(location, name)` and switched the TUI create form to a single "location (repo or folder)" field. Point at a repo top level -> `<repo>/ngdb/<name>`; any other folder is used as-is (created if missing). No separate tx-log path to enter; config still auto-places in the user config dir.
@@ -180,11 +243,11 @@ In each section, items are listed approximately from newest to oldest.
 	- ✅ `--init[=]["git repo root to auto-calculate subfolders for (e.g. 'ngdb/dbname/'), or override default with specific 'git-repo-root-path/subfolder(s)/'"]`  ## If no arg specified, and already in a git root or DDL is in $PWD, use it. Otherwise error.
 	- ✅ `--config[=]"Alternate user config file folder, name, and/or full filespec"`  ## Default = "~/.config/ngdb/dbname/" (or Windows analogue).
 	- ✅ `--[en]crypt[ion][=]on|off|auto[matic]|yes|no|true|false|y|n|t|f|enable[d]|disable[d]`  ## If on, may be overridden by DDL values of 'never'. If off, may be overridden by DDL values of 'always'. Default=auto.
-	- Done (`--init`, `--config`): `--init [path]` registers the lone current-dir DDL as a database and materializes its view. It picks the tx-log dir automatically: inside a git repo it goes under `<repo-root>/ngdb/<name>`, an explicit path is taken verbatim, and outside a repo it lands in the current dir. `--config <dir>` is a global prefix that repoints the registry. Both accept the `=` form.
-	- Done (`--encrypt`): landed with the encryption item below. `--encrypt[=on|off|auto]` is a global prefix (bare means on). Paired with `--init` it mints the per-db key and persists the preference.
+	- Done (`--init`, `--config`): `--init [path]` registers the lone current-dir DDL as a database and materializes its view. It picks the tx-log dir automatically: inside a git repo it goes under `<repo-root>/ngdb/<name>`, an explicit path is taken verbatim, and outside a repo it uses the current dir. `--config <dir>` is a global prefix that repoints the registry. Both accept the `=` form.
+	- Done (`--encrypt`): built with the encryption item below. `--encrypt[=on|off|auto]` is a global prefix (bare means on). Paired with `--init` it mints the per-db key and persists the preference.
 
-- ✅ TUI colour themes: selectable, readable, dark and light (default dark)
-	- Done: press `T` in the TUI for a picker of six themes - three dark, three light, default dark. Colours are fixed RGB rather than the terminal-palette names tview defaults to, so text stays legible whatever the surrounding terminal looks like. Switching applies live (the database picker included) and the choice persists in a user-global `settings.toml`, so it carries across sessions and databases.
+- ✅ TUI color themes: selectable, readable, dark and light (default dark)
+	- Done: press `T` in the TUI for a picker of six themes - three dark, three light, default dark. Colors are fixed RGB rather than the terminal-palette names tview defaults to, so text stays legible whatever the surrounding terminal looks like. Switching applies live (the database picker included) and the choice persists in a user-global `settings.toml`, so it carries across sessions and databases.
 
 - ✅ Add "host_name" to the transaction log, in addition to user. (Because the same user might use multiple hosts, and that might be useful info.)
 	- Done: `host_name` appended as the last tx-log column, so older logs without it still parse as an empty host and both widths survive a union merge. It's stamped automatically from the OS hostname, overridable with `NANOGITDB_HOST`, the machine analogue of `NANOGITDB_USER`. Metadata only, so replay ignores it. All four front-ends inherit it.
@@ -269,7 +332,7 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Core CRUD API: the single internal API every front-end and Lua calls, covering Create/Update/SetField/MarkDelete/Delete/Get/Query. Writes are log-first (append to truth, then apply to view), and it owns id, timestamp, and user stamping. Tested including a full rebuild from log. Validation, access, and triggers are separate items.
 
-- ✅ CLI front-end: full arg-based CRUD over the core, with verbs create/get/update/setnull/markdelete/delete/query each taking the same `<ddl> <sqlite> <logdir>` triple as replay and sync. Stateless and script-friendly until the config file lands. Writes stamp NANOGITDB_USER or the OS username, and `setnull` is its own verb so a literal "NULL" string stays expressible. Schema-op flags are their own backlog item.
+- ✅ CLI front-end: full arg-based CRUD over the core, with verbs create/get/update/setnull/markdelete/delete/query each taking the same `<ddl> <sqlite> <logdir>` triple as replay and sync. Stateless and script-friendly until the registry existed. Writes stamp NANOGITDB_USER or the OS username, and `setnull` is its own verb so a literal "NULL" string stays expressible. Schema-op flags are their own backlog item.
 
 - ✅ Git sync: pull/merge/commit/push of the tx-log dir with a background loop, shelling out to `git`. Append conflicts auto-resolve via `merge=union`, and replay sorts by (date, tx_id) so clients converge. Tested including two-client convergence, wired to `nanogitdb sync`.
 
@@ -278,7 +341,7 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Auto tables: users, groups, and the opt-in feature tables (m:m, comments, audit, access, attachments), defined in the same DDL users write and embedded in one source file. Built idempotently at startup, with default groups (owners/admins/users/guests) seeded log-first so they replicate. audit_trail opts out of the universal system columns via the new `system_fields: no` key, and access_rows only appears when a table opts in to row_level_access. First-user membership in owners/admins is deferred until user rows exist.
 
-- ✅ TUI front-end: `tview`/`tcell`, both pure Go with the cross-compile intact. Table list (user tables first, then built-ins), a rows grid that stays empty until a table is opened, a create/edit form that writes only changed fields, and soft/hard delete behind a confirm modal, all through the shared CRUD API. Tested headlessly on tcell's simulation screen, including a full boot-open-quit pass. `nanogitdb --tui <ddl> <sqlite> <logdir>`.
+- ✅ TUI front-end: `tview`/`tcell`, both pure Go with the cross-compile intact. Table list (user tables first, then built-ins), a rows grid that stays empty until a table is opened, a create/edit form that writes only changed fields, and soft/hard delete behind a confirm modal, all through the shared CRUD API. `nanogitdb --tui <ddl> <sqlite> <logdir>`.
 
 - ✅ Web UI: stdlib `net/http` + `html/template` + `embed` with vendored, pinned htmx (2.0.4). Table sidebar, a rows grid that renders nothing until a table is asked for, a create/edit form writing only changed fields, and soft/hard delete behind hx-confirm; the 127.0.0.1-only binding is the access control. Front-end bring-up and table metadata live in shared `schema.OpenClient`/`schema.Catalog`, so the four front-ends can't drift. `nanogitdb --serve <ddl> <sqlite> <logdir>`.
 
@@ -308,5 +371,5 @@ In each section, items are listed approximately from newest to oldest.
 ### Canceled
 
 - 🚫 Donate feature, with protected donation addresses (open-source build). List donation crypto addresses and URLs from CLI (`--donate`), TUI, and web.
-	- Done: a `donate` package holds a fixed-order `{label, kind, value}` table shown by `--donate`, a TUI picker entry, and a web Donate page. Ships as placeholders that read "not yet configured" until the real values are filled in.
+	- Done: a `donate` package holds a fixed-order `{label, kind, value}` table shown by `--donate`, a TUI picker entry, and a web Donate page. Placeholders read "not yet configured" until the real values are filled in.
 	- Done: the table is protected against a swapped address the way the sister project does it - a detached ed25519 signature (`ssh-keygen`) over the canonical table, with the signing key and trust anchor kept outside the repo, re-checked by a test gate that skips on placeholders or a keyless machine. Sign with `cicd/sign-donations.bash`; details in `cicd/donation-signing.md`.

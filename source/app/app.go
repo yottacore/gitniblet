@@ -21,7 +21,7 @@ import (
 
 // Version is the authoritative release version, bumped here in source before
 // cutting a release (the release tag and goreleaser both derive from it).
-var Version = "1.0.0-beta.1"
+var Version = "1.0.0-beta.2"
 
 // Build is extra provenance (short commit + dirty flag) stamped by cicd/build.bash
 // via -ldflags -X; empty for a plain `go build`, so a release binary reads clean.
@@ -39,6 +39,11 @@ func Run(args []string) error {
 		}
 		fmt.Println(line)
 		return nil
+	}
+	// --help: the usage block on stdout, exit 0. Anything unrecognized still
+	// prints it, but on stderr and with a failing status.
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h" || args[0] == "help") {
+		return cli.Help()
 	}
 	// --config[=path]: a global prefix that redirects the database registry;
 	// strip it, apply the override, then dispatch the remaining args normally.

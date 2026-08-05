@@ -137,7 +137,14 @@ func verifyHash(stored, password string) bool {
 	if iters <= 0 {
 		iters, salt = pbkdf2Iters, make([]byte, pbkdf2SaltLen) // burn the time anyway
 	}
-	got, err := pbkdf2.Key(sha256.New, password, salt, iters, len(want))
+	// Ask for a full-length key even when there is nothing to compare against:
+	// pbkdf2.Key rejects a zero length before doing any work, which would make
+	// the unknown-user path return in microseconds and give the account away.
+	keyLen := len(want)
+	if keyLen == 0 {
+		keyLen = pbkdf2KeyLen
+	}
+	got, err := pbkdf2.Key(sha256.New, password, salt, iters, keyLen)
 	if err != nil || len(want) == 0 {
 		return false
 	}

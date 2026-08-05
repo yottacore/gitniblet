@@ -12,6 +12,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -62,6 +63,16 @@ func Run(args []string) error {
 	return usage()
 }
 
+// dbPaths is where one database's three files live, as its registry record
+// gives them. Named rather than carried around as a positional list, so that
+// which one is which is readable at every use, and so a search for the log
+// directory or the view finds them.
+type dbPaths struct {
+	DDL    string // the schema file
+	SQLite string // the derived view
+	Log    string // the tx-log directory
+}
+
 // crudSelect pulls the leading database and (optional) table selectors off a
 // data verb's args. Each can be given two ways: the database positionally
 // (the first bare word) or as --db/-d, the table positionally (the next bare
@@ -69,23 +80,24 @@ func Run(args []string) error {
 // "--db=name" and may lead in any order. Data verbs are name-only by design -
 // the raw ddl/sqlite/log paths are never spelled out for CRUD.
 //
-// It returns the database's open triple, the table (empty when the verb reads
-// it positionally, filled when a --table flag supplied it), and the remaining
-// positional args (id, assignments, sql...).
-func crudSelect(args []string) (paths []string, table string, rest []string, err error) {
+// It returns where the database's files are, the table (empty when the verb
+// reads it positionally, filled when a --table flag supplied it), and the
+// remaining positional args (id, assignments, sql...).
+func crudSelect(args []string) (paths dbPaths, table string, rest []string, err error) {
 	var name string
 	// consume any leading --db/--table flags, in any order
+selectors:
 	for len(args) > 0 {
 		arg := args[0]
 		switch {
 		case arg == "--db" || arg == "-d":
 			if len(args) < 2 {
-				return nil, "", nil, fmt.Errorf("%s needs a database name", arg)
+				return dbPaths{}, "", nil, fmt.Errorf("%s needs a database name", arg)
 			}
 			name, args = args[1], args[2:]
 		case arg == "--table" || arg == "-t":
 			if len(args) < 2 {
-				return nil, "", nil, fmt.Errorf("%s needs a table name", arg)
+				return dbPaths{}, "", nil, fmt.Errorf("%s needs a table name", arg)
 			}
 			table, args = args[1], args[2:]
 		default:
@@ -93,23 +105,22 @@ func crudSelect(args []string) (paths []string, table string, rest []string, err
 				name, args = val, args[1:]
 			} else if val, ok := cutFlag(arg, "--table", "-t"); ok {
 				table, args = val, args[1:]
-			} else if name == "" { // first bare word is the database name
-				name, args = arg, args[1:]
+			} else if name == "" && !strings.Contains(arg, "=") {
+				name, args = arg, args[1:] // first bare word is the database name
 			} else {
-				goto done // remaining bare words are the verb's positionals
+				break selectors // the rest are the verb's positionals
 			}
 		}
 	}
-done:
 	if name == "" {
-		return nil, "", nil, fmt.Errorf("missing database name")
+		return dbPaths{}, "", nil, fmt.Errorf("missing database name")
 	}
 	cfg := config.FindByName(name)
 	if cfg == nil {
-		return nil, "", nil, fmt.Errorf("unknown database %q; register it with --init or list the known ones by running ngdb with no arguments", name)
+		return dbPaths{}, "", nil, config.UnknownDatabase(name)
 	}
 	_ = cfg.Touch() // best-effort last-opened stamp
-	return []string{cfg.DDLPath, cfg.SQLitePath, cfg.LogDir}, table, args, nil
+	return dbPaths{DDL: cfg.DDLPath, SQLite: cfg.SQLitePath, Log: cfg.LogDir}, table, args, nil
 }
 
 // cutFlag matches "--db=value" / "-d=value" style selectors.
@@ -122,14 +133,15 @@ func cutFlag(arg string, names ...string) (value string, ok bool) {
 	return "", false
 }
 
-// nameTriple resolves a registered database name to its (ddl, sqlite, logdir)
-// paths; ok is false when no such name is registered. The low-level verbs use
-// it to accept a name yet still fall back to their explicit-path form.
-func nameTriple(name string) (ddlPath, sqlitePath, logDir string, ok bool) {
-	if cfg := config.FindByName(name); cfg != nil {
-		return cfg.DDLPath, cfg.SQLitePath, cfg.LogDir, true
+// pathsForName resolves a registered database name to its files; ok is false
+// when no such name is registered. The low-level verbs use it to accept a name
+// yet still fall back to their explicit-path form.
+func pathsForName(name string) (paths dbPaths, ok bool) {
+	cfg := config.FindByName(name)
+	if cfg == nil {
+		return dbPaths{}, false
 	}
-	return "", "", "", false
+	return dbPaths{DDL: cfg.DDLPath, SQLite: cfg.SQLitePath, Log: cfg.LogDir}, true
 }
 
 // doData resolves the named database and dispatches one CRUD verb over it. The
@@ -214,8 +226,8 @@ func doData(verb string, args []string) error {
 // doBuild builds/migrates a view: build <db>, or the explicit build <ddl> <sqlite>.
 func doBuild(args []string) error {
 	if len(args) == 1 {
-		if ddlPath, sqlitePath, _, ok := nameTriple(args[0]); ok {
-			return buildDB(ddlPath, sqlitePath)
+		if paths, ok := pathsForName(args[0]); ok {
+			return buildDB(paths.DDL, paths.SQLite)
 		}
 		return fmt.Errorf("unknown database %q (or use build <ddl> <sqlite>)", args[0])
 	}
@@ -228,8 +240,8 @@ func doBuild(args []string) error {
 // doReplay rebuilds a view from its log: replay <db>, or replay <ddl> <sqlite> <dir>.
 func doReplay(args []string) error {
 	if len(args) == 1 {
-		if ddlPath, sqlitePath, logDir, ok := nameTriple(args[0]); ok {
-			return replay(ddlPath, sqlitePath, logDir)
+		if paths, ok := pathsForName(args[0]); ok {
+			return replay(paths.DDL, paths.SQLite, paths.Log)
 		}
 		return fmt.Errorf("unknown database %q (or use replay <ddl> <sqlite> <logdir>)", args[0])
 	}
@@ -243,8 +255,8 @@ func doReplay(args []string) error {
 // only reconciles the log; sync <ddl> <sqlite> <dir> is the explicit full cycle.
 func doSync(args []string) error {
 	if len(args) == 1 {
-		if ddlPath, sqlitePath, logDir, ok := nameTriple(args[0]); ok {
-			return syncAndReplay(ddlPath, sqlitePath, logDir)
+		if paths, ok := pathsForName(args[0]); ok {
+			return syncAndReplay(paths.DDL, paths.SQLite, paths.Log)
 		}
 		return syncLog(args[0]) // not a name: treat it as a log directory
 	}
@@ -257,8 +269,8 @@ func doSync(args []string) error {
 // doGC collects long-deleted entries: gc <db>, or gc <ddl> <logdir>.
 func doGC(args []string) error {
 	if len(args) == 1 {
-		if ddlPath, _, logDir, ok := nameTriple(args[0]); ok {
-			return gcLog(ddlPath, logDir)
+		if paths, ok := pathsForName(args[0]); ok {
+			return gcLog(paths.DDL, paths.Log)
 		}
 		return fmt.Errorf("unknown database %q (or use gc <ddl> <logdir>)", args[0])
 	}
@@ -272,8 +284,8 @@ func doGC(args []string) error {
 // --rename-table <ddl> <sqlite> <old> <new>.
 func doRenameTable(args []string) error {
 	if len(args) == 3 {
-		if ddlPath, sqlitePath, _, ok := nameTriple(args[0]); ok {
-			return renameTable(ddlPath, sqlitePath, args[1], args[2])
+		if paths, ok := pathsForName(args[0]); ok {
+			return renameTable(paths.DDL, paths.SQLite, args[1], args[2])
 		}
 		return fmt.Errorf("unknown database %q (or use --rename-table <ddl> <sqlite> <old> <new>)", args[0])
 	}
@@ -287,8 +299,8 @@ func doRenameTable(args []string) error {
 // --rename-field <ddl> <sqlite> <table> <old> <new>.
 func doRenameField(args []string) error {
 	if len(args) == 4 {
-		if ddlPath, sqlitePath, _, ok := nameTriple(args[0]); ok {
-			return renameField(ddlPath, sqlitePath, args[1], args[2], args[3])
+		if paths, ok := pathsForName(args[0]); ok {
+			return renameField(paths.DDL, paths.SQLite, args[1], args[2], args[3])
 		}
 		return fmt.Errorf("unknown database %q (or use --rename-field <ddl> <sqlite> <table> <old> <new>)", args[0])
 	}
@@ -298,59 +310,72 @@ func doRenameField(args []string) error {
 	return usage()
 }
 
-func usage() error {
-	fmt.Println("usage: ngdb <verb> ...")
-	fmt.Println("  setup and run modes:")
-	fmt.Println("    --init [repo-or-dir]           register the $PWD .shcl as a database")
-	fmt.Println("    --config <dir> ...             use an alternate registry dir, then run")
-	if enc.Available() { // enterprise build only
-		fmt.Println("    --encrypt[=on|off|auto] ...    set the local encryption preference,")
-		fmt.Println("                                   then run (--init --encrypt=on mints a key)")
-	}
-	fmt.Println("    --tui [<db>]                   terminal UI (no name: pick/create a db)")
-	fmt.Println("    --serve [<db>]                 local web UI on 127.0.0.1:8765")
-	fmt.Println("    webuser <username>             set a proxied-mode web login")
-	fmt.Println("                                   (password from NGDB_WEB_PASSWORD or prompt)")
-	fmt.Println("    --script <f.lua> <ddl> <sqlite> <dir>   run a Lua script")
-	if donate.Enabled { // open-source-only feature
-		fmt.Println("    --donate                       ways to support the project")
-	}
-	fmt.Println("    --version, -v                  print the version and exit")
-	fmt.Println("  <db> is a registered database name (extension optional). Register one")
-	fmt.Println("  with --init; run ngdb with no arguments to see the ones you have.")
-	fmt.Println("  schema and log:")
-	fmt.Println("    ddl <file>                     parse a DDL file and print a summary")
-	fmt.Println("    build <db>                     build/migrate the SQLite view")
-	fmt.Println("    replay <db>                    rebuild the view from the tx-log")
-	fmt.Println("    sync <db>                      sync the log, then migrate and replay")
-	fmt.Println("    gc <db>                         collect entries of long-deleted rows")
-	fmt.Println("                                   (gc_age_days tunable, default 90)")
-	fmt.Println("  data (each takes a <db>, then a <table>; e.g. create issues task f=v):")
-	fmt.Println("    create <db> <table> f=v [f=v...]     insert a row; prints its id")
-	fmt.Println("    get <db> <table> <id>                print one row")
-	fmt.Println("    update <db> <table> <id> f=v [...]   set fields")
-	fmt.Println("    setnull <db> <table> <id> <field>    set a field to SQL NULL")
-	fmt.Println("    markdelete <db> <table> <id>         soft-delete")
-	fmt.Println("    delete <db> <table> <id>             hard-delete")
-	fmt.Println("    query <db> <sql>                     read-only SQL against the view")
-	fmt.Println("    the db and table may also be given explicitly as flags in any order:")
-	fmt.Println("      --db=<name> / -d <name>,  --table=<name> / -t <name>")
-	fmt.Println("  schema ops (rewrite the DDL file and the SQLite view; the old name")
-	fmt.Println("  becomes an alias so existing tx-log entries still replay):")
-	fmt.Println("    --rename-table <db> <old> <new>")
-	fmt.Println("    --rename-field <db> <table> <old> <new>")
-	fmt.Println("  opt-in features (table must enable them in its DDL features: block):")
-	fmt.Println("    comment <db> <table> <id> <text>           add a comment to a row")
-	fmt.Println("    comments <db> <table> <id>                 list a row's comments")
-	fmt.Println("    attachuri <db> <table> <id> <uri> [desc]   attach a link-in-place URI")
-	fmt.Println("    attachfile <db> <table> <id> <path> [desc] copy a file in and attach it")
-	fmt.Println("    attachments <db> <table> <id>              list a row's attachments")
-	fmt.Println("  writes are stamped with NANOGITDB_USER (default: the OS username)")
+// Help prints the usage block on stdout and succeeds - what an explicit --help
+// asks for.
+func Help() error {
+	printUsage(os.Stdout)
 	return nil
 }
 
-// dumpDDL parses a DDL file and prints a short summary - a stand-in until the
-// real CRUD CLI lands, and a handy parser smoke test.
+// usage reports a command that could not be run. The block goes to stderr so a
+// script's stdout stays clean, and the error makes the exit status non-zero.
+func usage() error {
+	printUsage(os.Stderr)
+	return fmt.Errorf("unknown or incomplete command")
+}
+
+func printUsage(w io.Writer) {
+	fmt.Fprintln(w, "usage: ngdb <verb> ...")
+	fmt.Fprintln(w, "  setup and run modes:")
+	fmt.Fprintln(w, "    --init [repo-or-dir]           register the $PWD .shcl as a database")
+	fmt.Fprintln(w, "    --config <dir> ...             use an alternate registry dir, then run")
+	if enc.Available() { // enterprise build only
+		fmt.Fprintln(w, "    --encrypt[=on|off|auto] ...    set the local encryption preference,")
+		fmt.Fprintln(w, "                                   then run (--init --encrypt=on mints a key)")
+	}
+	fmt.Fprintln(w, "    --tui [<db>]                   terminal UI (no name: pick/create a db)")
+	fmt.Fprintln(w, "    --serve [<db>]                 local web UI on 127.0.0.1:8765")
+	fmt.Fprintln(w, "    webuser <username>             set a proxied-mode web login")
+	fmt.Fprintln(w, "                                   (password from NGDB_WEB_PASSWORD or prompt)")
+	fmt.Fprintln(w, "    --script <f.lua> <ddl> <sqlite> <dir>   run a Lua script")
+	if donate.Enabled { // open-source-only feature
+		fmt.Fprintln(w, "    --donate                       ways to support the project")
+	}
+	fmt.Fprintln(w, "    --version, -v                  print the version and exit")
+	fmt.Fprintln(w, "  <db> is a registered database name (extension optional). Register one")
+	fmt.Fprintln(w, "  with --init; run ngdb with no arguments to see the ones you have.")
+	fmt.Fprintln(w, "  schema and log:")
+	fmt.Fprintln(w, "    ddl <file>                     parse a DDL file and print a summary")
+	fmt.Fprintln(w, "    build <db>                     build/migrate the SQLite view")
+	fmt.Fprintln(w, "    replay <db>                    rebuild the view from the tx-log")
+	fmt.Fprintln(w, "    sync <db>                      sync the log, then migrate and replay")
+	fmt.Fprintln(w, "    gc <db>                         collect entries of long-deleted rows")
+	fmt.Fprintln(w, "                                   (gc_age_days tunable, default 90)")
+	fmt.Fprintln(w, "  data (each takes a <db>, then a <table>; e.g. create issues task f=v):")
+	fmt.Fprintln(w, "    create <db> <table> f=v [f=v...]     insert a row; prints its id")
+	fmt.Fprintln(w, "    get <db> <table> <id>                print one row")
+	fmt.Fprintln(w, "    update <db> <table> <id> f=v [...]   set fields")
+	fmt.Fprintln(w, "    setnull <db> <table> <id> <field>    set a field to SQL NULL")
+	fmt.Fprintln(w, "    markdelete <db> <table> <id>         soft-delete")
+	fmt.Fprintln(w, "    delete <db> <table> <id>             hard-delete")
+	fmt.Fprintln(w, "    query <db> <sql>                     read-only SQL against the view")
+	fmt.Fprintln(w, "    the db and table may also be given explicitly as flags in any order:")
+	fmt.Fprintln(w, "      --db=<name> / -d <name>,  --table=<name> / -t <name>")
+	fmt.Fprintln(w, "  schema ops (rewrite the DDL file and the SQLite view; the old name")
+	fmt.Fprintln(w, "  becomes an alias so existing tx-log entries still replay):")
+	fmt.Fprintln(w, "    --rename-table <db> <old> <new>")
+	fmt.Fprintln(w, "    --rename-field <db> <table> <old> <new>")
+	fmt.Fprintln(w, "  opt-in features (table must enable them in its DDL features: block):")
+	fmt.Fprintln(w, "    comment <db> <table> <id> <text>           add a comment to a row")
+	fmt.Fprintln(w, "    comments <db> <table> <id>                 list a row's comments")
+	fmt.Fprintln(w, "    attachuri <db> <table> <id> <uri> [desc]   attach a link-in-place URI")
+	fmt.Fprintln(w, "    attachfile <db> <table> <id> <path> [desc] copy a file in and attach it")
+	fmt.Fprintln(w, "    attachments <db> <table> <id>              list a row's attachments")
+	fmt.Fprintln(w, "  writes are stamped with NANOGITDB_USER (default: the OS username)")
+
+}
+
+// dumpDDL parses a schema file and prints a short summary of what it declares.
 func dumpDDL(path string) error {
 	sch, err := ddl.ParseFile(path)
 	if err != nil {
@@ -421,9 +446,11 @@ func replay(ddlPath, dbPath, logDir string) error {
 	if err != nil {
 		return err
 	}
-	if builtins, err := schema.Builtins(); err == nil {
-		schema.ApplyAliases(entries, sch, builtins) // pre-rename entries -> current names
+	builtins, err := schema.Builtins()
+	if err != nil {
+		return err
 	}
+	schema.ApplyAliases(entries, sch, builtins) // pre-rename entries -> current names
 	// Decrypt field values before applying, using this DDL's registered key
 	// (else a key beside the DDL); unreadable ones stay empty in the view.
 	keyFile, _ := config.ResolveEncryptionForDDL(ddlPath)
@@ -509,12 +536,12 @@ func syncAndReplay(ddlPath, dbPath, logDir string) error {
 // migrate the view (build + built-ins are idempotent, so the schema is always
 // current), open the log. It does NOT replay - keeping the view current across
 // clients is what replay/sync are for. Callers must Close the store.
-func openAPI(paths []string) (*store.Store, *crud.API, error) {
-	sch, err := ddl.ParseFile(paths[0])
+func openAPI(paths dbPaths) (*store.Store, *crud.API, error) {
+	sch, err := ddl.ParseFile(paths.DDL)
 	if err != nil {
 		return nil, nil, err
 	}
-	st, err := store.Open(paths[1])
+	st, err := store.Open(paths.SQLite)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -526,7 +553,7 @@ func openAPI(paths []string) (*store.Store, *crud.API, error) {
 		st.Close()
 		return nil, nil, err
 	}
-	lg, err := txlog.Open(paths[2])
+	lg, err := txlog.Open(paths.Log)
 	if err != nil {
 		st.Close()
 		return nil, nil, err
@@ -540,7 +567,7 @@ func openAPI(paths []string) (*store.Store, *crud.API, error) {
 	}
 	// Encryption for writes: find this DDL's registry record (its key lives in
 	// the unsynced config dir), else fall back to a key beside the DDL.
-	keyFile, pref := config.ResolveEncryptionForDDL(paths[0])
+	keyFile, pref := config.ResolveEncryptionForDDL(paths.DDL)
 	cipher, _, err := enc.LoadCipher(keyFile)
 	if err != nil {
 		st.Close()
@@ -548,7 +575,7 @@ func openAPI(paths []string) (*store.Store, *crud.API, error) {
 	}
 	api.EnableEncryption(cipher, pref, sch)
 	api.EnableFeatures(sch, builtins)
-	attachWarns, err := script.Attach(api, paths[0], paths[2], sch, builtins)
+	attachWarns, err := script.Attach(api, paths.DDL, paths.Log, sch, builtins)
 	if err != nil {
 		st.Close()
 		return nil, nil, err
@@ -577,11 +604,22 @@ func parseAssigns(args []string) (map[string]string, error) {
 // gcLog collects tx-log entries of rows hard-deleted more than gc_age_days
 // ago, via segment rotation (never editing a log file in place). The next
 // sync commits the rotation.
+//
+// The log is read twice on a pass that collects something. The first read only
+// answers "is there anything to do", so an idle pass leaves the log untouched.
+// The second is taken from a snapshot of the sealed segments, so what gets
+// decided is exactly what gets retired - anything written from the seal onward
+// goes to a fresh live file this pass never reads or touches.
 func gcLog(ddlPath, logDir string) error {
 	sch, err := ddl.ParseFile(ddlPath)
 	if err != nil {
 		return err
 	}
+	builtins, err := schema.Builtins()
+	if err != nil {
+		return err
+	}
+	canon := schema.TableCanon(sch, builtins)
 	lg, err := txlog.Open(logDir)
 	if err != nil {
 		return err
@@ -594,12 +632,32 @@ func gcLog(ddlPath, logDir string) error {
 		fmt.Println("warning:", w)
 	}
 	days := sch.TunableInt("gc_age_days", 90)
-	keep, collected := txlog.GC(entries, txlog.CutoffDays(days))
-	if collected == 0 {
+	cutoff := txlog.CutoffDays(days)
+	if _, collected := txlog.GC(entries, cutoff, canon); collected == 0 {
 		fmt.Printf("nothing to collect (threshold: deleted > %d days ago)\n", days)
 		return nil
 	}
-	seg, err := lg.Rotate(keep)
+
+	if _, err := lg.Seal(); err != nil {
+		return err
+	}
+	snap, err := lg.Snapshot()
+	if err != nil {
+		return err
+	}
+	entries, warns, err = snap.ReadAll()
+	if err != nil {
+		return err
+	}
+	for _, w := range warns {
+		fmt.Println("warning:", w)
+	}
+	keep, collected := txlog.GC(entries, cutoff, canon)
+	if collected == 0 { // everything eligible was already taken by another pass
+		fmt.Printf("nothing to collect (threshold: deleted > %d days ago)\n", days)
+		return nil
+	}
+	seg, err := lg.Rotate(keep, snap)
 	if err != nil {
 		return err
 	}
@@ -675,7 +733,7 @@ func alterView(dbPath, table, stmt string) error {
 	return err
 }
 
-func crudComment(paths []string, table, id, text string) error {
+func crudComment(paths dbPaths, table, id, text string) error {
 	st, api, err := openAPI(paths)
 	if err != nil {
 		return err
@@ -689,7 +747,7 @@ func crudComment(paths []string, table, id, text string) error {
 	return nil
 }
 
-func crudComments(paths []string, table, id string) error {
+func crudComments(paths dbPaths, table, id string) error {
 	st, api, err := openAPI(paths)
 	if err != nil {
 		return err
@@ -705,7 +763,7 @@ func crudComments(paths []string, table, id string) error {
 	return nil
 }
 
-func crudAttach(paths []string, table, id, target, desc string, copyIn bool) error {
+func crudAttach(paths dbPaths, table, id, target, desc string, copyIn bool) error {
 	st, api, err := openAPI(paths)
 	if err != nil {
 		return err
@@ -724,7 +782,7 @@ func crudAttach(paths []string, table, id, target, desc string, copyIn bool) err
 	return nil
 }
 
-func crudAttachments(paths []string, table, id string) error {
+func crudAttachments(paths dbPaths, table, id string) error {
 	st, api, err := openAPI(paths)
 	if err != nil {
 		return err
@@ -740,7 +798,7 @@ func crudAttachments(paths []string, table, id string) error {
 	return nil
 }
 
-func crudCreate(paths []string, table string, assigns []string) error {
+func crudCreate(paths dbPaths, table string, assigns []string) error {
 	fields, err := parseAssigns(assigns)
 	if err != nil {
 		return err
@@ -751,14 +809,15 @@ func crudCreate(paths []string, table string, assigns []string) error {
 	}
 	defer st.Close()
 	id, err := api.Create(table, fields)
-	if err != nil {
-		return err
+	// A row the view refused still has an id worth printing - it is in the log,
+	// and naming it is what lets the user go look at what landed.
+	if id != "" {
+		fmt.Println(id)
 	}
-	fmt.Println(id)
-	return nil
+	return err
 }
 
-func crudGet(paths []string, table, id string) error {
+func crudGet(paths dbPaths, table, id string) error {
 	st, api, err := openAPI(paths)
 	if err != nil {
 		return err
@@ -782,7 +841,7 @@ func crudGet(paths []string, table, id string) error {
 	return nil
 }
 
-func crudUpdate(paths []string, table, id string, assigns []string) error {
+func crudUpdate(paths dbPaths, table, id string, assigns []string) error {
 	fields, err := parseAssigns(assigns)
 	if err != nil {
 		return err
@@ -795,7 +854,7 @@ func crudUpdate(paths []string, table, id string, assigns []string) error {
 	return api.Update(table, id, fields)
 }
 
-func crudSetNull(paths []string, table, id, field string) error {
+func crudSetNull(paths dbPaths, table, id, field string) error {
 	st, api, err := openAPI(paths)
 	if err != nil {
 		return err
@@ -804,7 +863,7 @@ func crudSetNull(paths []string, table, id, field string) error {
 	return api.SetFieldNull(table, id, field)
 }
 
-func crudDelete(verb string, paths []string, table, id string) error {
+func crudDelete(verb string, paths dbPaths, table, id string) error {
 	st, api, err := openAPI(paths)
 	if err != nil {
 		return err
@@ -816,7 +875,7 @@ func crudDelete(verb string, paths []string, table, id string) error {
 	return api.Delete(table, id)
 }
 
-func crudQuery(paths []string, query string) error {
+func crudQuery(paths dbPaths, query string) error {
 	st, api, err := openAPI(paths)
 	if err != nil {
 		return err

@@ -120,7 +120,7 @@ func OpenClientWith(opts OpenOpts) (*Client, error) {
 	}, nil
 }
 
-// encryptionWarnings surfaces the degraded/awareness states the design calls
+// encryptionWarnings reports the degraded/awareness states the design calls
 // for: encrypted data the current run cannot read, an always-encrypted schema
 // with no key (writes to those fields will be refused), and the "you have the
 // key but turned encryption off" case.

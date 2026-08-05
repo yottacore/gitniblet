@@ -11,10 +11,9 @@
 // validated document into the typed Schema.
 //
 // Warnings come from two sources. Anything about a single line - an unknown key,
-// a value outside its allowed set, a bad number - is an shcl diagnostic and
-// carries a line number. Anything cross-cutting - a table defined twice, a
-// unique naming a field that does not exist - is checked here and names the
-// entity instead, since shcl's Go API exposes no per-node line numbers.
+// a value outside its allowed set, a bad number - is an shcl diagnostic. Anything
+// cross-cutting - a table defined twice, a unique naming a field that does not
+// exist - is checked here. Both cite a line, so they read alike.
 //
 // Most attributes are optional, so scalars that carry an unset/default
 // distinction use pointers (nil = "use the default").
@@ -207,12 +206,28 @@ func ParseFile(path string) (*Schema, error) {
 }
 
 // addDiagnostics folds shcl's line-numbered diagnostics into the schema's
-// warnings. Hints are carried through too: shcl's one hint (a repeated bare
-// leaf that looks like an array) is exactly the kind of near-miss this DDL's
-// audience needs told about.
+// warnings. Hints are carried through too: a repeated bare leaf that looks like
+// an array, or a section that silently combined with an earlier one, are
+// exactly the near-misses this DDL's audience needs told about.
+//
+// SuppressDeclaredRepeats drops the repeated-leaf hint for keys the schema
+// declares as repeating - `unique:`, `index:`, `row:` - where recurring IS the
+// design and the hint would fire on every correct DDL.
+// The merged-with-an-earlier-section hint is deliberately NOT filtered, even
+// though restating `database:` is legal and merges cleanly. When a wrapper and
+// an entity inside it both merge, only the outermost is reported - so silencing
+// wrappers would also silence two far-apart `table: t` sections quietly becoming
+// one table, which is the thing worth catching. A schema laid out in one pass
+// never sees it; project/example.shcl is written that way for the same reason.
 func (s *Schema) addDiagnostics(diags []shcl.Diagnostic) {
-	for _, d := range diags {
-		if expectedRepeat(d) {
+	for _, d := range shcl.SuppressDeclaredRepeats(schemaDoc(), diags) {
+		if isSchemaFault(d) {
+			// A fault's line is a line of the built-in vocabulary, not of the
+			// DDL in front of the user, so it must not read like one. Only a
+			// build that shipped a broken schema.shcl can produce these, and
+			// the surviving constraints still check the document around them.
+			s.Warnings = append(s.Warnings, "built-in schema fault: "+d.Message)
+			s.Errors++
 			continue
 		}
 		s.Warnings = append(s.Warnings, fmt.Sprintf("line %d: %s", d.Line, d.Message))
@@ -222,31 +237,35 @@ func (s *Schema) addDiagnostics(diags []shcl.Diagnostic) {
 	}
 }
 
-// repeatedLeaves are the DDL keys whose whole design is to recur as a bare leaf:
-// each occurrence is one unique group, one index, or one seeded row.
-var repeatedLeaves = []string{"unique", "index", "row"}
+// isSchemaFault tells a complaint about the validation schema (V09x) from one
+// about the document being loaded. They share a diagnostics list but not a line
+// numbering.
+func isSchemaFault(d shcl.Diagnostic) bool { return strings.HasPrefix(d.Code, "V09") }
 
-// expectedRepeat drops shcl's repeated-leaf hint for those keys. The hint asks
-// whether a comma array was meant, which for these three is structurally always
-// no - so it would fire on every correct DDL and train the reader to ignore
-// warnings. It stays live for every other key, where a repeat usually IS the
-// mistake the hint describes (`aliases: a` twice instead of `aliases: a, b`).
-func expectedRepeat(d shcl.Diagnostic) bool {
-	if d.Code != "H001" {
-		return false
-	}
-	for _, name := range repeatedLeaves {
-		if strings.HasPrefix(d.Message, "'"+name+"'") {
-			return true
-		}
-	}
-	return false
-}
-
-// warn records a cross-cutting problem. These name the entity rather than a
-// line, because they are about the relationship between lines.
+// warn records a cross-cutting problem: one about the relationship between
+// lines rather than about a single line. It still cites the entity's own line
+// where one is known, so it reads like every other diagnostic.
 func (s *Schema) warn(format string, args ...any) {
 	s.Warnings = append(s.Warnings, fmt.Sprintf(format, args...))
+}
+
+// errAt is warnAt for something the load could not repair, so callers that ask
+// HasErrors() report the database unopenable rather than letting it fail later
+// with a raw SQLite error.
+func (s *Schema) errAt(c cursor, format string, args ...any) {
+	s.warnAt(c, format, args...)
+	s.Errors++
+}
+
+// warnAt is warn with a line number, for the cases holding the offending
+// entity's cursor. Line 0 means shcl could not place it; the message still goes
+// out, just without the prefix.
+func (s *Schema) warnAt(c cursor, format string, args ...any) {
+	if line := c.line(); line > 0 {
+		s.warn("line %d: %s", line, fmt.Sprintf(format, args...))
+		return
+	}
+	s.warn(format, args...)
 }
 
 // sectionPrefixes are the paths a logical section may sit at. `database:` and
@@ -280,16 +299,12 @@ func (s *Schema) mapEncryption(root cursor) {
 // schema file; an unknown one still stores, so a tunable written by a newer
 // client survives a round trip through an older one.
 func (s *Schema) mapTunables(root cursor) {
-	const section = "tunables."
-	for _, path := range root.doc.Paths() {
-		key, ok := strings.CutPrefix(path, section)
-		if !ok || strings.Contains(key, ".") {
-			continue // not a tunable, or nested below one
-		}
+	at := root.child("tunables")
+	for _, key := range at.children("") {
 		if _, dup := s.Tunables[key]; dup {
 			continue // first wins, like every other merge
 		}
-		s.Tunables[key] = root.child("tunables").str(key)
+		s.Tunables[key] = at.str(shcl.QuoteSegment(key))
 	}
 }
 
@@ -299,13 +314,14 @@ func (s *Schema) mapTables(root cursor) {
 		at := cursor{doc: root.doc, path: prefix}.child("tables")
 		names := at.instances("table")
 		for i, name := range names {
-			table := s.parseTable(at.instance("table", i), name)
+			tc := at.instance("table", i)
+			table := s.parseTable(tc, name)
 			if table.Name == "" {
-				s.warn("a table with no name was dropped")
+				s.warnAt(tc, "a table with no name was dropped")
 				continue
 			}
 			if s.table(table.Name) != nil {
-				s.warn("table %q is defined more than once; the first definition wins", table.Name)
+				s.warnAt(tc, "table %q is defined more than once; the first definition wins", table.Name)
 				continue
 			}
 			s.Tables = append(s.Tables, table)
@@ -362,9 +378,10 @@ func (s *Schema) parseTable(c cursor, name string) Table {
 
 	fields := c.child("fields")
 	for i, fieldName := range fields.instances("field") {
-		field := parseField(fields.instance("field", i), fieldName)
+		fc := fields.instance("field", i)
+		field := parseField(fc, fieldName)
 		if field.Name == "" {
-			s.warn("a field with no name in table %q was dropped", t.Name)
+			s.warnAt(fc, "a field with no name in table %q was dropped", t.Name)
 			continue
 		}
 		// A system field's column is managed, so an entry naming one contributes
@@ -375,12 +392,12 @@ func (s *Schema) parseTable(c cursor, name string) Table {
 			}
 			t.SystemUI[field.Name] = field.UI
 			if definesColumn(field) {
-				s.warn("field %q in table %q is a system field: its ui: applies, the rest is ignored", field.Name, t.Name)
+				s.warnAt(fc, "field %q in table %q is a system field: its ui: applies, the rest is ignored", field.Name, t.Name)
 			}
 			continue
 		}
 		if t.hasField(field.Name) {
-			s.warn("field %q in table %q is defined more than once; the first definition wins", field.Name, t.Name)
+			s.warnAt(fc, "field %q in table %q is defined more than once; the first definition wins", field.Name, t.Name)
 			continue
 		}
 		t.Fields = append(t.Fields, field)
@@ -412,14 +429,30 @@ func (s *Schema) parseKeyGroups(c cursor, t *Table, section, entry string) [][]s
 	at := c.child(section)
 	var out [][]string
 	for i := 0; i < at.count(entry); i++ {
-		group := at.instance(entry, i).list("")
+		gc := at.instance(entry, i)
+		group := gc.list("")
 		if len(group) == 0 {
 			continue
 		}
+		// A name matching no field would reach SQLite verbatim and take the
+		// whole open down with a raw error, from a schema the picker had just
+		// listed as fine. Counting it as an error is what greys the database
+		// out with a reason instead.
+		//
+		// The group is dropped whole rather than one name at a time: pruning
+		// the bad name from `unique: a, b` leaves `unique: a`, a stricter rule
+		// the schema never asked for, which would then refuse rows that are
+		// perfectly legal.
+		bad := false
 		for _, name := range group {
 			if !t.hasField(name) {
-				s.warn("%s on table %q names unknown field %q", section, t.Name, name)
+				s.errAt(gc, "%s on table %q names unknown field %q; the group is dropped",
+					section, t.Name, name)
+				bad = true
 			}
+		}
+		if bad {
+			continue
 		}
 		out = append(out, group)
 	}
@@ -557,8 +590,6 @@ func accessFlat(c cursor) AccessRule {
 		Blacklist: c.firstList("blacklist", "blaclist"),
 	}
 }
-
-// -- resolvers over a parsed schema --
 
 // TunableInt reads a tunable as an integer, falling back on absent or
 // non-numeric values.

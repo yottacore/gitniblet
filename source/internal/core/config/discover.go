@@ -15,7 +15,7 @@ import (
 
 // Listed is one discovered registry entry. An unopenable record still appears -
 // with its name (or directory) and the reason - so the picker can show it
-// greyed with an explanation rather than hiding a broken database.
+// grayed with an explanation rather than hiding a broken database.
 type Listed struct {
 	Name   string
 	Dir    string
@@ -186,6 +186,12 @@ func LocalSQLite(ddlPath string) string {
 func LocalKey(ddlPath string) string {
 	ext := filepath.Ext(ddlPath)
 	return ddlPath[:len(ddlPath)-len(ext)] + ".key"
+}
+
+// UnknownDatabase is the error every front-end reports for a name that is not
+// in the registry. One wording, so the CLI, TUI and web all say the same thing.
+func UnknownDatabase(name string) error {
+	return fmt.Errorf("unknown database %q; register it with --init, or run ngdb with no arguments to see the ones you have", name)
 }
 
 // PWDTriple resolves a database in the current directory to the

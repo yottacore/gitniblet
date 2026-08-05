@@ -26,7 +26,7 @@ echo "go test ..."
 go test -mod=vendor -p "${NGDB_JOBS}" ./...
 
 ## No binary launch here - the app is left for a separate manual run before
-## the merge, so it can be cancelled if it misbehaves.
+## the merge, so it can be canceled if it misbehaves.
 
 echo "test.bash: PASS"
 

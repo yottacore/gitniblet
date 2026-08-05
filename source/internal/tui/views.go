@@ -152,18 +152,18 @@ func (a *App) queryPicker(view *schema.ViewSpec, panel *blockPanel) {
 		return
 	}
 	list := tview.NewList().ShowSecondaryText(false)
-	close := func() {
+	closeForm := func() {
 		a.pages.RemovePage("queries")
 		a.app.SetFocus(panel.tbl)
 	}
 	for i := range queries {
 		query := queries[i]
 		list.AddItem(query.Name, "", 0, func() {
-			close()
+			closeForm()
 			a.loadQueryInto(panel, &query)
 		})
 	}
-	list.SetDoneFunc(close)
+	list.SetDoneFunc(closeForm)
 	list.SetBorder(true).SetTitle(" queries ")
 	a.pages.AddPage("queries", modal(list, 44, len(queries)+4), true, true)
 	a.app.SetFocus(list)
@@ -292,25 +292,25 @@ func (a *App) addCommentForm(panel *blockPanel) {
 	}
 	form := tview.NewForm()
 	form.AddInputField("comment", "", 0, nil, nil)
-	close := func() {
+	closeForm := func() {
 		a.pages.RemovePage("addcomment")
 		a.app.SetFocus(panel.tbl)
 	}
 	form.AddButton("Add", func() {
 		text := form.GetFormItemByLabel("comment").(*tview.InputField).GetText()
 		if text == "" {
-			close()
+			closeForm()
 			return
 		}
 		if _, err := a.api.CommentAdd(panel.b.Table, panel.parentID, text); err != nil {
 			a.setStatus("error: " + err.Error())
 			return
 		}
-		close()
+		closeForm()
 		a.loadBlock(panel)
 	})
-	form.AddButton("Cancel", close)
-	form.SetCancelFunc(close)
+	form.AddButton("Cancel", closeForm)
+	form.SetCancelFunc(closeForm)
 	form.SetBorder(true).SetTitle(" new comment ")
 	a.pages.AddPage("addcomment", modal(form, 60, 6), true, true)
 	a.app.SetFocus(form)

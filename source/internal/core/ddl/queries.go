@@ -28,7 +28,7 @@ type NamedQuery struct {
 
 // QueriesPath is the sidecar convention: the DDL path with its extension
 // replaced by ".queries.shcl" (issues.shcl -> issues.queries.shcl). Discovery
-// looks for a lone schema file, so it must skip this one - see config.PWDSchema.
+// looks for a lone schema file, so it must skip this one - see config.PWDDdl.
 func QueriesPath(ddlPath string) string {
 	return strings.TrimSuffix(ddlPath, filepath.Ext(ddlPath)) + ".queries.shcl"
 }
@@ -44,6 +44,7 @@ func ScriptPath(ddlPath string) string {
 const queriesSchema = `
 field: "query_name[*]"
 	type: string
+	repeat: 0, 4096
 	desc: One named query. Its value is the query name.
 field: "query_name[*].view"
 	type: string
@@ -89,16 +90,21 @@ func ParseQueriesFile(path string) ([]NamedQuery, []string, error) {
 func ParseQueries(src []byte) ([]NamedQuery, []string, error) {
 	doc, _ := shcl.ParseWith(string(src), shcl.Loose) // same tolerance as the DDL
 	var warns []string
-	for _, d := range doc.Diagnostics() {
-		warns = append(warns, fmt.Sprintf("line %d: %s", d.Line, d.Message))
+	report := func(diags []shcl.Diagnostic) {
+		for _, d := range shcl.SuppressDeclaredRepeats(queriesSchemaDoc(), diags) {
+			if isSchemaFault(d) {
+				warns = append(warns, "built-in schema fault: "+d.Message)
+				continue
+			}
+			warns = append(warns, fmt.Sprintf("line %d: %s", d.Line, d.Message))
+		}
 	}
-	for _, d := range doc.Validate(queriesSchemaDoc()) {
-		warns = append(warns, fmt.Sprintf("line %d: %s", d.Line, d.Message))
-	}
+	report(doc.Diagnostics())
+	report(doc.Validate(queriesSchemaDoc()))
 
 	// No duplicate-name check: two query_name instances with the same name are
 	// one node by SHCL's merge rule, so a repeat cannot reach here as a second
-	// entry - it lands as extra children on the first.
+	// entry - it becomes extra children on the first.
 	root := cursor{doc: doc}
 	var out []NamedQuery
 	for i, name := range root.instances("query_name") {

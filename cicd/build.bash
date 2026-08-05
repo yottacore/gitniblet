@@ -28,8 +28,6 @@ fi
 build="$(git rev-parse --short HEAD 2>/dev/null || true)"
 [[ -n "${build}" && -n "$(git status --porcelain 2>/dev/null)" ]]  &&  build="${build}-dirty"
 
-# Release strips (-s -w) and drops paths (-trimpath) for a small, reproducible
-# binary. Debug keeps both so profiles and panics carry real symbols/paths.
 ldflags="-X github.com/jim-collier/nano-git-db/app.Build=${build}"
 trim="-trimpath"
 if ((debug)); then

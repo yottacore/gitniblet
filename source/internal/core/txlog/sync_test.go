@@ -92,8 +92,6 @@ func TestTwoClientsConverge(t *testing.T) {
 	}
 }
 
-// -- helpers --
-
 func gitInit(t *testing.T, dir string) {
 	t.Helper()
 	mustGit(t, dir, "-c", "init.defaultBranch=main", "init")

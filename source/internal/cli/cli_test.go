@@ -188,3 +188,32 @@ func TestRenameOpsEndToEnd(t *testing.T) {
 		t.Fatalf("replayed data missing: %s", out)
 	}
 }
+
+// A command that could not run has to fail, or `ngdb ddl "$f" || die` in a
+// script never fires. Usage goes to stderr for the same reason.
+func TestUnrunnableCommandsFail(t *testing.T) {
+	regDB(t) // isolate the registry
+	for _, args := range [][]string{
+		{"bogusverb"},
+		{"ddl"},     // no file
+		{"webuser"}, // no username
+		{"build"},   // no database
+	} {
+		if err := Run(args); err == nil {
+			t.Errorf("%v should have failed", args)
+		}
+	}
+	if err := Help(); err != nil {
+		t.Fatalf("--help should succeed: %v", err)
+	}
+}
+
+// --table without --db used to swallow the first assignment as the database
+// name, so the user was told their field value was a bad database.
+func TestTableFlagWithoutDatabase(t *testing.T) {
+	regDB(t)
+	err := Run([]string{"create", "--table", "person", "name=Ann"})
+	if err == nil || !strings.Contains(err.Error(), "missing database name") {
+		t.Fatalf("want a missing-database error, got %v", err)
+	}
+}

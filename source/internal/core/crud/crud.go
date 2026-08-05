@@ -3,7 +3,7 @@
 
 // Package crud is the single internal API every front-end and the Lua host call.
 // No front-end talks to store/txlog directly - it all funnels through here so
-// behaviour can't drift between interfaces.
+// behavior can't drift between interfaces.
 //
 // Writes are log-first: each op appends field-granular entries to the tx-log
 // (the source of truth) and then applies them to the SQLite view. If the apply
@@ -16,6 +16,7 @@ package crud
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"os/user"
@@ -23,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -62,8 +64,9 @@ type API struct {
 
 	// readOnly, when set, makes every write return ErrReadOnly while reads keep
 	// working. A front-end flips it on to degrade a session to read-only (e.g. a
-	// dismissed startup notice); the core itself never sets it.
-	readOnly bool
+	// dismissed startup notice); the core itself never sets it. Atomic because
+	// the web front-end flips it from a request goroutine while others read it.
+	readOnly atomic.Bool
 
 	// Encryption state (crypt.go). cipher is the enterprise field-value cipher
 	// (nil = none, and always nil in the open-source build); encPref is the
@@ -83,12 +86,32 @@ func New(st *store.Store, lg *txlog.Log) *API {
 // ErrReadOnly is what every write returns while the API is in read-only mode.
 var ErrReadOnly = fmt.Errorf("crud: database is open read-only")
 
+// ViewRejected reports a write the log accepted but the view refused - a value
+// colliding with a unique: group is the usual cause. The entry is not lost (the
+// log is the truth), but every rebuild refuses it the same way, so the field
+// stays empty until the conflict is resolved. Callers that only check for a
+// non-nil error report it as a failed write, which is the safe reading.
+type ViewRejected struct {
+	Warnings []string
+}
+
+func (e *ViewRejected) Error() string {
+	return "crud: written to the log, refused by the view: " + strings.Join(e.Warnings, "; ")
+}
+
+// IsViewRejected reports whether err is a write of that kind, for a front-end
+// that wants to say which part landed.
+func IsViewRejected(err error) bool {
+	var rejected *ViewRejected
+	return errors.As(err, &rejected)
+}
+
 // SetReadOnly turns read-only mode on or off. A front-end sets it when a session
 // is degraded to read-only; writes then return ErrReadOnly and reads keep going.
-func (a *API) SetReadOnly(ro bool) { a.readOnly = ro }
+func (a *API) SetReadOnly(ro bool) { a.readOnly.Store(ro) }
 
 // ReadOnly reports whether the API is in read-only mode.
-func (a *API) ReadOnly() bool { return a.readOnly }
+func (a *API) ReadOnly() bool { return a.readOnly.Load() }
 
 // DefaultUserID is the stamp when a front-end has nothing better:
 // NANOGITDB_USER, else the OS username.
@@ -113,8 +136,11 @@ func DefaultHostID() string {
 	return "unknown"
 }
 
-// Create inserts a new row, sets the given fields, and returns its hex id.
+// Create inserts a new row, sets the given fields, and returns its id.
 // The `id` field is managed here and ignored if present in fields.
+//
+// A ViewRejected error comes back with the id anyway: the row is in the log, so
+// it exists and can be named, but one of its fields did not reach the view.
 func (a *API) Create(table string, fields map[string]string) (string, error) {
 	if err := a.authorize(table, "", "write", fields); err != nil {
 		return "", err
@@ -133,6 +159,9 @@ func (a *API) Create(table string, fields map[string]string) (string, error) {
 	}
 	entries = append(entries, a.audit(table, id, "create", nil)...)
 	if err := a.commit(entries); err != nil {
+		if IsViewRejected(err) {
+			return id, err
+		}
 		return "", err
 	}
 	a.runAfter(table, id, fields)
@@ -269,17 +298,33 @@ func (a *API) QueryRows(query string, args ...any) ([]string, []map[string]strin
 	return cols, out, err
 }
 
+// Replay applies log entries to the view under the same lock a write takes, so
+// a background sync's rebuild cannot land between a write's log append and its
+// own apply. Per-entry warnings come back rather than stopping the pass.
+//
+// Read-only mode does not gate it: this reconciles the view with the truth
+// rather than adding to it, and a read-only session still has to see what its
+// peers wrote.
+func (a *API) Replay(entries []txlog.Entry) ([]string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return txlog.Apply(a.st, entries)
+}
+
 // commit is the log-first write: append to the truth, then apply to the view.
 // The mutex keeps concurrent commits from interleaving their log/view steps.
 func (a *API) commit(entries []txlog.Entry) error {
 	if len(entries) == 0 {
 		return nil
 	}
-	if a.readOnly {
+	if a.readOnly.Load() {
 		return ErrReadOnly
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if err := a.requireRows(entries); err != nil {
+		return err
+	}
 	// The log gets encrypted copies (per the resolved policy); the view always
 	// gets cleartext. A must-encrypt field with no key aborts before any write.
 	toLog := entries
@@ -293,12 +338,59 @@ func (a *API) commit(entries []txlog.Entry) error {
 	if err := a.log.Append(toLog...); err != nil {
 		return err
 	}
-	// Warnings can't happen here: these entries were just built against the
-	// same schema this process opened the view with.
-	_, err := txlog.Apply(a.st, entries)
-	return err
+	warns, err := txlog.Apply(a.st, entries)
+	if err != nil {
+		return err
+	}
+	if len(warns) > 0 {
+		return &ViewRejected{Warnings: warns}
+	}
+	return nil
 }
 
+// requireRows refuses a field write against a row the view no longer holds.
+// Replay's update path upserts the row id on purpose, so that a rebuild can
+// tolerate entries arriving before the create they belong to; it cannot tell
+// that from an edit of something already hard-deleted, and would recreate the
+// row as a stub carrying only the edited field. Checked here, under the commit
+// lock, so a concurrent delete cannot land in between.
+//
+// Only field writes matter: a delete or mark_delete against a missing row
+// touches nothing.
+func (a *API) requireRows(entries []txlog.Entry) error {
+	created := map[string]bool{}
+	for _, entry := range entries {
+		if entry.Op == "create" {
+			created[entry.Table+"\x00"+entry.RowID] = true
+		}
+	}
+	checked := map[string]bool{}
+	for _, entry := range entries {
+		key := entry.Table + "\x00" + entry.RowID
+		if entry.Op != "update" || created[key] || checked[key] {
+			continue
+		}
+		checked[key] = true
+		raw, err := guid.Decode(entry.RowID)
+		if err != nil {
+			return fmt.Errorf("crud: %w", err)
+		}
+		var n int
+		if err := a.st.DB().QueryRow(
+			`SELECT COUNT(*) FROM `+quoteIdent(entry.Table)+` WHERE "id"=?`, raw).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("crud: no row %q in %q", entry.RowID, entry.Table)
+		}
+	}
+	return nil
+}
+
+// entry builds one log entry. The value is cleaned of what the log cannot
+// carry here rather than at the file boundary, so the copy applied to the view
+// and the copy a rebuild produces are the same text - otherwise the two agree
+// until the next rebuild silently changes the value.
 func (a *API) entry(table, id, field, op, val string) txlog.Entry {
 	return txlog.Entry{
 		TxID:     newID(),
@@ -307,7 +399,7 @@ func (a *API) entry(table, id, field, op, val string) txlog.Entry {
 		RowID:    id,
 		Field:    field,
 		Op:       op,
-		NewValue: val,
+		NewValue: txlog.Clean(val),
 		UserID:   a.UserID,
 		HostName: a.HostID,
 	}
@@ -383,7 +475,8 @@ func rowsToMaps(rows *sql.Rows) ([]map[string]string, error) {
 }
 
 // valToString renders a scanned value. The id column is binary, so it is shown
-// as hex (matching the ids callers pass in); other columns render naturally.
+// as base64url text (matching the ids callers pass in); other columns render
+// naturally.
 func valToString(col string, v any) string {
 	switch t := v.(type) {
 	case nil:

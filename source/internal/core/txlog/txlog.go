@@ -8,9 +8,9 @@
 // SQLite database is a derived view, produced by replaying entries in order
 // (Apply). Git sync and garbage collection are separate concerns.
 //
-// Note: the original design's field list omits a row identifier, but field-level
-// ops can't be applied without one, so RowID is part of every entry (the GUID of
-// the affected row; see id.go for the wire form).
+// The original design's field list omits a row identifier, but field-level ops
+// can't be applied without one, so RowID is part of every entry (the id of the
+// affected row; see the guid package for the wire form).
 package txlog
 
 import (
@@ -33,10 +33,10 @@ import (
 // Entry is one transaction-log row. Field is blank for record-level ops
 // (create with no value, mark_delete, delete).
 type Entry struct {
-	TxID     string // per-entry GUID; see id.go for the wire form
+	TxID     string // per-entry id; see the guid package for the wire form
 	Date     string // GMT, RFC3339
 	Table    string
-	RowID    string // GUID of the affected row; see id.go for the wire form
+	RowID    string // id of the affected row; see the guid package for the wire form
 	Field    string
 	Op       string // create, update, mark_delete, delete
 	NewValue string
@@ -160,8 +160,8 @@ func (l *Log) Path() string { return l.path }
 func (l *Log) Dir() string { return filepath.Dir(l.path) }
 
 // Append writes entries to the end of the log, adding the header to a new file.
-// The batch is rendered in memory and lands as a single write(2) on an O_APPEND
-// handle, so concurrent appenders (another process, the future web server)
+// The batch is rendered in memory and goes out as a single write(2) on an
+// O_APPEND handle, so concurrent appenders (another process, the web server)
 // cannot interleave partial records on a local filesystem.
 func (l *Log) Append(entries ...Entry) error {
 	_, statErr := os.Stat(l.path)
@@ -344,6 +344,8 @@ func Apply(st *store.Store, entries []Entry) ([]string, error) {
 		return nil, err
 	}
 	defer tx.Rollback() // no-op after a successful Commit
+	cache := &stmts{tx: tx, prepared: map[string]*sql.Stmt{}}
+	defer cache.close() // before the rollback above: defers unwind in reverse
 
 	var warns []string
 	dead := map[string]bool{} // (table, row) pairs hard-deleted so far
@@ -359,7 +361,7 @@ func Apply(st *store.Store, entries []Entry) ([]string, error) {
 				continue
 			}
 		}
-		if err := applyOne(tx, st, entry); err != nil {
+		if err := applyOne(cache, st, entry); err != nil {
 			if skippable(err) {
 				warns = append(warns, fmt.Sprintf("tx %s (%s/%s) skipped: %v", entry.TxID, entry.Table, entry.Op, err))
 				continue
@@ -392,34 +394,69 @@ func skippable(err error) bool {
 		strings.Contains(msg, "UNIQUE constraint failed")
 }
 
-func applyOne(tx *sql.Tx, st *store.Store, entry Entry) error {
+// stmts holds the statements one Apply pass reuses, keyed by their own SQL.
+// Replay is the hot path for opening a database and for every sync that brings
+// changes, and database/sql keys no cache off query text, so preparing per
+// entry meant parsing the same handful of statements thousands of times - twice
+// per update. A pass touches one statement shape per table and one per
+// (table, field), so the cache stays small however long the log is.
+type stmts struct {
+	tx       *sql.Tx
+	prepared map[string]*sql.Stmt
+}
+
+// exec runs a statement, preparing it the first time this pass asks for it. A
+// query that will not prepare - naming a table or column the view does not have
+// - is not cached, so it stays a per-entry error the caller can skip past the
+// same way it always did.
+func (c *stmts) exec(query string, args ...any) error {
+	stmt, ok := c.prepared[query]
+	if !ok {
+		var err error
+		if stmt, err = c.tx.Prepare(query); err != nil {
+			return err
+		}
+		c.prepared[query] = stmt
+	}
+	_, err := stmt.Exec(args...)
+	return err
+}
+
+// close releases the statements. A transaction closes its own on commit or
+// rollback, so this is about being explicit that they live exactly as long as
+// the pass does.
+func (c *stmts) close() {
+	for _, stmt := range c.prepared {
+		stmt.Close()
+	}
+}
+
+func applyOne(cache *stmts, st *store.Store, entry Entry) error {
 	id, err := guid.Decode(entry.RowID)
 	if err != nil {
-		return fmt.Errorf("%w: %v", errBadEntry, err)
+		return fmt.Errorf("%w: %w", errBadEntry, err)
 	}
 	tbl := quoteIdent(entry.Table)
 
 	switch entry.Op {
 	case "create":
-		if _, err := tx.Exec(`INSERT OR IGNORE INTO `+tbl+` ("id") VALUES (?)`, id); err != nil {
+		if err := cache.exec(`INSERT OR IGNORE INTO `+tbl+` ("id") VALUES (?)`, id); err != nil {
 			return err
 		}
 		if entry.Field != "" {
-			return setField(tx, tbl, entry, id, st.IsRef(entry.Table, entry.Field))
+			return setField(cache, tbl, entry, id, st.IsRef(entry.Table, entry.Field))
 		}
 		return nil
 	case "update":
 		// Upsert: replay must tolerate the create entry having been GC'd.
-		if _, err := tx.Exec(`INSERT OR IGNORE INTO `+tbl+` ("id") VALUES (?)`, id); err != nil {
+		if err := cache.exec(`INSERT OR IGNORE INTO `+tbl+` ("id") VALUES (?)`, id); err != nil {
 			return err
 		}
-		return setField(tx, tbl, entry, id, st.IsRef(entry.Table, entry.Field))
+		return setField(cache, tbl, entry, id, st.IsRef(entry.Table, entry.Field))
 	case "mark_delete":
-		_, err := tx.Exec(`UPDATE `+tbl+` SET "is_deleted"=1 WHERE "id"=?`, id)
-		return err
+		return cache.exec(`UPDATE `+tbl+` SET "is_deleted"=1 WHERE "id"=?`, id)
 	case "delete":
-		_, err := tx.Exec(`DELETE FROM `+tbl+` WHERE "id"=?`, id)
-		return err
+		return cache.exec(`DELETE FROM `+tbl+` WHERE "id"=?`, id)
 	default:
 		return fmt.Errorf("%w: unknown operation %q", errBadEntry, entry.Op)
 	}
@@ -430,7 +467,7 @@ func applyOne(tx *sql.Tx, st *store.Store, entry Entry) error {
 // encrypted entry (Enc: the decrypt pass had no key) also binds NULL - the view
 // must never hold ciphertext. A ref column binds the raw id bytes instead, so a
 // reference is stored the same way the row's own primary key is.
-func setField(tx *sql.Tx, quotedTable string, entry Entry, id []byte, isRef bool) error {
+func setField(cache *stmts, quotedTable string, entry Entry, id []byte, isRef bool) error {
 	var val any = entry.NewValue
 	switch {
 	case entry.IsNull || entry.Enc:
@@ -442,8 +479,7 @@ func setField(tx *sql.Tx, quotedTable string, entry Entry, id []byte, isRef bool
 		}
 		val = raw
 	}
-	_, err := tx.Exec(`UPDATE `+quotedTable+` SET `+quoteIdent(entry.Field)+`=? WHERE "id"=?`, val, id)
-	return err
+	return cache.exec(`UPDATE `+quotedTable+` SET `+quoteIdent(entry.Field)+`=? WHERE "id"=?`, val, id)
 }
 
 func quoteIdent(s string) string {

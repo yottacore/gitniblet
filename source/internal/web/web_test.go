@@ -169,7 +169,7 @@ func TestCreateUpdateDeleteRoundTrip(t *testing.T) {
 }
 
 // The edit form of an opted-in table carries the comments and attachments
-// sections; posting to them lands back on the refreshed form.
+// sections; posting to them returns to the refreshed form.
 func TestRowExtrasCommentsAndAttachments(t *testing.T) {
 	s, api := newTestServer(t)
 	id, err := api.Create("person", map[string]string{"name": "Ann"})

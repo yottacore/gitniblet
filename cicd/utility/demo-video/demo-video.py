@@ -6,7 +6,8 @@
 ##		realistic pace (variable wpm, occasional fixed typos, a beat before flags),
 ##		and encode two deliverables from one script:
 ##		  video: 1920x1080 mp4 (h264), kept in private/ (not committed)
-##		  gif:   960x540 looping, hard cut to a 2s black loop seam, -> assets/demo.gif
+##		  gif:   960x540 looping at 50fps, hard cut to a 2s black loop seam,
+##		         -> assets/demo.gif
 ##		The terminal is a plain faux window (Monaspace Argon SemiBold, dark-gray
 ##		bg, pale-green text, an anonymous colorized user@host prompt); nothing real
 ##		- fake user `demo`, host `workstation`, /tmp paths - ever reaches a frame.
@@ -46,7 +47,7 @@ DEMO_DB = ME_DIR / "demo-db.bash"
 
 BORDER   = 4                                      # black outline around the window
 WM_THEME = "Demo-square"                           # squared Greybird-dark copy (prep_home)
-FRAME_L, FRAME_R, FRAME_T, FRAME_B = 1, 1, 26, 1  # xfwm4 decoration extents (measured)
+FRAME_L, FRAME_R, FRAME_T, FRAME_B = 1, 1, 26, 1  # xfwm4 decoration extents
 
 # the faux terminal look
 ROOT_HEX = "#000000"       # the 4px outline around the frame is pure black
@@ -63,9 +64,12 @@ HOSTS = ["nimbus", "vela", "atlas", "birch", "cobalt", "delta", "ember", "flint"
 LEAD_S      = 0.7          # quiet lead kept before the first keystroke
 BLACK_S     = 2.0          # hard cut to a solid black hold at the loop seam
 
+# gif fps must divide 100: a gif frame delay is whole centiseconds, so 50 lands on
+# an exact 2cs and every frame holds the same time. 30 does not - it quantizes to a
+# repeating 3,3,4cs pattern, which is a permanent 10ms judder on every third frame.
 PROFILES = {
 	"video": dict(size=(1920, 1080), fps=60, font_pt=22, ext="mp4"),
-	"gif":   dict(size=(960, 540),   fps=30, font_pt=13, ext="gif"),
+	"gif":   dict(size=(960, 540),   fps=50, font_pt=13, ext="gif"),
 }
 GIF_ASSET_MAX_MB = 14
 
@@ -98,6 +102,7 @@ class Rec:
 		self.app     = None
 		self.ff      = None
 		self.win     = ""
+		self.spawn_comp = 0.0   # measured before capture, see calibrate_spawn
 		self.flash_e = 0.0
 		self.t0_e    = 0.0
 		self.seg_marks = {}
@@ -185,6 +190,25 @@ class Rec:
 				env=self.env(), capture_output=True, text=True).stdout.split():
 			self.xdo("windowkill", w)
 		time.sleep(0.3)
+
+	# --- typing cadence calibration -------------------------------------------
+	def calibrate_spawn(self):
+		# Every keystroke is its own xdotool process, and that spawn plus X connect
+		# sits between keys on top of the sleep the typist asked for. Measured at
+		# run time, since it spans an order of magnitude across machines, and
+		# guessing high silently types far above the wpm band (a 40ms overshoot on
+		# a 75ms key turns 160 wpm into 330). Runs with no window up and before the
+		# capture starts, so the throwaway keystrokes are never on camera.
+		samples = []
+		for _ in range(25):
+			started = time.time()
+			subprocess.run(["xdotool", "type", "--delay", "0", "--", "x"],
+				env=self.env(), check=False,
+				stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+			samples.append(time.time() - started)
+		samples.sort()
+		self.spawn_comp = samples[len(samples) // 2]   # median shrugs off a stray stall
+		log(f"xdotool spawn {self.spawn_comp * 1000:.1f}ms (typing cadence compensates)")
 
 	# --- capture --------------------------------------------------------------
 	def start_capture(self):
@@ -293,25 +317,28 @@ NEIGH = {
 	"v": "cb", "w": "qe", "x": "zc", "y": "tu", "z": "x",
 }
 
-# each xdotool key/type spawns a process (~45ms here); that latency lands between
-# keystrokes on top of our sleep, so subtract it to keep the real cadence on target
-SPAWN_COMP = 0.042
+# Typing pace, and the main knob for how long the recording runs (the script itself
+# is fixed). Deliberately brisk - a demo reads better than real-time typing does.
+# Keep the wander and jitter proportional to the pace, or the cursor stutters.
+WPM_BAND   = (260.0, 420.0)   # letters drift within this
+WPM_START  = (300.0, 360.0)   # ... starting somewhere in here
+WPM_DRIFT  = 20.0             # per-key wander inside the band
+WPM_DIGITS = 200.0            # digits are hunted a touch slower and steadier
 
 class Typist:
 	def __init__(self, rec, rng):
 		self.rec = rec
 		self.rng = rng
-		self.wpm = rng.uniform(140, 180)          # letters: 120-200 band, drifting
+		self.wpm = rng.uniform(*WPM_START)
 
 	def _pause(self, secs):
-		time.sleep(max(0.0, secs - SPAWN_COMP))
+		time.sleep(max(0.0, secs - self.rec.spawn_comp))
 
 	def _delay(self, ch):
-		# digits are hunted a touch slower and steadier (~120 wpm); letters drift
 		if ch.isdigit():
-			return (12.0 / 120.0) * self.rng.lognormvariate(0.0, 0.14)
-		self.wpm += self.rng.uniform(-10, 10)
-		self.wpm = max(120.0, min(200.0, self.wpm))
+			return (12.0 / WPM_DIGITS) * self.rng.lognormvariate(0.0, 0.14)
+		self.wpm += self.rng.uniform(-WPM_DRIFT, WPM_DRIFT)
+		self.wpm = max(WPM_BAND[0], min(WPM_BAND[1], self.wpm))
 		return (12.0 / self.wpm) * self.rng.lognormvariate(0.0, 0.22)
 
 	def _emit(self, ch):
@@ -337,7 +364,7 @@ class Typist:
 			if ch == "-" and (i == 0 or text[i - 1] == " "):
 				time.sleep(self.rng.uniform(0.14, 0.34))
 			self._pause(self._delay(ch) * (1.6 if ch == " " else 1.0))
-			# an expert's slip: wrong neighbour, catch it, fix it (letters only)
+			# an expert's slip: wrong neighbor, catch it, fix it (letters only)
 			if ch.lower() in NEIGH and self.rng.random() < typos:
 				wrong = self.rng.choice(NEIGH[ch.lower()])
 				self._emit(wrong)
@@ -439,35 +466,38 @@ def seg_tui(r, t):
 	# launch into the tree_grid board; a comments pane sits below it and follows
 	# the selected task. Walk to one that already has a synced discussion, then
 	# add a comment - a 1:m detail the board list never shows as a column.
-	t.cmd(f"ngdb --tui {DB}", settle=2.2)
-	t.key("a"); time.sleep(1.6)              # load the task list
-	t.keys("Down", 3, hz=2.6); time.sleep(1.8)  # onto a task with a comment thread
-	t.key("Tab"); time.sleep(0.8)            # focus the comments pane below
-	t.key("Return"); time.sleep(1.0)         # open the new-comment prompt
-	t.type("Deployed the fix to staging"); time.sleep(0.5)
-	t.key("Tab"); time.sleep(0.4)            # onto Add
-	t.key("Return"); time.sleep(2.2)         # add; the thread reloads with it
-	t.key("q"); time.sleep(1.0)              # back out of the TUI
+	# two kinds of beat: waiting for a paint, and holding for something to be
+	# read. Trim them separately.
+	t.cmd(f"ngdb --tui {DB}", settle=1.5)
+	t.key("a"); time.sleep(1.1)              # load the task list
+	t.keys("Down", 3, hz=2.6); time.sleep(1.3)  # onto a task with a comment thread
+	t.key("Tab"); time.sleep(0.5)            # focus the comments pane below
+	t.key("Return"); time.sleep(0.7)         # open the new-comment prompt
+	t.type("Deployed the fix to staging"); time.sleep(0.35)
+	t.key("Tab"); time.sleep(0.3)            # onto Add
+	t.key("Return"); time.sleep(1.6)         # add; the thread reloads with it
+	t.key("q"); time.sleep(0.7)              # back out of the TUI
 
 def seg_cli(r, t):
 	# the same data from the shell; a write shows up on the next read
-	t.cmd("# The CLI also supports full CRUD and query operations ...",
-		settle=0.6, typos=0.0)
-	t.cmd(f'ngdb query --db={DB} "{QUERY_OPEN}"', settle=2.4)
+	t.cmd("# same data, from the shell",
+		settle=0.5, typos=0.0)
+	t.cmd(f'ngdb query --db={DB} "{QUERY_OPEN}"', settle=1.8)
 	t.cmd(f'ngdb create --db={DB} --table=task title="Screen flashing on refresh" '
-		'status=open priority=high assignee=demo', settle=2.0)
-	t.cmd(f'ngdb query --db={DB} "{QUERY_OPEN}"', settle=2.4)
+		'status=open priority=high assignee=demo', settle=1.3)
+	# longer: this is where the new row has to be spotted in the re-read
+	t.cmd(f'ngdb query --db={DB} "{QUERY_OPEN}"', settle=1.9)
 	# the payoff: the whole database is this folder - schema, view, append-only log
-	t.cmd("ls -1", settle=2.6)
+	t.cmd("ls -1", settle=1.9)
 
 def seg_outro(r, t):
 	(r.home / ".ngdb-gray").touch()
 	r.xdo("windowactivate", r.win)
 	time.sleep(0.3)
 	r.xdo("key", "--clearmodifiers", "Return")   # fresh prompt picks up the gray flag
-	time.sleep(0.6)
-	t.cmd("# nano-git-db.", settle=0.4, typos=0.0)
-	time.sleep(2.4)
+	time.sleep(0.5)
+	t.cmd("# nano-git-db.", settle=0.3, typos=0.0)
+	time.sleep(1.8)                              # hold the closing line before the seam
 
 SCRIPT = [
 	("tui",   seg_tui),
@@ -519,8 +549,12 @@ def encode(rec, video_end_e):
 		pal = rec.work / "pal.png"
 		run(["ffmpeg", "-v", "error", "-y", *cut, "-i", str(rec.raw),
 			"-vf", f"{vf},palettegen=stats_mode=full:max_colors=160", str(pal)])
+		# diff_mode=rectangle emits only the changed rectangle per frame, which is a
+		# few cells for most of a terminal recording - that is what pays for the
+		# higher frame rate instead of the file growing with it.
 		run(["ffmpeg", "-v", "error", "-y", *cut, "-i", str(rec.raw), "-i", str(pal),
-			"-lavfi", f"{vf}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=4",
+			"-lavfi", f"{vf}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=4"
+			":diff_mode=rectangle",
 			"-loop", "0", str(out)])
 	return out
 
@@ -570,9 +604,10 @@ def record(args, name, seed):
 		rec.start_display()
 		cols, rows = rec.fit_geometry(rec.p["font_pt"])
 		log(f"[{name}] terminal {cols}x{rows} @ {rec.p['font_pt']}pt")
+		rec.calibrate_spawn()
 		rec.start_capture()
 		rec.launch_term(cols, rows, rec.p["font_pt"])
-		time.sleep(1.5)
+		time.sleep(1.0)
 		rec.t0_e = time.time() - LEAD_S
 
 		t = Typist(rec, rng)
@@ -629,3 +664,10 @@ if __name__ == "__main__":
 ##		  with a lead-in comment, shorter outro line.
 ##		- 20260717: TUI beat now adds a comment in the board's comments pane
 ##		  (a linked 1:m detail) instead of editing status.
+##		- 20260804: Gif runs at 50fps (an exact 2cs frame delay, where 30 fell
+##		  into a 3,3,4cs judder), typing cadence compensates for a measured
+##		  xdotool spawn instead of a hardcoded 42ms, and the gif emits only the
+##		  changed rectangle per frame.
+##		- 20260804: Brisk typing is set by the wpm band now rather than falling
+##		  out of the spawn subtraction, so the pace keeps proportional jitter.
+##		  Fixed beats trimmed, holding the ones that exist to be read.

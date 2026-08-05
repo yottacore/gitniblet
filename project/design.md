@@ -86,7 +86,7 @@ Binary size is a real goal (though not the absolute top priority it would be for
 | Tx log CSV | stdlib `encoding/csv`    | Canonical, zero dep.
 | Scripting  | `gopher-lua`             | Pure-Go Lua 5.1. Well-known embedded language, easy syntax, easy to sandbox and expose the CRUD API into. External `python3` via exec stays available as the worst-case fallback.
 | IDs (GUID) | `google/uuid`            | v4/v7, stored as a 16-byte blob, base64url text at the boundaries.
-| CLI        | TBD (lean stdlib `flag`) | Large flag surface; stdlib `flag` favours size, move to `cobra` only if subcommand ergonomics demand.
+| CLI        | TBD (lean stdlib `flag`) | Large flag surface; stdlib `flag` favors size, move to `cobra` only if subcommand ergonomics demand.
 | Formatting | `gofmt`                  | Tabs-native, matches house style for free.
 
 One binary, four front-ends (see Architecture). UI is two pure-Go tiers: a **TUI** (`tview`/`tcell`) and a **local web UI**. The web tier is deliberately stdlib-only - `net/http` (Go 1.22+ `ServeMux` does method + path routing, so no `chi`/`gorilla`), `html/template` (auto context-aware escaping), and `embed` to bake assets into the binary. Client-side interactivity is **htmx**: a single ~15 KB JS file, vendored and pinned by SRI hash - no npm, no build chain, no transitive deps. Net web-tier third-party Go deps: **zero**. A native GUI (Fyne/Wails) stays rejected - both need cgo/webview and would break the pure-Go cross-compile.
@@ -103,12 +103,12 @@ One static binary, a shared core with four thin front-end adapters over it. Buil
 main dispatch:     CLI      Lua host      TUI         Web server
 ~~~
 
-- **CLI arg API** - stdlib `flag`, calls core directly.
-- **Lua native API** - `gopher-lua` registers Go funcs so scripts call the *same* core CRUD API (not a second code path).
-- **TUI** - `tview`/`tcell`.
-- **Web UI** - stdlib `net/http` + `html/template` + `embed`, htmx for dynamic grid/form swaps.
+- **CLI arg API**: stdlib `flag`, calls core directly.
+- **Lua native API**: `gopher-lua` registers Go funcs so scripts call the *same* core CRUD API (not a second code path).
+- **TUI**: `tview`/`tcell`.
+- **Web UI**: stdlib `net/http` + `html/template` + `embed`, htmx for dynamic grid/form swaps.
 
-The four are different run modes, not concurrent contenders (`<verb>` = CLI, `--tui`, `--serve`); the web server is just goroutines. Lua is callable from any mode. Every front-end is a thin adapter - all real logic lives in the core, so behaviour can't drift between interfaces.
+The four are different run modes, not concurrent contenders (`<verb>` = CLI, `--tui`, `--serve`); the web server is just goroutines. Lua is callable from any mode. Every front-end is a thin adapter - all real logic lives in the core, so behavior can't drift between interfaces.
 
 Supply-chain hardening (from day one): vendor everything (`go mod vendor`, commit `vendor/`) so builds never hit the network and every dep is diffable in PRs; `go mod verify` + hash-pinned `go.sum`; build `-mod=vendor`/`-mod=readonly`; `govulncheck` in the manual CI pipeline; minimal-dep policy (prefer stdlib, each module a deliberate call); vendored `htmx.min.js` pinned by SRI hash.
 
@@ -148,15 +148,24 @@ The language decision, and what it bought:
 
 - Its Go binding is a single dependency-free pure-Go file, so `CGO_ENABLED=0` and the one-static-binary rule are untouched (the reference implementation being Rust is irrelevant to us - we never link it).
 
-- Schema *validation* came along with it. The DDL's own key vocabulary now lives in `ddl/schema.shcl`, embedded in the binary, and SHCL checks a loaded file against it. That is what puts line numbers back on messages: the parse tree is reached only through paths, with no per-node line accessor, so an unknown key or an out-of-range value can only be reported with a line by the validator. Checks the schema file cannot express - a `unique:` naming a field that does not exist, an entity defined twice - stay in Go and name the entity instead.
+- Schema *validation* came along with it. The DDL's own key vocabulary now lives in `ddl/schema.shcl`, embedded in the binary, and SHCL checks a loaded file against it - so an unknown key or an out-of-range value is reported with its line without this codebase parsing anything. Checks the schema file cannot express - a `unique:` naming a field that does not exist, a field defined twice - stay in Go, and cite the offending entity's own line.
+
+- A mistake in the vocabulary file used to disable checking of the user's file entirely, so a broken vocabulary and a clean one both produced silence. That is no longer the case: whatever states cleanly still checks, and only the unknown-key sweep needs a fault-free vocabulary - a dropped rule would turn the keys it described into false unknowns. The two failure modes are reported apart, since a fault's line number belongs to the built-in file rather than to the schema in front of the user, and a test loads a key no real schema could hold to prove the sweep is running at all.
+
+- The vocabulary file is the whole vocabulary, because two shapes it once could not state are *fragments*: a named, reusable shape mounted at a path. Layout blocks nest without limit by mounting a shape inside itself, rather than being generated out to a fixed depth and silently unvalidated past it. And a section that may sit under the `database:`/`ui:` wrapper or at the top level is one shape mounted at both paths, instead of a second generated copy of every path beneath it.
 
 Consequences of SHCL's data model, which are load-bearing here:
 
-- **Merging is the core rule.** Nodes merge when (field-name, value) match, so restating `database:` or `tables:` re-opens that section instead of creating a second one. The old parser had a section-merging pass of its own for exactly that readability win; this comes free. It extends further, though: restating an *entity* merges it too, so two `table: t` sections are one table. A duplicate is therefore invisible to the mapper, and there is no longer an "already defined, first wins" warning to give.
+- **Merging is the core rule.** Nodes merge when the field name and value both match.
+	- Restating `database:` or `tables:` re-opens that section rather than making a second one. The old parser had a pass of its own for that readability win; here it comes free.
+	- It goes further than sections: restating an entity merges it too, so two `table: t` blocks are one table.
+	- The mapper cannot see that, because the two are already one node by the time it walks the document. The report comes from shcl instead, which flags any binding that combines with a non-adjacent earlier one and cites both lines.
+	- That report is passed through unfiltered, even for wrapper sections a schema is meant to re-open. When a wrapper and an entity inside it both merge, only the outermost is reported - so filtering out the wrappers would hide the entity case with them.
+	- `example.shcl` opens each section once and stays quiet, which is the layout to copy.
 
 - **Empty values merge too**, so unnamed instances collapse into one. Relationships must be named for that reason; the name is otherwise just a label.
 
-- **Field names fold ASCII case; values do not.** Anything whose identity is user-supplied and case-sensitive has to be modelled as an instance discriminated by that value, never as a child field name - see [Web login](#web-login), where two accounts differing only in case would otherwise share one password.
+- **Field names fold ASCII case; values do not.** Anything whose identity is user-supplied and case-sensitive has to be modeled as an instance discriminated by that value, never as a child field name - see [Web login](#web-login), where two accounts differing only in case would otherwise share one password.
 
 - **Loose strictness** is what the schema loads at, and it is almost exactly the tolerance this DDL already documented: `y`/`n` and `enable`/`disable` as booleans, a bare leading or trailing `.` on a number, a leading currency symbol, a fraction where a whole number was wanted. Only Strict can fail a load, so a schema file never aborts one; the registry (rather than the parser) is what refuses to open a database whose schema has errors.
 
@@ -164,7 +173,7 @@ Consequences of SHCL's data model, which are load-bearing here:
 
 - **Wrapper levels** `database:` (over `tables:`/`relationships:`) and `ui:` (over `views:`, plus `default_view`) are transparent; flat schemas without them still parse. Same for `methods:`, renamed to `code:` - both keys are read.
 
-- **Values containing commas need the verbatim read.** An unquoted comma splits a value into a list, and quoting is not an escape (a read strips outer quotes). SQL and regexes therefore go in a raw block or single-line backticks; sentinels like `@null` are reserved words in default position with no quoted spelling.
+- **Values containing commas need the verbatim read.** An unquoted comma splits a value into a list, so SQL and regexes go in a raw block or single-line backticks, which come back exactly as authored. Quoting distinguishes a sentinel from its own text: `@null` is the sentinel, `"@null"` is the five characters.
 
 Also:
 
@@ -239,7 +248,15 @@ On-disk encoding: every entry is exactly one physical line. Characters that woul
 
 GC must preserve the append-only property the union merge depends on: collecting by rewriting lines in-place would make two clients' concurrent GC (or GC racing an append) a real merge conflict. So GC is segment rotation: a client that collects writes the surviving entries to a new log segment and retires the old one whole, rather than editing it. Replay also guarantees a hard-deleted row stays deleted even if its delete entry outlives the row's other entries: update entries sorted after a delete are skipped, only a later create revives the row id.
 
-v1 GC (the `gc <ddl> <logdir>` verb): collectible = every entry of a row whose final state is hard-deleted and whose newest entry is older than `gc_age_days` (default 90); live, revived, and recently-deleted rows keep their history whole. Survivors land in a write-once `txlog-<stamp>-<rand>.csv` segment, the replaced files are removed, and new writes recreate `txlog.csv`; reads walk segments then the live file. Sync stages the whole log dir (so rotations - and the attachments folder - replicate), and `txlog-*.csv` carries the union merge attribute. Two clients collecting concurrently just duplicate survivors across two segments; replay is idempotent, so views converge and the next pass collapses them. Eligibility is computed at collect time; the `ok_to_garbage_collect` column stays in the format as a future cross-client signal.
+v1 GC (the `gc <ddl> <logdir>` verb): collectible = every entry of a row whose final state is hard-deleted and whose newest entry is older than `gc_age_days` (default 90); live, revived, and recently-deleted rows keep their history whole. Survivors go into a write-once `txlog-<stamp>-<rand>.csv` segment and the replaced files are removed. Sync stages the whole log dir (so rotations - and the attachments folder - replicate), and `txlog-*.csv` carries the union merge attribute. Two clients collecting concurrently just duplicate survivors across two segments; replay is idempotent, so views converge and the next pass collapses them. Eligibility is computed at collect time; the `ok_to_garbage_collect` column stays in the format as a future cross-client signal.
+
+Three things a pass has to get right, each of which is a way to lose data:
+
+- **A pass must not eat a write made while it runs.** It starts by sealing: the live `txlog.csv` is renamed into a segment, so from that moment an appending process opens a fresh live file. The pass then works only over sealed segments, which it snapshots by name and size. Anything written from the seal onward is in the new live file, which the pass never reads, folds in, or removes - so there is no window to race rather than a narrow one. The recorded sizes are re-checked before anything is deleted, which catches the one writer a seal cannot divert: an append that already had the file open. That aborts the pass instead of taking the write with it.
+
+- **A rename must not split a row.** Grouping is by the table's *current* name, resolved through the same aliases replay uses. Group by the name as written and a row renamed mid-life falls into two groups, so the half holding its delete can be collected while the half holding its create survives - and the row comes back on the next replay. The entries themselves are copied through untouched: the log is immutable, and a table name is part of what an encrypted value is sealed against, so rewriting one would strand the ciphertext under it.
+
+- **A rotation must not wedge a peer's sync.** After rotating, `txlog.csv` is left in place holding just its header rather than deleted. A peer who appended to it on the same commit then sees an ordinary content change the union driver merges. Deleting it makes the same situation a modify/delete conflict, which no merge driver resolves - git only papers over it when the new segment happens to look enough like the old file to be detected as a rename, which a real collection pass does not.
 
 ### Scripting triggers
 
@@ -249,7 +266,7 @@ The DDL's `code:` keys name Lua functions defined in a `.lua` sidecar next to th
 
 - Field `before_update(table, field, value)` -> `pass [, new_value]`: an explicit `false` cancels the write; a second return replaces the value. Runs before the table-level hook, per the design's ordering note.
 - Table `before_update(table, fields)` -> `pass`: sees the field hooks' output; explicit `false` vetoes the whole write.
-- Field `after_update(table, row_id, field, value)` and table `after_update(table, row_id)`: fire after the commit lands; failures warn but cannot undo.
+- Field `after_update(table, row_id, field, value)` and table `after_update(table, row_id)`: fire after the commit; failures warn but cannot undo.
 - App `before_open(name, logdir)` -> `pass`: `false` vetoes the open; `after_open` fires once triggers are live.
 - Trigger code gets the same sandboxed `db.*` API as `--script`. Writes made while a trigger executes do not re-fire triggers (no reentrancy), so a hook updating another row cannot recurse.
 - A `code:` key naming a function the sidecar does not define warns at open and never blocks writes. Replay never fires triggers - they ran on the originating client.
@@ -264,7 +281,7 @@ The DDL's `code:` keys name Lua functions defined in a `.lua` sidecar next to th
 - git_sync_frequency = 60  ## seconds between syncing the transaction log.
 - gc_age_days = 90  ## only log records older than this are garbage collected.
 
-v1 notes: tunables live in a `tunables:` DDL section; both `key: value` and the `key = value` form above parse. Unknown keys warn but still store (a newer client's tunable survives). `git_sync_frequency` paces the background sync loop the TUI and web UIs start when the log dir is a git work tree - each pull that brings new entries full-replays into the view (the safe apply until incremental apply lands); 0 disables the loop. `gc_age_days` is consumed by tx-log GC when that lands.
+v1 notes: tunables live in a `tunables:` DDL section; both `key: value` and the `key = value` form above parse. Unknown keys warn but still store (a newer client's tunable survives). `git_sync_frequency` paces the background sync loop the TUI and web UIs start when the log dir is a git work tree - each pull that brings new entries full-replays into the view (the safe apply until incremental apply exists); 0 disables the loop. `gc_age_days` sets the tx-log GC threshold.
 
 ### Startup discovery and database registry
 
@@ -285,12 +302,23 @@ The `--init`, `--config`, and `--encrypt` CLI flags drive the same registry from
 
 - When a view specifies `startup_named_query`, that named query's dataset loads as soon as the view opens. Only when it is empty or unspecified does the view open with no records shown - then you have to query, e.g. via "All" button, or via predefined query dropdown.
 - The default view (`ui:` -> `default_view`, else the first view defined) opens on startup in both UIs. Its blocks still load empty per the no-records-until-asked rule; a `default_view` naming an unusable view warns and falls back to the first one.
-- View rendering (v1): the DDL's layout blocks render as nested splits in both UIs (TUI flexes, web flexbox). A location hint's direction and percent set each split's axis and share; the relative-to element is ignored for now (blocks place in DDL order). Leaf blocks are `grid`, `tree_grid` (rows ordered depth-first along `parent_field`, indented by depth; orphaned or cyclic parents degrade to extra roots rather than hiding rows), `form` (single-record panel; shows the first record until block linking exists), or `comments` (a detail pane over the table's built-in comments component - it follows a sibling list block's selected row, listing that row's thread with an add affordance, and stays empty until a row is picked). The comments pane surfaces the 1:m `comments` feature a table opted into, without ever adding a column to the list view; a `comments` block over a table that has no comments feature is dropped with a warning. Blocks over unknown tables are dropped with a warning, a bad `tree_grid` degrades to a plain grid, and `readonly` (view-level, overridable per block) removes the edit affordances. Editing from a web view block currently jumps to the table's form; returning into the view is future polish.
+- View rendering (v1): the schema's layout blocks render as nested splits in both UIs (TUI flexes, web flexbox).
+
+	- A location hint's direction and percent set each split's axis and share. The relative-to element is ignored for now, so blocks place in the order the schema lists them.
+	- Leaf block types:
+		- `grid`: a plain list.
+		- `tree_grid`: rows ordered depth-first along `parent_field`, indented by depth. An orphaned or cyclic parent becomes an extra root rather than hiding the row.
+		- `form`: a single-record panel. It shows the first record until block linking exists.
+		- `comments`: a detail pane over a table's built-in comments. It follows a sibling list block's selected row and stays empty until one is picked.
+	- The comments pane is how a table's opted-in comments reach a view without adding a column to the list.
+	- Anything the schema asks for that cannot be built degrades rather than failing: a block over an unknown table is dropped with a warning, a `comments` block over a table with no comments feature is dropped with a warning, and a bad `tree_grid` falls back to a plain grid.
+	- `readonly` removes the edit affordances. It is set per view and can be overridden per block.
+	- Editing from a web view block jumps to the table's form for now; returning into the view is future polish.
 - Field UI metadata (spec settled 2026-07, implementation waits for the shcl syntax migration; current vocabulary in [example.shcl](example.shcl)):
 	- `visible` splits into `visible_form` and `visible_list`. Presentation only, never access control - a hidden field stays fully readable via CLI/query/SQL; the `access:` lists are the only thing that gates data.
 	- `title` becomes `label`; `list_type` values are `literal|sql|lookup` (`sql` replaces `dynamic`); `lookup` wires a field to the built-in lookup tables (see Lookups).
 	- A DDL field entry naming a system field (`id`, `is_active`, `date_created`) merges its `ui:` block onto it instead of being dropped. Presentation-only merge: `type:`, `validation:`, `defaultval:` on a system field warn and are ignored - system fields stay structurally immutable, presentationally customizable.
-	- `defaultval` takes three forms: a static value, a sentinel from a closed set (`@null`, `@previous`), or a script function `"fFunc()"`. The `@` marker was chosen over brackets because `[` `]` are reserved value characters in shcl. `@previous` (value from the previously entered row, this session) applies in interactive front-ends only - programmatic writes never inherit a sticky session value; an omitted field is null or a required-field error.
+	- `defaultval` takes three forms: a static value, a sentinel from a closed set (`@null`, `@previous`), or a script function `"fFunc()"`. The `@` marker was chosen over brackets because `[` `]` are reserved value characters in shcl. Quoting escapes a sentinel, so `"@null"` is the literal text. `@previous` (value from the previously entered row, this session) applies in interactive front-ends only - programmatic writes never inherit a sticky session value; an omitted field is null or a required-field error.
 
 ### Predefined queries
 
@@ -322,7 +350,7 @@ v1 semantics (everything is open until a DDL populates a list):
 Two small, general-purpose pieces the core provides so an edition can surface a notice at startup without the core knowing anything about why:
 
 - A neutral `gate` seam, the same open-core shape as the encryption and scripting seams. It carries only a posture, a message, and an optional wait - Full (run normally), Nag (run, but show the message as a banner), or Blocking (hold on a start screen the user either waits out or dismisses). The core knows how to draw those three; it never learns what drives them.
-- A generic read-only session flag in the core write funnel: one guard on the single commit path every write goes through, so setting it makes every front-end (CLI, TUI, web) refuse writes while reads keep working. A dismissed Blocking notice lands here.
+- A generic read-only session flag in the core write funnel: one guard on the single commit path every write goes through, so setting it makes every front-end (CLI, TUI, web) refuse writes while reads keep working. A dismissed Blocking notice uses this.
 - The open-source build registers no provider, so the seam always reports Full and the app runs unimpeded. Among the ways to shape this, it was decided to keep the seam neutral and put only the rendering here: any decision logic an edition adds lives on its side, never in the readable public core.
 
 ### Web login
@@ -332,6 +360,7 @@ The web tier binds `127.0.0.1` only, so on a single machine the loopback binding
 - `web_mode` (user-global setting, default `local`): `local` is the passwordless single-user shape; `proxied` requires a login. Any value but the exact word `proxied` falls back to `local`, so a typo fails toward the guarded-but-passwordless mode rather than a broken login wall.
 - Local mode identifies the one user with no password - the git account of the log dir's repo, else the OS user (the same default-user resolution the other front-ends use) - and stamps every request as them. Safety-net: if a request ever carries a reverse-proxy header (`X-Forwarded-For` / `X-Real-Ip` / `Forwarded`) while in local mode, the server refuses to serve. A box accidentally exposed behind a proxy can never run passwordless; the operator must opt into `proxied` and add a login.
 - Proxied mode requires a session for every path but the login endpoints and static assets. A login checks a username and password against a local credentials file, then sets a random session cookie (HttpOnly, SameSite=Lax, Secure when the request arrived over TLS); the session table is in memory, so a restart just re-prompts. The logged-in user is set as the acting user for that request, so the existing user/group access model applies to the web view exactly as it would elsewhere. Because that acting user is shared state, proxied requests are serialized - this is a local UI lightly extended to multi-user, not a high-throughput service.
+- Login throttling: checking a password is meant to be expensive, which makes an open login endpoint a way to spend the machine's CPU for free. Two limits cover the two halves of that. A failure count per username and per source address refuses a run of wrong guesses before any hashing happens, which bounds the sustained rate; it cannot bound a burst, since attempts arriving together all pass the count before any of them has failed. A cap on how many passwords are checked at once bounds the burst instead. Counts age out on their own, so nothing locks an account - a fumbled password costs a minute, not an administrator. The address limit is the looser of the two on purpose: a reverse proxy puts every user behind one address, so it has to stay clear of ordinary shared use and only catch a flood. Both keys are counted whether or not the username exists, so the throttle cannot be used to tell a real account from an invented one.
 - Credentials: a `webusers.shcl` of PBKDF2-HMAC-SHA256 hashes (stdlib `crypto/pbkdf2`, so no new dependency; random per-password salt, constant-time compare), kept in the config dir OUTSIDE any git-synced tree - password hashes must never ride along in the shared log repo. The `webuser` CLI verb adds or replaces a login (password from `NGDB_WEB_PASSWORD` or a prompt). Stronger methods - 2FA, passkeys, SSO - are an enterprise concern; this is the open-source baseline that makes the server safe to put behind a proxy at all.
 
 ### Donations

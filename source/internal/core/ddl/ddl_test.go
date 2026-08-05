@@ -4,10 +4,13 @@
 package ddl
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	shcl "github.com/jim-collier/shcl/source/go"
 )
 
 func TestValueScalars(t *testing.T) {
@@ -483,4 +486,178 @@ func TestSentinelDefaults(t *testing.T) {
 			t.Errorf("%q should be an ordinary default", literal)
 		}
 	}
+	// Quoting escapes a sentinel, which is what the DDL has always documented.
+	for _, quoted := range []string{`"@null"`, `'@null'`, `"@previous"`} {
+		if IsSentinel(quoted) || IsNull(quoted) {
+			t.Errorf("%s is a quoted literal, not a sentinel", quoted)
+		}
+	}
+}
+
+// The escape only works if a default reaches IsSentinel as its source text, so
+// this walks the real path: parse a DDL, and check what each spelling became.
+func TestQuotedSentinelSurvivesParse(t *testing.T) {
+	src := "tables:\n\ttable: t\n\t\tfields:\n" +
+		"\t\t\tfield: bare\n\t\t\t\ttype: string\n\t\t\t\tdefaultval: @null\n" +
+		"\t\t\tfield: quoted\n\t\t\t\ttype: string\n\t\t\t\tdefaultval: \"@null\"\n" +
+		"\t\t\tfield: plain\n\t\t\t\ttype: string\n\t\t\t\tdefaultval: general\n"
+	s, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{"bare": true, "quoted": false, "plain": false}
+	table := s.Tables[0]
+	for _, f := range table.Fields {
+		got := IsSentinel(f.Default)
+		if got != want[f.Name] {
+			t.Errorf("field %s: default %q sentinel=%v, want %v", f.Name, f.Default, got, want[f.Name])
+		}
+	}
+	// The quoted one has to end up as the literal four characters, not with its
+	// quotes baked into the value.
+	for _, f := range table.Fields {
+		if f.Name != "quoted" {
+			continue
+		}
+		if unquoted, was := Unquote(f.Default); !was || unquoted != "@null" {
+			t.Errorf("quoted default %q should unquote to @null", f.Default)
+		}
+	}
+}
+
+// shcl hints on a repeated bare leaf ("did you mean an array?"). For the keys
+// whose whole design is to recur, the schema declares a repeat bound and shcl's
+// own filter drops the hint - so a correct DDL stays quiet and the hint keeps
+// working where a repeat really is the mistake.
+func TestDeclaredRepeatsStaySilent(t *testing.T) {
+	quiet := "tables:\n\ttable: t\n\t\tfields:\n\t\t\tfield: a\n\t\t\t\ttype: string\n" +
+		"\t\t\tfield: b\n\t\t\t\ttype: string\n" +
+		"\t\tuniques:\n\t\t\tunique: a\n\t\t\tunique: b\n" +
+		"\t\tindexes:\n\t\t\tindex: a\n\t\t\tindex: b\n"
+	s, _ := Parse([]byte(quiet))
+	for _, w := range s.Warnings {
+		t.Errorf("repeated unique/index should not warn: %s", w)
+	}
+
+	// aliases is not declared repeating, so doubling it is still flagged.
+	noisy := "tables:\n\ttable: t\n\t\taliases: old1\n\t\taliases: old2\n"
+	s, _ = Parse([]byte(noisy))
+	if len(s.Warnings) == 0 {
+		t.Error("a repeated aliases: should still be hinted")
+	}
+}
+
+// Restating a section combines it with the earlier one. That is legal and often
+// what was meant, but it is also how two tables of the same name silently become
+// one, so it has to be reported either way - the whole point of the hint.
+func TestSectionMergeIsReported(t *testing.T) {
+	// Same table named twice under one section: the entity itself is named.
+	sameSection := "tables:\n\ttable: dup\n\t\tfields:\n\t\t\tfield: a\n\t\t\t\ttype: string\n" +
+		"\ttable: other\n\ttable: dup\n"
+	s, _ := Parse([]byte(sameSection))
+	if !hasWarning(s, "merged with 'table'") {
+		t.Errorf("a restated table should be reported, got %v", s.Warnings)
+	}
+
+	// Across two sections shcl reports the outer wrapper only, and the table
+	// underneath merges silently - which is exactly why the wrapper report is
+	// kept rather than filtered as noise.
+	across := "tables:\n\ttable: dup\n\t\tfields:\n\t\t\tfield: a\n\t\t\t\ttype: string\n" +
+		"\ntunables:\n\tgc_age_days: 30\n" +
+		"\ntables:\n\ttable: dup\n\t\tfields:\n\t\t\tfield: b\n\t\t\t\ttype: string\n"
+	s, _ = Parse([]byte(across))
+	if len(s.Tables) != 1 {
+		t.Fatalf("the two dup tables should have merged into one, got %d", len(s.Tables))
+	}
+	if !hasWarning(s, "merged with 'tables'") {
+		t.Errorf("the merge should be reported, got %v", s.Warnings)
+	}
+
+	// A schema written in one pass says nothing, which is what the shipped
+	// example and the built-in schema rely on.
+	clean := "tables:\n\ttable: a\n\t\tfields:\n\t\t\tfield: x\n\t\t\t\ttype: string\n\ttable: b\n"
+	s, _ = Parse([]byte(clean))
+	for _, w := range s.Warnings {
+		t.Errorf("a single-pass schema should be quiet: %s", w)
+	}
+}
+
+// The unknown-field sweep only runs against a fault-free schema, so a typo in
+// schema.shcl would quietly stop unknown keys ever being reported and a broken
+// vocabulary would look exactly like a clean one. Probing with a key no DDL
+// could ever have proves the sweep is live, which is only true when the
+// embedded schema itself parses clean.
+func TestSchemaSelfCheck(t *testing.T) {
+	s, _ := Parse([]byte("no_such_top_level_key: 1\n"))
+	if !hasWarning(s, "no_such_top_level_key") {
+		t.Errorf("unknown top-level key went unreported, so schema.shcl has a fault: %v", s.Warnings)
+	}
+}
+
+// A fault in the vocabulary used to switch validation off wholesale, so a
+// broken schema.shcl and a clean one produced identical silence. It no longer
+// does: the surviving constraints still check, and the fault is reported
+// against the vocabulary rather than dressed up as a line of the user's DDL.
+func TestSchemaFaultLeavesValidationOn(t *testing.T) {
+	broken := shcl.Parse("field: a\n\ttype: no_such_type\nfield: b\n\ttype: int\n")
+	doc := shcl.Parse("a: whatever\nb: not_a_number\n")
+
+	var fault, survived bool
+	for _, d := range doc.Validate(broken) {
+		if isSchemaFault(d) {
+			fault = true
+			continue
+		}
+		if strings.Contains(d.Message, "wrong type") {
+			survived = true
+		}
+	}
+	if !fault {
+		t.Error("the schema fault should still be reported")
+	}
+	if !survived {
+		t.Error("constraints that parsed cleanly should still check the document")
+	}
+}
+
+// Layout blocks nest by mounting their own shape, so there is no depth past
+// which keys quietly stop being checked. 40 is far beyond anything a real
+// layout reaches - the point is that nothing caps it.
+func TestLayoutNestsToAnyDepth(t *testing.T) {
+	build := func(depth int, deepKey string) []byte {
+		var b strings.Builder
+		b.WriteString("views:\n\tview: v\n\t\tlayout:\n")
+		indent := "\t\t\t"
+		for i := 0; i < depth; i++ {
+			fmt.Fprintf(&b, "%sblock: %d\n", indent, i)
+			indent += "\t"
+			fmt.Fprintf(&b, "%stype: grid\n", indent)
+			if i == depth-1 && deepKey != "" {
+				fmt.Fprintf(&b, "%s%s: x\n", indent, deepKey)
+			}
+			b.WriteString(indent + "block:\n")
+			indent += "\t"
+		}
+		return []byte(b.String())
+	}
+
+	for _, depth := range []int{3, 12, 40} {
+		s, _ := Parse([]byte(build(depth, "")))
+		for _, w := range s.Warnings {
+			t.Errorf("depth %d: a legal layout should be quiet: %s", depth, w)
+		}
+		s, _ = Parse(build(depth, "bogus_block_key"))
+		if !hasWarning(s, "bogus_block_key") {
+			t.Errorf("depth %d: a bad key stopped being checked: %v", depth, s.Warnings)
+		}
+	}
+}
+
+func hasWarning(s *Schema, substr string) bool {
+	for _, w := range s.Warnings {
+		if strings.Contains(w, substr) {
+			return true
+		}
+	}
+	return false
 }

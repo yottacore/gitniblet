@@ -41,7 +41,7 @@ The schema is an [SHCL](https://github.com/jim-collier/shcl) file (`*.shcl`) - a
 - **Indent to nest.** A line indented further than the line above is that line's child. Tabs are the convention here; what matters is that each level's indent is a prefix of its children's. A line whose indent matches no open level is reported and skipped, and the rest of the file still loads.
 - **`key: value`** on one line, or **`key:`** with indented children below it. Quote a value (`"like this"`) when it contains a comma or matters at the edges.
 - **Comments** start with `#` and run to end of line, on their own line or trailing a value. (This project's files use `##` by convention - that is just a comment whose first character happens to repeat.)
-- **Repeating a key makes an instance.** `table:` appears once per table and `field:` once per field; the value tells them apart. Two entries with the *same* name and value are the same node and their children merge, which is what lets you re-open `database:` or `tables:` further down the file instead of scrolling back to the right indent. The flip side: **two tables with the same name are one table**, the second entry's fields folding into the first.
+- **Repeating a key makes an instance.** `table:` appears once per table and `field:` once per field; the value tells them apart. Two entries with the *same* name and value are the same node and their children merge, which is what lets you re-open `database:` or `tables:` further down the file instead of scrolling back to the right indent. The flip side: **two tables with the same name are one table**, the second entry's fields folding into the first. Any such combining is reported at load with both line numbers, so it is never silent - if the report is about a section you re-opened on purpose, it is telling you the fold worked; if it names a table you meant to be new, you have two schemas fighting over one name.
 - **Path shorthand.** `database.relationships.relationship: r1` is the same as the nested form. Use it for a one-off rather than indenting four levels.
 - **Wrappers are transparent.** `database:` (around `tables:`/`relationships:`) and `ui:` (around `views:`/`default_view:`) are organizational; a flat schema without them parses the same.
 - **Lists** are comma-separated (`aliases: old_task, older_task`), or one `* item` per line.
@@ -75,11 +75,11 @@ database:
 
 ### Special values
 
-- **Booleans** - `true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0`, and also `y`/`n`, `t`/`f`, `enable[d]`/`disable[d]`.
-- **Numbers** - `10`, `.1`, `1.`, `1.0`, `0x1f`. A leading currency symbol or a trailing `%` is accepted and stripped, and a fraction where a whole number is wanted rounds rather than failing.
-- **Sentinels** - `@null` and `@previous`, in `defaultval:` position. `@null` means no default. `@previous` repeats the value from the last row entered this session, and only in the interactive front-ends - a programmatic write never inherits it. Both words are reserved there: quoting is not an escape, since a read strips outer quotes and so cannot tell `"@null"` from `@null`.
-- **Function refs** - `some_function()` names a script function to call rather than a literal to store.
-- **SQL and regexes** - use a raw block or single-line backticks, so commas and quotes survive intact.
+- **Booleans**: `true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0`, and also `y`/`n`, `t`/`f`, `enable[d]`/`disable[d]`.
+- **Numbers**: `10`, `.1`, `1.`, `1.0`, `0x1f`. A leading currency symbol or a trailing `%` is accepted and stripped, and a fraction where a whole number is wanted rounds rather than failing.
+- **Sentinels**: `@null` and `@previous`, in `defaultval:` position. `@null` means no default. `@previous` repeats the value from the last row entered this session, and only in the interactive front-ends - a programmatic write never inherits it. To mean the literal text instead of the sentinel, quote it: `defaultval: "@null"` stores the five characters.
+- **Function refs**: `some_function()` names a script function to call rather than a literal to store.
+- **SQL and regexes**: use a raw block or single-line backticks, so commas and quotes survive intact.
 
 ## Tables
 
@@ -134,6 +134,8 @@ A table can opt out of these with `system_fields: no` (used internally by the au
 ```
 
 Each constraint is its own `unique:` or `index:` entry; the fields in one entry are a comma-separated list. Unique constraints are partial (they ignore soft-deleted rows) and auto-named `ux_<table>__<fields>`. Declaring an index identical to a unique warns (the unique already indexes it).
+
+Every name in an entry has to be a field of that table (a system column counts). One that is not is an error, not a warning: the whole entry is dropped and the database reports as unopenable with the offending name and its line. The entry goes as a unit rather than one name at a time, because pruning the typo out of `unique: title, slgu` would leave `unique: title` - a stricter rule than was written, which would then refuse perfectly good rows.
 
 ### Opt-in table features
 
@@ -404,7 +406,7 @@ The web UI binds to `127.0.0.1` only - that binding is the access control for a 
 
 Web login: the `web_mode` setting (in `settings.shcl`, default `local`) picks how the web UI authenticates. `local` identifies the single user with no password - the git account of the log dir's repo, else the OS user - and refuses to serve if a reverse-proxy header ever appears (so an accidentally exposed box can't run passwordless). `proxied` requires a username and password for every request: add logins with `ngdb webuser <username>` (hashed into `webusers.shcl` in the config dir, outside the synced tree), and the signed-in user's group permissions then apply to the web view. Stronger methods are an enterprise feature.
 
-In the TUI, press `T` to pick a colour theme (three dark, three light; the default is dark). Themes use fixed colours for readability regardless of your terminal palette, and the choice is remembered for next time.
+In the TUI, press `T` to pick a color theme (three dark, three light; the default is dark). Themes use fixed colors for readability regardless of your terminal palette, and the choice is remembered for next time.
 
 ## Startup discovery and the database registry
 
