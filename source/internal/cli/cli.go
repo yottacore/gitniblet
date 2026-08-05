@@ -798,11 +798,12 @@ func crudCreate(paths []string, table string, assigns []string) error {
 	}
 	defer st.Close()
 	id, err := api.Create(table, fields)
-	if err != nil {
-		return err
+	// A row the view refused still has an id worth printing - it is in the log,
+	// and naming it is what lets the user go look at what landed.
+	if id != "" {
+		fmt.Println(id)
 	}
-	fmt.Println(id)
-	return nil
+	return err
 }
 
 func crudGet(paths []string, table, id string) error {
