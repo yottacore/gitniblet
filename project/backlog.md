@@ -115,6 +115,7 @@ In each section, items are listed approximately from newest to oldest.
 	- Done: theme beat dropped; in its place a real TUI action - a task with an existing comment thread is selected and a comment is added in the board's comments pane (a linked detail the list view never shows).
 	- Done: CLI part opens with a comment line, uses `--db=`/`--table=` explicitly, and the closing line is `# nano-git-db.`
 	- Done: the faux window has square corners and fills the frame except a 4px black outline; terminal scrolls smooth (no jump scroll) with a blinking cursor.
+	- Done: the gif runs at 50fps, where 30 could not hold a steady frame delay. Typing was also running at roughly twice the pace it was set to, so the cursor now moves at the intended speed.
 
 - ✅ Enterprise license validation. Phones home to confirm an active subscription and allows a set number of copies at once. Does not fail if it cannot reach the server for a while, and does not bind to specific hardware.
 	- Note: scheme decided in the enterprise repo; implementation is a later phase.
@@ -125,7 +126,7 @@ In each section, items are listed approximately from newest to oldest.
 	- Done: demo recorder, `demos/` walkthrough + `seed.bash`, README, and syntax.md all switched to the name-based form; the recorder's TUI beat lands on a standard dark theme instead of high-contrast.
 
 - ✅ Animated README demo (faux terminal, in cicd, skippable with `--quick`).
-	- Done: `cicd/utility/demo-video/demo-video.py` drives a real ngdb (TUI first, then the same data from the CLI) inside a decorated xterm on a private Xvfb, typing at a realistic pace with the odd fixed typo. It renders a 1920x1080 mp4 and a looping 960x540 gif with a fade-to-black loop seam.
+	- Done: `cicd/utility/demo-video/demo-video.py` drives a real ngdb (TUI first, then the same data from the CLI) inside a decorated xterm on a private Xvfb, typing at a realistic pace with the odd fixed typo. It renders a 1920x1080 mp4 and a looping 960x540 50fps gif with a hard black loop seam.
 	- Done: the mp4 and full gif go to `../private/demo-video/{video,gif}` and GFS-rotate; the latest gif is copied to `assets/demo.gif` for the README. All content is anonymous (fake user/host, /tmp paths).
 	- Note: adapted from the sister silkterm recorder, minus its GPU and audio work; deps are python3 stdlib + ffmpeg + xterm/xdotool/Xvfb/xfwm4. A web-UI leg can be added later.
 
