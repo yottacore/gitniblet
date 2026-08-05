@@ -150,6 +150,8 @@ The language decision, and what it bought:
 
 - Schema *validation* came along with it. The DDL's own key vocabulary now lives in `ddl/schema.shcl`, embedded in the binary, and SHCL checks a loaded file against it - so an unknown key or an out-of-range value is reported with its line without this codebase parsing anything. Checks the schema file cannot express - a `unique:` naming a field that does not exist, a field defined twice - stay in Go, and cite the offending entity's own line.
 
+- A mistake in the vocabulary file used to disable checking of the user's file entirely, so a broken vocabulary and a clean one both produced silence. That is no longer the case: whatever states cleanly still checks, and only the unknown-key sweep needs a fault-free vocabulary - a dropped rule would turn the keys it described into false unknowns. The two failure modes are reported apart, since a fault's line number belongs to the built-in file rather than to the schema in front of the user, and a test loads a key no real schema could hold to prove the sweep is running at all.
+
 - The vocabulary file is the whole vocabulary, because two shapes it once could not state are *fragments*: a named, reusable shape mounted at a path. Layout blocks nest without limit by mounting a shape inside itself, rather than being generated out to a fixed depth and silently unvalidated past it. And a section that may sit under the `database:`/`ui:` wrapper or at the top level is one shape mounted at both paths, instead of a second generated copy of every path beneath it.
 
 Consequences of SHCL's data model, which are load-bearing here:

@@ -92,6 +92,10 @@ func ParseQueries(src []byte) ([]NamedQuery, []string, error) {
 	var warns []string
 	report := func(diags []shcl.Diagnostic) {
 		for _, d := range shcl.SuppressDeclaredRepeats(queriesSchemaDoc(), diags) {
+			if isSchemaFault(d) {
+				warns = append(warns, "built-in schema fault: "+d.Message)
+				continue
+			}
 			warns = append(warns, fmt.Sprintf("line %d: %s", d.Line, d.Message))
 		}
 	}

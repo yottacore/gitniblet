@@ -91,6 +91,10 @@ In each section, items are listed approximately from newest to oldest.
 	- Done: cross-cutting messages (a table defined twice, a `unique:` naming a missing field) now cite a line like every other message.
 	- Done: layout blocks validate at any nesting depth, and each section is described once instead of twice. Both were generated in code before, one only as deep as eight blocks.
 
+- ✅ Track the shcl 1.2 release.
+	- Done: a fault in the built-in vocabulary no longer switches schema checking off wholesale, so a mistake there can no longer hide real mistakes in a user's file. Faults now read as faults rather than pointing at a line number the user cannot see.
+	- Done: renaming a field or table no longer pulls a commented-out section out of the block it was written in. Uncommenting it afterwards would have attached it to the wrong table.
+
 - ✅ Shorter row and transaction ids in the log.
 	- Done: ids are written as 22 characters of base64url instead of 32 of hex. Two ride on every line, so the log gets smaller to read and replay; the git repo barely changes, since both forms hold the same bits.
 	- Done: logs written before the switch still replay - both forms are read, told apart by width. Ids are never re-encoded in place: an encrypted value is keyed off the id text, so rewriting one would strand its value.

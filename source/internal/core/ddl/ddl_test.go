@@ -4,10 +4,13 @@
 package ddl
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	shcl "github.com/jim-collier/shcl/source/go"
 )
 
 func TestValueScalars(t *testing.T) {
@@ -576,6 +579,77 @@ func TestSectionMergeIsReported(t *testing.T) {
 	s, _ = Parse([]byte(clean))
 	for _, w := range s.Warnings {
 		t.Errorf("a single-pass schema should be quiet: %s", w)
+	}
+}
+
+// The unknown-field sweep only runs against a fault-free schema, so a typo in
+// schema.shcl would quietly stop unknown keys ever being reported and a broken
+// vocabulary would look exactly like a clean one. Probing with a key no DDL
+// could ever have proves the sweep is live, which is only true when the
+// embedded schema itself parses clean.
+func TestSchemaSelfCheck(t *testing.T) {
+	s, _ := Parse([]byte("no_such_top_level_key: 1\n"))
+	if !hasWarning(s, "no_such_top_level_key") {
+		t.Errorf("unknown top-level key went unreported, so schema.shcl has a fault: %v", s.Warnings)
+	}
+}
+
+// A fault in the vocabulary used to switch validation off wholesale, so a
+// broken schema.shcl and a clean one produced identical silence. It no longer
+// does: the surviving constraints still check, and the fault is reported
+// against the vocabulary rather than dressed up as a line of the user's DDL.
+func TestSchemaFaultLeavesValidationOn(t *testing.T) {
+	broken := shcl.Parse("field: a\n\ttype: no_such_type\nfield: b\n\ttype: int\n")
+	doc := shcl.Parse("a: whatever\nb: not_a_number\n")
+
+	var fault, survived bool
+	for _, d := range doc.Validate(broken) {
+		if isSchemaFault(d) {
+			fault = true
+			continue
+		}
+		if strings.Contains(d.Message, "wrong type") {
+			survived = true
+		}
+	}
+	if !fault {
+		t.Error("the schema fault should still be reported")
+	}
+	if !survived {
+		t.Error("constraints that parsed cleanly should still check the document")
+	}
+}
+
+// Layout blocks nest by mounting their own shape, so there is no depth past
+// which keys quietly stop being checked. 40 is far beyond anything a real
+// layout reaches - the point is that nothing caps it.
+func TestLayoutNestsToAnyDepth(t *testing.T) {
+	build := func(depth int, deepKey string) []byte {
+		var b strings.Builder
+		b.WriteString("views:\n\tview: v\n\t\tlayout:\n")
+		indent := "\t\t\t"
+		for i := 0; i < depth; i++ {
+			fmt.Fprintf(&b, "%sblock: %d\n", indent, i)
+			indent += "\t"
+			fmt.Fprintf(&b, "%stype: grid\n", indent)
+			if i == depth-1 && deepKey != "" {
+				fmt.Fprintf(&b, "%s%s: x\n", indent, deepKey)
+			}
+			b.WriteString(indent + "block:\n")
+			indent += "\t"
+		}
+		return []byte(b.String())
+	}
+
+	for _, depth := range []int{3, 12, 40} {
+		s, _ := Parse([]byte(build(depth, "")))
+		for _, w := range s.Warnings {
+			t.Errorf("depth %d: a legal layout should be quiet: %s", depth, w)
+		}
+		s, _ = Parse(build(depth, "bogus_block_key"))
+		if !hasWarning(s, "bogus_block_key") {
+			t.Errorf("depth %d: a bad key stopped being checked: %v", depth, s.Warnings)
+		}
 	}
 }
 
