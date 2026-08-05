@@ -85,7 +85,7 @@ func (s *server) viewPage(w http.ResponseWriter, r *http.Request) {
 }
 
 // viewQuery runs a predefined query; the dataset renders readonly with the
-// query's own column order (v1 lands in the view's first block).
+// query's own column order (v1 uses the view's first block).
 func (s *server) viewQuery(w http.ResponseWriter, r *http.Request) {
 	if s.view(w, r) == nil {
 		return

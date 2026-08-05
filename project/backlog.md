@@ -87,7 +87,7 @@ In each section, items are listed approximately from newest to oldest.
 
 - ✅ Track the shcl 1.1 release.
 	- Done: a section that combines with an earlier one is now reported with both line numbers, so a second `table: t` folding into the first is no longer silent. `example.shcl` was reorganized to open each section once.
-	- Done: quoting a default escapes it again - `@null` is the sentinel, `"@null"` is the text. The schema file had documented this all along; it just could not be honoured before.
+	- Done: quoting a default escapes it again - `@null` is the sentinel, `"@null"` is the text. The schema file had documented this all along; it just could not be honored before.
 	- Done: cross-cutting messages (a table defined twice, a `unique:` naming a missing field) now cite a line like every other message.
 	- Done: layout blocks validate at any nesting depth, and each section is described once instead of twice. Both were generated in code before, one only as deep as eight blocks.
 
@@ -160,7 +160,7 @@ In each section, items are listed approximately from newest to oldest.
 	- Approach decided in the enterprise repo docs. Folder layout now in place: the repos are renamed and the additional private repo is created and scaffolded; the concern implementations follow in later phases.
 
 - ✅ Make opening menu look more like a menu. Better spacing around and in beteen items.
-	- Done: the startup picker is now a centred, bordered panel with margins instead of a full-screen list, and blank spacer rows sit between entries. Up/Down skip the spacers so the highlight only lands on real entries.
+	- Done: the startup picker is now a centered, bordered panel with margins instead of a full-screen list, and blank spacer rows sit between entries. Up/Down skip the spacers so the highlight only lands on real entries.
 
 - ✅ When defining a db in the TUI or CLI, allow just pointing to a top-level repo - then figure everything else out (i.e. "[repo dir]/ngdb/[short spaceless db name]/") If the dir is not a github repo, use the directory exactly as entered (assuming it's empty or nonexistent). Don't ask for txlog or config files, just create them in the dir.
 	- Done: the CLI `--init` already derived this; pulled the logic into shared `config.LogDirFor(location, name)` and switched the TUI create form to a single "location (repo or folder)" field. Point at a repo top level -> `<repo>/ngdb/<name>`; any other folder is used as-is (created if missing). No separate tx-log path to enter; config still auto-places in the user config dir.
@@ -195,8 +195,8 @@ In each section, items are listed approximately from newest to oldest.
 	- Done (`--init`, `--config`): `--init [path]` registers the lone current-dir DDL as a database and materializes its view. It picks the tx-log dir automatically: inside a git repo it goes under `<repo-root>/ngdb/<name>`, an explicit path is taken verbatim, and outside a repo it lands in the current dir. `--config <dir>` is a global prefix that repoints the registry. Both accept the `=` form.
 	- Done (`--encrypt`): landed with the encryption item below. `--encrypt[=on|off|auto]` is a global prefix (bare means on). Paired with `--init` it mints the per-db key and persists the preference.
 
-- ✅ TUI colour themes: selectable, readable, dark and light (default dark)
-	- Done: press `T` in the TUI for a picker of six themes - three dark, three light, default dark. Colours are fixed RGB rather than the terminal-palette names tview defaults to, so text stays legible whatever the surrounding terminal looks like. Switching applies live (the database picker included) and the choice persists in a user-global `settings.toml`, so it carries across sessions and databases.
+- ✅ TUI color themes: selectable, readable, dark and light (default dark)
+	- Done: press `T` in the TUI for a picker of six themes - three dark, three light, default dark. Colors are fixed RGB rather than the terminal-palette names tview defaults to, so text stays legible whatever the surrounding terminal looks like. Switching applies live (the database picker included) and the choice persists in a user-global `settings.toml`, so it carries across sessions and databases.
 
 - ✅ Add "host_name" to the transaction log, in addition to user. (Because the same user might use multiple hosts, and that might be useful info.)
 	- Done: `host_name` appended as the last tx-log column, so older logs without it still parse as an empty host and both widths survive a union merge. It's stamped automatically from the OS hostname, overridable with `NANOGITDB_HOST`, the machine analogue of `NANOGITDB_USER`. Metadata only, so replay ignores it. All four front-ends inherit it.

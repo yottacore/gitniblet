@@ -17,7 +17,7 @@ import (
 	shcl "github.com/jim-collier/shcl/source/go"
 )
 
-// tablesPath is where tables live. The DDL also accepts an unwrapped `tables:`
+// tablePaths is where tables live. The DDL also accepts an unwrapped `tables:`
 // at the top level, so both prefixes are tried in order.
 func tablePaths() []string {
 	var out []string

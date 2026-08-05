@@ -34,12 +34,15 @@ func Run(args []string) error {
 	if len(args) == 1 {
 		cfg := config.FindByName(args[0])
 		if cfg == nil {
-			return fmt.Errorf("unknown database %q; register it with --init or run ngdb with no arguments to pick one", args[0])
+			return config.UnknownDatabase(args[0])
 		}
 		return runOpen(cfg.DDLPath, cfg.SQLitePath, cfg.LogDir, cfg, dec)
 	}
-	if len(args) >= 3 {
+	if len(args) == 3 {
 		return runOpen(args[0], args[1], args[2], nil, dec)
+	}
+	if len(args) != 0 { // 2 or 4+ args matches neither form
+		return fmt.Errorf("usage: ngdb --tui [<db>], or the explicit --tui <schema> <sqlite> <logdir>")
 	}
 	if ddlPath, sqlitePath, logDir, ok := config.PWDTriple(); ok {
 		return runOpen(ddlPath, sqlitePath, logDir, nil, dec)
@@ -153,7 +156,7 @@ func (a *App) Stop() { a.app.Stop() }
 
 func (a *App) buildUI() {
 	// Fresh primitives each call so a theme switch rebuilds them under the new
-	// global styles (tview captures colours at construction).
+	// global styles (tview captures colors at construction).
 	a.pages = tview.NewPages()
 	a.list = tview.NewList()
 	a.grid = tview.NewTable()
@@ -229,13 +232,17 @@ func (a *App) buildUI() {
 	a.pages.AddPage("main", root, true, true)
 
 	a.app.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		// q/T act only outside input fields, where the same keystroke is data.
-		_, inField := a.app.GetFocus().(*tview.InputField)
-		switch {
-		case ev.Rune() == 'q' && !inField:
+		// q/T are browsing keys. Anywhere else - a form, a confirm dialog - the
+		// keystroke belongs to that screen, and quitting from a half-filled form
+		// would throw the work away without asking.
+		if !a.browsing() {
+			return ev
+		}
+		switch ev.Rune() {
+		case 'q':
 			a.app.Stop()
 			return nil
-		case ev.Rune() == 'T' && !inField:
+		case 'T':
 			a.themePicker()
 			return nil
 		}
@@ -243,6 +250,13 @@ func (a *App) buildUI() {
 	})
 
 	a.styleWidgets()
+}
+
+// browsing reports whether the top page is a list or view rather than a form,
+// dialog or picker stacked over one.
+func (a *App) browsing() bool {
+	name, _ := a.pages.GetFrontPage()
+	return name == "main" || name == "view"
 }
 
 func (a *App) setStatus(msg string) {
@@ -397,7 +411,7 @@ func (a *App) extrasPanel() {
 		form.AddTextView("attachments", sb.String(), 0, 4, false, true)
 		rowsShown += 5
 	}
-	close := func() {
+	closeForm := func() {
 		a.pages.RemovePage("extras")
 		a.app.SetFocus(a.grid)
 	}
@@ -411,12 +425,12 @@ func (a *App) extrasPanel() {
 				a.setStatus("error: " + err.Error())
 				return
 			}
-			close()
+			closeForm()
 			a.extrasPanel() // reopen refreshed
 		})
 	}
-	form.AddButton("Close", close)
-	form.SetCancelFunc(close)
+	form.AddButton("Close", closeForm)
+	form.SetCancelFunc(closeForm)
 	form.SetBorder(true).SetTitle(" " + a.cur + " " + row["id"][:min(8, len(row["id"]))] + " extras ")
 	a.pages.AddPage("extras", modal(form, 70, rowsShown+4), true, true)
 	a.app.SetFocus(form)
@@ -441,7 +455,7 @@ func (a *App) attachForm(copyIn bool) {
 	form := tview.NewForm()
 	form.AddInputField(label, "", 0, nil, nil)
 	form.AddInputField("description", "", 0, nil, nil)
-	close := func() {
+	closeForm := func() {
 		a.pages.RemovePage("attach")
 		a.app.SetFocus(a.grid)
 	}
@@ -461,11 +475,11 @@ func (a *App) attachForm(copyIn bool) {
 			a.setStatus("error: " + err.Error())
 			return
 		}
-		close()
+		closeForm()
 		a.setStatus("attached")
 	})
-	form.AddButton("Cancel", close)
-	form.SetCancelFunc(close)
+	form.AddButton("Cancel", closeForm)
+	form.SetCancelFunc(closeForm)
 	form.SetBorder(true).SetTitle(title)
 	a.pages.AddPage("attach", modal(form, 70, 10), true, true)
 	a.app.SetFocus(form)

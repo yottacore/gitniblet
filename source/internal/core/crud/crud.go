@@ -3,7 +3,7 @@
 
 // Package crud is the single internal API every front-end and the Lua host call.
 // No front-end talks to store/txlog directly - it all funnels through here so
-// behaviour can't drift between interfaces.
+// behavior can't drift between interfaces.
 //
 // Writes are log-first: each op appends field-granular entries to the tx-log
 // (the source of truth) and then applies them to the SQLite view. If the apply
@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -62,8 +63,9 @@ type API struct {
 
 	// readOnly, when set, makes every write return ErrReadOnly while reads keep
 	// working. A front-end flips it on to degrade a session to read-only (e.g. a
-	// dismissed startup notice); the core itself never sets it.
-	readOnly bool
+	// dismissed startup notice); the core itself never sets it. Atomic because
+	// the web front-end flips it from a request goroutine while others read it.
+	readOnly atomic.Bool
 
 	// Encryption state (crypt.go). cipher is the enterprise field-value cipher
 	// (nil = none, and always nil in the open-source build); encPref is the
@@ -85,10 +87,10 @@ var ErrReadOnly = fmt.Errorf("crud: database is open read-only")
 
 // SetReadOnly turns read-only mode on or off. A front-end sets it when a session
 // is degraded to read-only; writes then return ErrReadOnly and reads keep going.
-func (a *API) SetReadOnly(ro bool) { a.readOnly = ro }
+func (a *API) SetReadOnly(ro bool) { a.readOnly.Store(ro) }
 
 // ReadOnly reports whether the API is in read-only mode.
-func (a *API) ReadOnly() bool { return a.readOnly }
+func (a *API) ReadOnly() bool { return a.readOnly.Load() }
 
 // DefaultUserID is the stamp when a front-end has nothing better:
 // NANOGITDB_USER, else the OS username.
@@ -113,7 +115,7 @@ func DefaultHostID() string {
 	return "unknown"
 }
 
-// Create inserts a new row, sets the given fields, and returns its hex id.
+// Create inserts a new row, sets the given fields, and returns its id.
 // The `id` field is managed here and ignored if present in fields.
 func (a *API) Create(table string, fields map[string]string) (string, error) {
 	if err := a.authorize(table, "", "write", fields); err != nil {
@@ -275,7 +277,7 @@ func (a *API) commit(entries []txlog.Entry) error {
 	if len(entries) == 0 {
 		return nil
 	}
-	if a.readOnly {
+	if a.readOnly.Load() {
 		return ErrReadOnly
 	}
 	a.mu.Lock()
@@ -383,7 +385,8 @@ func rowsToMaps(rows *sql.Rows) ([]map[string]string, error) {
 }
 
 // valToString renders a scanned value. The id column is binary, so it is shown
-// as hex (matching the ids callers pass in); other columns render naturally.
+// as base64url text (matching the ids callers pass in); other columns render
+// naturally.
 func valToString(col string, v any) string {
 	switch t := v.(type) {
 	case nil:

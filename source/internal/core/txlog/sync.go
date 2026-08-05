@@ -94,6 +94,9 @@ func (s *Syncer) Sync() (SyncResult, error) {
 	if err := ensureUnionAttr(s.dir, s.rel); err != nil {
 		return res, err
 	}
+	if err := ensureIgnores(s.dir); err != nil {
+		return res, err
+	}
 	// Stage the whole dir: the live log, retired GC segments (and their
 	// deletions), and the attachments/ subfolder all ride the same sync.
 	if _, err := gitOut(s.dir, "add", "-A", "--", "."); err != nil {
@@ -112,6 +115,9 @@ func (s *Syncer) Sync() (SyncResult, error) {
 		return res, nil
 	}
 	if hasUpstream(s.dir) {
+		// Head before and after the pull, to tell whether it brought anything
+		// in. A failed read just leaves Changed false, which only costs a
+		// redundant replay.
 		before, _ := gitOut(s.dir, "rev-parse", "HEAD")
 		if _, err := gitOut(s.dir, "pull", "--no-rebase", "--no-edit"); err != nil {
 			// A genuine conflict (some non-union file) would otherwise leave
@@ -136,7 +142,7 @@ func (s *Syncer) Sync() (SyncResult, error) {
 	return res, nil
 }
 
-// Run syncs every interval until ctx is cancelled. onErr (optional) receives
+// Run syncs every interval until ctx is canceled. onErr (optional) receives
 // per-pass errors so the loop keeps running.
 func (s *Syncer) Run(ctx context.Context, onErr func(error)) {
 	t := time.NewTicker(s.interval)
@@ -168,7 +174,22 @@ func ensureUnionAttr(dir, rel string) error {
 	path := filepath.Join(dir, ".gitattributes")
 	// txlog-*.csv: GC segments are write-once, but two clients collecting
 	// concurrently both delete the old files - union keeps that automerging.
-	for _, line := range []string{rel + " merge=union", "txlog-*.csv merge=union"} {
+	return appendLinesOnce(path, rel+" merge=union", "txlog-*.csv merge=union")
+}
+
+// ensureIgnores keeps derived and secret files out of the synced log directory.
+// It matters when the schema sits in the repo and the log directory is the same
+// folder: the SQLite view would then be committed as a binary blob no merge
+// driver can reconcile, and a key file placed beside the schema would be pushed
+// next to the data it decrypts.
+func ensureIgnores(dir string) error {
+	path := filepath.Join(dir, ".gitignore")
+	return appendLinesOnce(path, "*.sqlite", "*.sqlite-journal", "*.sqlite-wal", "*.key")
+}
+
+// appendLinesOnce adds each line to a file if it is not already there.
+func appendLinesOnce(path string, lines ...string) error {
+	for _, line := range lines {
 		b, err := os.ReadFile(path)
 		if err == nil && strings.Contains(string(b), line) {
 			continue
@@ -216,7 +237,7 @@ func gitOut(dir string, args ...string) (string, error) {
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
-		return out.String(), fmt.Errorf("git %s: %v: %s",
+		return out.String(), fmt.Errorf("git %s: %w: %s",
 			strings.Join(args, " "), err, strings.TrimSpace(errb.String()))
 	}
 	return out.String(), nil

@@ -40,6 +40,11 @@ func Run(args []string) error {
 		fmt.Println(line)
 		return nil
 	}
+	// --help: the usage block on stdout, exit 0. Anything unrecognized still
+	// prints it, but on stderr and with a failing status.
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h" || args[0] == "help") {
+		return cli.Help()
+	}
 	// --config[=path]: a global prefix that redirects the database registry;
 	// strip it, apply the override, then dispatch the remaining args normally.
 	if len(args) > 0 {

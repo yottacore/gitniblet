@@ -404,7 +404,7 @@ The web UI binds to `127.0.0.1` only - that binding is the access control for a 
 
 Web login: the `web_mode` setting (in `settings.shcl`, default `local`) picks how the web UI authenticates. `local` identifies the single user with no password - the git account of the log dir's repo, else the OS user - and refuses to serve if a reverse-proxy header ever appears (so an accidentally exposed box can't run passwordless). `proxied` requires a username and password for every request: add logins with `ngdb webuser <username>` (hashed into `webusers.shcl` in the config dir, outside the synced tree), and the signed-in user's group permissions then apply to the web view. Stronger methods are an enterprise feature.
 
-In the TUI, press `T` to pick a colour theme (three dark, three light; the default is dark). Themes use fixed colours for readability regardless of your terminal palette, and the choice is remembered for next time.
+In the TUI, press `T` to pick a color theme (three dark, three light; the default is dark). Themes use fixed colors for readability regardless of your terminal palette, and the choice is remembered for next time.
 
 ## Startup discovery and the database registry
 

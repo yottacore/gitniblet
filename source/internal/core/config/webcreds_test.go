@@ -3,7 +3,10 @@
 
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestWebCredsHashVerify(t *testing.T) {
 	c := &WebCreds{}
@@ -93,5 +96,32 @@ func TestWebModeProxied(t *testing.T) {
 		if (&Settings{WebMode: m}).WebModeProxied() {
 			t.Fatalf("web_mode %q should fall back to local", m)
 		}
+	}
+}
+
+// An unknown user has no hash to compare, but it still has to cost the same as a
+// wrong password - otherwise the response time says which accounts exist.
+func TestUnknownUserStillCostsAKDFRun(t *testing.T) {
+	creds := &WebCreds{}
+	if err := creds.Set("alice", "correct horse"); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	if creds.Verify("alice", "wrong") {
+		t.Fatal("a wrong password verified")
+	}
+	known := time.Since(start)
+
+	start = time.Now()
+	if creds.Verify("nosuchuser", "wrong") {
+		t.Fatal("an unknown user verified")
+	}
+	unknown := time.Since(start)
+
+	// A skipped KDF returns in microseconds against ~100ms of real work, so any
+	// generous fraction separates the two without being timing-flaky.
+	if unknown < known/4 {
+		t.Fatalf("unknown user took %v against %v for a known one - the KDF was skipped", unknown, known)
 	}
 }

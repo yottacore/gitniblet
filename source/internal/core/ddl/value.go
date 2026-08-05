@@ -138,7 +138,7 @@ func isIdent(s string) bool {
 	return true
 }
 
-// SplitList splits a top-level comma list, honouring quotes/backticks/brackets,
+// SplitList splits a top-level comma list, honoring quotes/backticks/brackets,
 // then trims and unquotes each element. Empty elements are dropped.
 func SplitList(s string) []string {
 	parts := splitTop(s)

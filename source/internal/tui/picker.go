@@ -95,7 +95,7 @@ func (p *picker) build() {
 	p.setStatus("enter=open | d=remove | Create/Open to make or open one | q=quit")
 
 	// Center the menu as a bordered panel with margins around it, instead of
-	// filling the whole screen. Proportional spacers keep it centred at any
+	// filling the whole screen. Proportional spacers keep it centered at any
 	// terminal size while leaving generous room for long paths.
 	panel := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(p.list, 0, 1, true).
@@ -279,7 +279,7 @@ func (p *picker) finish(result *pickResult) {
 
 // createForm registers a new database (name required, refuses duplicates) and
 // opens it. The DDL is an existing file the record points at; "location" is just
-// a repo or folder - the tx-log lands under `ngdb/<name>` inside a repo, or in
+// a repo or folder - the tx-log goes under `ngdb/<name>` inside a repo, or in
 // the folder as-is otherwise - so there is no separate tx-log path to enter.
 func (p *picker) createForm() {
 	form := tview.NewForm()

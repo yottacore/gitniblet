@@ -56,7 +56,7 @@ fRunTarget() {   ## $1 = import path, $2 = target name
 
 ## go1.26's fuzzing coordinator can report the -fuzztime deadline itself as the
 ## failure: the deadline error escapes because the worker context has not been
-## cancelled yet when the event loop wakes (golang/go#75804, fixed in go1.27, no
+## canceled yet when the event loop wakes (golang/go#75804, fixed in go1.27, no
 ## backport). A genuine crash always saves the offending input, so a bare
 ## "context deadline exceeded" with nothing written is the toolchain, not us.
 ## Drop this once the toolchain pin reaches 1.27.

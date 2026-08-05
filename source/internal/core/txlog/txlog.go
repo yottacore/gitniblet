@@ -8,9 +8,9 @@
 // SQLite database is a derived view, produced by replaying entries in order
 // (Apply). Git sync and garbage collection are separate concerns.
 //
-// Note: the original design's field list omits a row identifier, but field-level
-// ops can't be applied without one, so RowID is part of every entry (the GUID of
-// the affected row; see id.go for the wire form).
+// The original design's field list omits a row identifier, but field-level ops
+// can't be applied without one, so RowID is part of every entry (the id of the
+// affected row; see the guid package for the wire form).
 package txlog
 
 import (
@@ -33,10 +33,10 @@ import (
 // Entry is one transaction-log row. Field is blank for record-level ops
 // (create with no value, mark_delete, delete).
 type Entry struct {
-	TxID     string // per-entry GUID; see id.go for the wire form
+	TxID     string // per-entry id; see the guid package for the wire form
 	Date     string // GMT, RFC3339
 	Table    string
-	RowID    string // GUID of the affected row; see id.go for the wire form
+	RowID    string // id of the affected row; see the guid package for the wire form
 	Field    string
 	Op       string // create, update, mark_delete, delete
 	NewValue string
@@ -160,8 +160,8 @@ func (l *Log) Path() string { return l.path }
 func (l *Log) Dir() string { return filepath.Dir(l.path) }
 
 // Append writes entries to the end of the log, adding the header to a new file.
-// The batch is rendered in memory and lands as a single write(2) on an O_APPEND
-// handle, so concurrent appenders (another process, the future web server)
+// The batch is rendered in memory and goes out as a single write(2) on an
+// O_APPEND handle, so concurrent appenders (another process, the web server)
 // cannot interleave partial records on a local filesystem.
 func (l *Log) Append(entries ...Entry) error {
 	_, statErr := os.Stat(l.path)
@@ -395,7 +395,7 @@ func skippable(err error) bool {
 func applyOne(tx *sql.Tx, st *store.Store, entry Entry) error {
 	id, err := guid.Decode(entry.RowID)
 	if err != nil {
-		return fmt.Errorf("%w: %v", errBadEntry, err)
+		return fmt.Errorf("%w: %w", errBadEntry, err)
 	}
 	tbl := quoteIdent(entry.Table)
 

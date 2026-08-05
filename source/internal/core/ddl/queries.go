@@ -28,7 +28,7 @@ type NamedQuery struct {
 
 // QueriesPath is the sidecar convention: the DDL path with its extension
 // replaced by ".queries.shcl" (issues.shcl -> issues.queries.shcl). Discovery
-// looks for a lone schema file, so it must skip this one - see config.PWDSchema.
+// looks for a lone schema file, so it must skip this one - see config.PWDDdl.
 func QueriesPath(ddlPath string) string {
 	return strings.TrimSuffix(ddlPath, filepath.Ext(ddlPath)) + ".queries.shcl"
 }
@@ -104,7 +104,7 @@ func ParseQueries(src []byte) ([]NamedQuery, []string, error) {
 
 	// No duplicate-name check: two query_name instances with the same name are
 	// one node by SHCL's merge rule, so a repeat cannot reach here as a second
-	// entry - it lands as extra children on the first.
+	// entry - it becomes extra children on the first.
 	root := cursor{doc: doc}
 	var out []NamedQuery
 	for i, name := range root.instances("query_name") {

@@ -3,7 +3,7 @@
 
 // Background git sync for the long-running front-ends, paced by the
 // git_sync_frequency tunable. The post-sync apply is a full replay - the
-// safe handler until incremental apply lands (a pulled entry may sort before
+// safe handler until incremental apply exists (a pulled entry may sort before
 // entries already applied).
 package schema
 

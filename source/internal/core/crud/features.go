@@ -68,8 +68,6 @@ func (a *API) requireFeature(table string, on bool, feat string) error {
 	return nil
 }
 
-// --- audit trail ---
-
 // audit builds the audit_trail entries that ride the same commit as a data
 // change, so the trail and the change land (and replicate) together. Old
 // values come from the view BEFORE the change applies. A failed read degrades
@@ -204,8 +202,6 @@ func mergeAuditValues(have, add string) string {
 	return encodeAuditValues(haveVals)
 }
 
-// --- m:m links ---
-
 // Link records a live many2many link (idempotent) and returns the link row id.
 // Convention: the host row is side 1, the feature row side 2.
 func (a *API) Link(table1, id1, table2, id2 string) (string, error) {
@@ -251,8 +247,6 @@ func (a *API) Links(table1, id1, table2 string) ([]string, error) {
 	return ids, nil
 }
 
-// --- comments ---
-
 // CommentAdd appends a comment to a row of an opted-in table.
 func (a *API) CommentAdd(table, id, text string) (string, error) {
 	if err := a.requireFeature(table, a.features[table].Comments, "comments"); err != nil {
@@ -272,8 +266,6 @@ func (a *API) CommentsFor(table, id string) ([]map[string]string, error) {
 	return a.Query(`SELECT * FROM "comments"
 		WHERE "table_name"=? AND "parent_id"=? AND "is_deleted"=0 ORDER BY "date_created"`, table, parent)
 }
-
-// --- attachments ---
 
 // Attachment is one attached item of either kind, UI-ready.
 type Attachment struct {
@@ -376,6 +368,12 @@ func (a *API) AttachmentWorkingCopy(attID string) (string, error) {
 	if row["extension"] != "" {
 		name += "." + row["extension"]
 	}
+	// The name comes from a row, so anyone who can write the database picks it.
+	// Keep it to a bare file name or a working copy could be written anywhere.
+	name = filepath.Base(name)
+	if name == "." || name == string(filepath.Separator) || name == ".." {
+		name = attID
+	}
 	dst := filepath.Join(os.TempDir(), name)
 	if err := copyFile(filepath.Join(a.AttachmentsDir(), attID), dst); err != nil {
 		return "", err
@@ -406,8 +404,6 @@ func copyFile(src, dst string) error {
 	}
 	return out.Close()
 }
-
-// --- row access grants (enforcement = the access-model backlog item) ---
 
 // GrantRowAccess links a group to a row's access_rows entry, creating the
 // entry on first grant.

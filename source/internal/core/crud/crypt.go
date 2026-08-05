@@ -11,8 +11,8 @@ import (
 	"github.com/jim-collier/nano-git-db/internal/core/txlog"
 )
 
-// This file is the field-value encryption orchestration: which fields get
-// sealed (policy) and the seal/open passes over log entries. It stays in the
+// Field-value encryption orchestration: which fields get sealed (policy) and
+// the seal/open passes over log entries. It stays in the
 // open-source core on purpose - it names core types (txlog.Entry, ddl.Schema)
 // the separate enterprise module cannot import, and the core must understand the
 // encrypted-entry format anyway to degrade gracefully without a key. The actual

@@ -109,7 +109,7 @@ Plenty of tools each do some of these. None do all of them at once:
 
 	- Guaranteed leak-proof team and organization enforcement, based on (post-quantum) asymmetric encryption.
 
-	- More secure login mechanisms for the web server including 2FA and Passkey authentication, and optional third-party login token support (e.g. Google, Microsoft, etc.). Basic password sign-in already ships in the open-source build.
+	- More secure login mechanisms for the web server including 2FA and Passkey authentication, and optional third-party login token support (e.g. Google, Microsoft, etc.). Basic password sign-in is already in the open-source build.
 
 	- REST API for application integration, custom front-ends, and mobile support.
 

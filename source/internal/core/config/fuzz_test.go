@@ -31,7 +31,7 @@ func FuzzParseHash(f *testing.F) {
 }
 
 // Load runs the fuzzed bytes through the SHCL parser at Strict: a garbled
-// registry record must surface as an error so the picker can grey it out, never
+// registry record must surface as an error so the picker can gray it out, never
 // panic. When it does load, the local-file defaults have to be filled - that is
 // what lets a minimal hand-written config.shcl (a name and two paths) open.
 // Seeds cover a real record, the syntax a hand-edited one picks up (comments,

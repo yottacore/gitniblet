@@ -37,7 +37,7 @@ esac; done
 
 fSkip(){ echo "profile.bash: skipped: $1"; exit 0; }   ## non-gating artifact
 
-## inferno-flamegraph renders the SVG; it lands in ~/.cargo/bin. Missing tool =>
+## inferno-flamegraph renders the SVG; it installs to ~/.cargo/bin. Missing tool =>
 ## skip (the stage is optional).
 inferno="$(command -v inferno-flamegraph || true)"
 [[ -x "${inferno}" ]] || inferno="${HOME}/.cargo/bin/inferno-flamegraph"

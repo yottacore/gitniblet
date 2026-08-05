@@ -366,7 +366,7 @@ class Typist:
 			if ch == "-" and (i == 0 or text[i - 1] == " "):
 				time.sleep(self.rng.uniform(0.14, 0.34))
 			self._pause(self._delay(ch) * (1.6 if ch == " " else 1.0))
-			# an expert's slip: wrong neighbour, catch it, fix it (letters only)
+			# an expert's slip: wrong neighbor, catch it, fix it (letters only)
 			if ch.lower() in NEIGH and self.rng.random() < typos:
 				wrong = self.rng.choice(NEIGH[ch.lower()])
 				self._emit(wrong)
