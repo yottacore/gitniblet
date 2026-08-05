@@ -20,7 +20,10 @@ All types of contributions are encouraged and valued. See the [Table of Contents
 - [I Want To Contribute](#i-want-to-contribute)
 	- [Reporting Bugs](#reporting-bugs)
 	- [Suggesting Enhancements](#suggesting-enhancements)
-
+	- [Your First Code Contribution](#your-first-code-contribution)
+	- [Improving The Documentation](#improving-the-documentation)
+- [Styleguides](#styleguides)
+	- [Commit Messages](#commit-messages)
 
 ## Code of Conduct
 
@@ -132,28 +135,25 @@ Enhancement suggestions are tracked as [GitHub issues](https://github.com/jim-co
 
 <!-- You might want to create an issue template for enhancement suggestions that can be used as a guide and that defines the structure of the information to be included. If you do so, reference it here in the description. -->
 
-<!-- TODO
 ### Your First Code Contribution
-include Setup of env, IDE and typical getting started instructions?
 
--->
+Building needs Go and nothing else - dependencies are vendored and there is no C toolchain to install. The README's [Set up a development environment](README.md#set-up-a-development-environment) has the clone, build and test commands.
 
-<!-- TODO
+Before opening a pull request, please make sure `go test`, `go vet` and `gofmt -l` are all clean. `./cicd/cicd.bash --quick` runs those together if you'd rather do it in one step.
+
 ### Improving The Documentation
-Updating, improving and correcting the documentation
 
--->
+Documentation fixes are as welcome as code. The reference is [syntax.md](syntax.md), the design notes are in [project/design.md](project/design.md), and the README is the front door.
 
-<!-- TODO
 ## Styleguides
+
+Go code is standard Go: `gofmt`, and idiomatic where the two disagree with anything below. Comments say why, not what.
+
 ### Commit Messages
 
--->
-
-<!-- TODO
-## Join The Project Team
--->
+Keep them short and plain. A line saying what changed is enough - the diff covers the rest.
 
 <!-- omit in toc -->
 ## Attribution
+
 This guide is based on the [contributing.md generator](https://contributing.md/generator)!
