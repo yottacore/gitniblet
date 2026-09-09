@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright © 2026 Jim Collier
+// Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 
 // Tx-log garbage collection (design "GC is segment rotation"): a collection
 // pass writes the surviving entries to a fresh write-once segment file and

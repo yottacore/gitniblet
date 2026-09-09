@@ -344,7 +344,7 @@ Tell other developers and teams about it wherever you hang out.
 
 ## Copyright and license
 
-> Copyright © 2025-26 Jim Collier (ID: 1cv◂‡Vᛦ)<br />
+> Copyright © 2025-26 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]<br />
 > Licensed under the [GNU Affero General Public License v3.0](license.md) (`AGPL-3.0-only`). No warranty.
 
 The AGPL's network-use "SaaS" clause (what specifically differentiates it from regular GPL) is deliberate. If you run a modified `nano-git-db` as a network service - which anyone is free and encouraged to do - you must offer users your source so that others can continue to build on your work, and so on.

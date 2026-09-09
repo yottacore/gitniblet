@@ -35,7 +35,7 @@
 	.\install.ps1 -Release dev -Target user
 #>
 
-## Copyright (c) 2026 Jim Collier
+## Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 ## Licensed under The MIT License (MIT). Full text at:
 ##   https://mit-license.org/
 ## SPDX-License-Identifier: MIT

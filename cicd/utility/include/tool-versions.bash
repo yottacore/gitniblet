@@ -3,7 +3,7 @@
 # go.mod on purpose (no vendored tool dep); dependabot bumps go.mod deps and the
 # toolchain, these pins are bumped by hand when a scan wants a newer tool.
 
-##	Copyright © 2026 Bubbles (ID: XଌฅრX۳ᛟԃლፀƅꓩหδლც)
+##	Copyright (c) 2026 Bubbles
 ##	Licensed under The MIT License (MIT). Full text at:
 ##		https://mit-license.org/
 ##	SPDX-License-Identifier: MIT

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright © 2026 Jim Collier
+// Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 
 // Predefined (named) queries: an SHCL sidecar file next to the DDL (design
 // "Predefined queries"). Views reference them by name via startup_named_query,

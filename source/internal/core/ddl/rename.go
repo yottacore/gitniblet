@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright © 2026 Jim Collier
+// Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 
 // Schema-op rewriting: rename a table or field IN the DDL file while recording
 // the old name as an alias, so tx-log entries written before the rename still
