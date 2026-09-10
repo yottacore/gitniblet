@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright © 2026 Jim Collier
+// Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 
 // Package tui is the terminal UI front-end: tview/tcell, both pure Go. Like
 // every front-end it only talks to the shared CRUD API. Left pane lists the

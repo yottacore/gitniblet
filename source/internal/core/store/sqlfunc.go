@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright © 2026 Jim Collier
+// Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 
 // SQL helpers for hand-written queries. Ids and row references are BLOBs in
 // the view but text everywhere a person sees them, and SQLite compares a BLOB

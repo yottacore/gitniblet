@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright © 2026 Jim Collier
+// Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 
 // View rendering: the resolved block tree becomes nested flexbox divs, leaves
 // become panels that stay empty until their All button asks for rows - same

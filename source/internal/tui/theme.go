@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright © 2026 Jim Collier
+// Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 
 // Selectable, high-readability color themes. Colors are explicit RGB, not the
 // named terminal-palette colors (ColorBlack/White) tview defaults to - those

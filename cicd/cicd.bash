@@ -20,7 +20,7 @@
 ##	Purpose: Wrapper for build, test, copy to local for dogfood, push to github. Calls test.sh, no need to call that separately.
 ##	History: At bottom of this file. (Note: History for this is maintained outside of [or in addition to] git project.)
 
-##	Copyright © 2022-2026 Jim Collier (ID: 1cv◂‡Vᛦ)
+##	Copyright © 2022-2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 ##	Licensed under the GNU General Public License v2.0 or later. Full text at:
 ##		https://spdx.org/licenses/GPL-2.0-or-later.html
 ##	SPDX-License-Identifier: GPL-2.0-or-later
@@ -57,7 +57,7 @@ if [[ -z "${doQuietly+x}" ]]; then
 fi
 
 
-##	Copyright © 2026 Jim Collier (ID: 1cv◂‡Vᛦ)
+##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 ##	Licensed under The MIT License (MIT). Full text at:
 ##		https://mit-license.org/
 ##	SPDX-License-Identifier: MIT

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright © 2026 Jim Collier
+// Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 
 // View rendering: the resolved block tree maps 1:1 onto nested Flexes, leaves
 // onto bordered Tables. Per the design a view opens with no records - 'a'
