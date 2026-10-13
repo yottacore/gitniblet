@@ -6,6 +6,7 @@ First off, thanks for taking the time to contribute!
 All types of contributions are encouraged and valued. See the [Table of Contents](#table-of-contents) for different ways to help and details about how this project handles them. Please read the relevant section before contributing. It makes it easier for the maintainer and smoother for everyone involved.
 
 > And if you like the project, but just don't have time to contribute, that's fine. There are other easy ways to support the project and show your appreciation, which we would also be very happy about:
+> - Sponsor it on [GitHub Sponsors](https://github.com/sponsors/jim-collier) or [Ko-fi](https://ko-fi.com/jimcollier)
 > - Star the project
 > - Tweet/skeet/post about it
 > - Refer this project in your project's readme
