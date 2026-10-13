@@ -1,47 +1,60 @@
 <!-- markdownlint-disable MD007 -- Unordered list indentation -->
 <!-- markdownlint-disable MD010 -- No hard tabs -->
-<!-- markdownlint-disable MD033 -- No inline html -->
-<!-- markdownlint-disable MD055 -- Table pipe style [Expected: leading_and_trailing; Actual: leading_only; Missing trailing pipe] -->
 <!-- markdownlint-disable MD041 -- First line in a file should be a top-level heading -->
 
 <!-- TOC ignore:true -->
 # Project backlog
 
-This is a product backlog just for pre-v1.0.0 release. After that, bugs, features, and enhancements will be managed in Github Issues, and/or [todo.md](../todo.md)
-
 <!-- TOC ignore:true -->
 ## Table of contents
+
 <!-- TOC -->
 
-- [Conventions](#conventions)
-- [Backlog](#backlog)
-	- [Misc to-do](#misc-to-do)
+- [Introduction](#introduction)
+- [Issues](#issues)
+- [Old format](#old-format)
 	- [Bugs](#bugs)
-	- [New features and enhancements](#new-features-and-enhancements)
+	- [Features and enhancements](#features-and-enhancements)
 	- [Done](#done)
 		- [Done - Bugs](#done---bugs)
-		- [Done - New features and enhancements](#done---new-features-and-enhancements)
-		- [First steps](#first-steps)
+		- [Done - Features and enhancements](#done---features-and-enhancements)
 	- [Deferred](#deferred)
 	- [Canceled](#canceled)
+- [Template](#template)
 
 <!-- /TOC -->
 
-## Conventions
+## Introduction
 
-In each section, items are listed approximately from newest to oldest.
+Going forward, new issues in the new template at the bottom of this file, will go in the '## New format' section only. No more status emojis. Refer to '## Reference' for sort order. Issues in the old format (with status emojis) won't be refactored, but will continue to be worked until moved to closed, canceled, or deferred sections, and emojis updated. (Eventually this will all be moved to nano-git-db anyway. This new template is an intermediate effort to make issues going forward more structured and importable.)
 
-| Icon | Status
-| :--: | :--
-| 🔘   | Not started
-| 🛠️   | Started, and/or partially complete
-| ✋   | Defer
-| ✅   | Complete
-| 🚫   | Canceled
+This is a product backlog just for pre-v1.0.0 release. After that, bugs, features, and enhancements will be managed in Github Issues, and/or [todo.md](../todo.md)
 
-## Backlog
+## Issues
 
-### Misc to-do
+- Run on the last Core 2 Duo, and AMD CPUs from that era.
+	- ID: 2026101301161870
+	- Type: Enhancement
+	- Status: Queued
+	- Needs external testing: Yes, on an old CPU or an emulated one.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261013-011618
+	- Opened by: JC
+	- Target OS: Linux, Windows and FreeBSD on x86_64, where this project builds them. Macs that old can't run a current macOS anyway.
+	- Requirements [Feature]:
+		- Release builds run on the last Core 2 Duo (Penryn, 2008), and on AMD Phenom II and Athlon II, if that's reasonably doable.
+			- Penryn has SSSE3 and SSE4.1 but no POPCNT. The AMD ones have POPCNT but no SSSE3. So the shared floor is plain x86-64, also called x86-64-v1.
+		- If that isn't doable, the floor is the first Core i3/i5/i7 (Nehalem, 2008), which is x86-64-v2. AMD's first chip at that level is Bulldozer, 2011.
+		- Faster code for newer CPUs is still fine, but it's picked at run time by a CPU feature test, never by the build target.
+		- Tests run the release build on an emulated Penryn and Phenom II, through Intel SDE or QEMU's `-cpu Penryn` and `-cpu phenom`.
+	- Progress log:
+		- 20261013: Go builds for plain x86-64 by default (`GOAMD64=v1`), and nothing here sets it, so this may already hold. Pin `GOAMD64=v1` in the release build so a stray environment can't raise it. The standard library already picks faster code at run time.
+
+## Old format
+
+### Bugs
+
+### Features and enhancements
 
 - 🛠️ Figure a clean and consistent way to hide list columns (or fields in general).
 	- Design settled: `visible_form`/`visible_list` per field (spec in example.shcl, decisions in design.md UI section). The syntax migration it was waiting on is done; the display work itself is still to do.
@@ -55,12 +68,6 @@ In each section, items are listed approximately from newest to oldest.
 		- Basic requirements:
 			- 🔘 Minimal web dependencies. (To minimize constant cascading updates pulling in potentially hundreds of unknown/untrusted dependencies, near-constant churn with breaking and deprecating third-party updates; and also the growing threat of "supply-chain attack" risk.)
 	- Decisions captured in the enterprise repo (`research-enterprise-concerns.md`); implementation is phased (see the folder-hierarchy item below).
-
-### Bugs
-
-None open.
-
-### New features and enhancements
 
 - 🛠️ Optional encrypted data in the transaction log. The local SQLite copy is always decrypted.
 	- Reason: keep the log unreadable to the git host, or to anyone who gets the repo.
@@ -120,7 +127,7 @@ None open.
 	- Item 11: the schema fuzzer's seed corpus pointed at a file name from before the syntax migration, so it had silently been skipping the real example.
 	- Item 12: for a database kept in the same folder as its schema, sync committed and pushed the derived SQLite file, and would have pushed an encryption key placed beside it. Both are now ignored in the log directory.
 
-#### Done - New features and enhancements
+#### Done - Features and enhancements
 
 - ✅ Code Review 20260805 item 21: replay prepared a fresh SQL statement for every log entry.
 	- Done: a pass reuses its statements, which are one shape per table and one per field however long the log is. Rebuilding a 5000-entry log went from about 240ms to about 97ms, on the path every open and every sync that brings changes takes.
@@ -320,8 +327,6 @@ None open.
 - ✅ View block `tree_grid` type + `parent_field`: hierarchical grid over a self-referential (same-table) parent link
 	- Done, and it pulled in view rendering itself, since no front-end rendered views yet. Views now resolve once in the core, verifying tables, turning split hints into axis and percent, and inheriting readonly, then render in both TUI and web as nested split blocks. `tree_grid` orders rows depth-first along `parent_field` with indentation, and bad data like orphans, cycles, or a wrong field degrades visibly instead of hiding rows. Blocks open empty per the design and the "All" action loads them; `startup_named_query` hooks in once named queries land.
 
-#### First steps
-
 - ✅ Repo scaffold: `go.mod`, package skeleton, arg-dispatch `main`, size-optimized build script, `.gitignore`. Compiles, vets, and gofmt-clean; all four front-ends stubbed and the web server serves its embedded asset.
 
 - ✅ DDL parser: `example.ddl` parses into an in-memory schema model through three layers (indent tree, type-directed values, semantic map). Tested, wired to `nanogitdb ddl <file>`.
@@ -373,3 +378,78 @@ None open.
 - 🚫 Donate feature, with protected donation addresses (open-source build). List donation crypto addresses and URLs from CLI (`--donate`), TUI, and web.
 	- Done: a `donate` package holds a fixed-order `{label, kind, value}` table shown by `--donate`, a TUI picker entry, and a web Donate page. Placeholders read "not yet configured" until the real values are filled in.
 	- Done: the table is protected against a swapped address the way the sister project does it - a detached ed25519 signature (`ssh-keygen`) over the canonical table, with the signing key and trust anchor kept outside the repo, re-checked by a test gate that skips on placeholders or a keyless machine. Sign with `cicd/sign-donations.bash`; details in `cicd/donation-signing.md`.
+
+## Template
+
+### Old format
+
+- 🔘 Not started
+
+- 🛠️ Started, and/or partially complete
+
+- 🔬 Testing not started or finished
+
+- ✋ Defer
+
+- ✅ Complete
+
+- 🚫 Canceled
+
+### New format
+
+- Notes:
+
+	- Only use rows that you actually need or expect will be filled in. Always fill in the title, ID, Type, Status, Opened and Created by.
+
+	- The ID is the local time to the hundredth of a second. Opened is when it was written down, which may differ. (Use a keyboard macro and possibly something like project 'zuid' to generate.)
+
+	- Status values meaning: Testing means the fix is in and checks are running or still to run. Waiting on signoff means automated testing passed. Moot means something else changed that made it irrelevant. Canceled means it still applies but was decided against. Waiting for testing means the fix is in and waits on a long CI run or an outside test host. Can't reproduce means a real attempt to reproduce it failed.
+
+	- As issues are worked, and statuses change, place them in correct sorting order within the list:
+		- First by status: Waiting for answers, Waiting on signoff, Testing, Waiting for testing, Can't reproduce, Stalled, Started, Queued, Done, Deferred, Canceled, Moot
+		- Then by severity|priority: Critical, High, Avg, Low
+		- Then by type: Bugs, [not bugs together]
+
+	- Rows marked [Bug] are for bugs only, and rows marked [Feature] for features and enhancements. Priority and Severity share one row and one scale. Priority is for a Feature or Enhancement, and Severity for a Bug. Children are not nested. They sit at the top level and point back with Parent ID.
+
+Template:
+
+- Title
+	- ID: YYYYmmDDHHMMSSNN
+	- Type: [Bug|Feature|Enhancement|Task]
+	- Status: [Queued|Waiting for answers|Waiting on signoff|Waiting for testing|Started|Testing|Stalled|Can't reproduce|Moot|Canceled|Deferred|Done]
+	- Needs local test suite run?:
+	- Needs external testing:
+	- Priority [Feature|Enhancement] | Severity [Bug]: [Critical|High|Avg|Low]
+	- Opened:
+	- Opened by:
+	- Assigned to:
+	- Parent ID:
+	- Prereq IDs:
+	- Related IDs:
+	- Target OS:
+	- Test environment:
+	- Version and build:
+	- Requirements  [Feature]:
+		- Hierarchical bulleted list.
+	- Steps to reproduce [Bug]:
+		- …
+	- Incorrect behavior [Bug]:
+	- Expected behavior [Bug]:
+	- Reproduced [Bug]: [No, or when, where and how]
+	- Possible cause [Bug]:
+	- Actual cause [Bug]:
+		- …
+	- Estimated effort: [High|Avg|Low]
+	- Actual effort: [High|Avg|Low]
+	- Progress log:
+		- …
+	- Decisions:
+		- …
+	- Actual fix [Bug]:
+	- Branch:
+	- Commit:
+	- Test case: [Reason not applicable, or CI test case #]
+	- Acceptance signoff:
+	- Superseded by ID:
+	- Closed:
