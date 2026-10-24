@@ -78,31 +78,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Test case: `TestVersionLine` in `source/app/app_test.go`, and the date check in `smoke-cli.bash`.
 	- Branch: macci
 
-- govulncheck flags the pinned Go toolchain.
-	- ID: 2026102407051369
-	- Type: Bug
-	- Status: Waiting on automated testing
-	- Needs external testing: The hosted `ci.yml` run, Linux and macOS jobs, on the new `1.26.10` pin.
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261024-070513
-	- Opened by: JC
-	- Incorrect behavior [Bug]: govulncheck reports 5 standard library advisories against the `go1.26.5` toolchain pin, so the security gate fails on `dev`.
-	- Expected behavior [Bug]: govulncheck passes under the pinned toolchain.
-	- Reproduced [Bug]: 20261024, on `dev` at ce5dfa0.
-	- Possible cause [Bug]: The advisories are fixed in go1.26.10. Enterprise and vendor may pin the same toolchain.
-	- Actual cause [Bug]:
-		- The `go1.26.5` pin fell behind. By 20261024 govulncheck listed 10 stdlib advisories against it, in `net/http`, `net/textproto`, `crypto/tls`, `crypto/x509` and `html/template`. One needs go1.26.10, the rest go1.26.9.
-	- Estimated effort: Low
-	- Actual effort: Low
-	- Progress log:
-		- 20261024: Bumped the pin to `go1.26.10`, the newest 1.26 release, in `go.mod`, `ci.yml` and `release.yml`. govulncheck is clean, with 2 `golang.org/x/text` advisories it says the code never calls, filed as 2026102407094415.
-		- 20261024: Enterprise and vendor pin the same `go1.26.5`, in `source/go.mod`, `ci.yml` and `release.yml`. Left alone, since only floss is in this round. Enterprise builds floss through a `replace`, but its own `toolchain` line picks the compiler, so it needs its own bump.
-		- 20261024: The full run at 6bb9d3d passed govulncheck under `go1.26.10`: no vulnerabilities found. The hosted `ci.yml` run starts only after the merge push to `dev`, so the status waits on that.
-	- Actual fix [Bug]: Toolchain pin bumped to `go1.26.10`.
-		- Swept: every `1.26.x` pin outside `vendor/`, in `go.mod`, the workflows, `tool-versions.bash`, `.goreleaser.yaml`, `dependabot.yml` and the docs. Only the 3 changed files had one.
-	- Branch: round1024
-	- Test case: The govulncheck gate. It failed under `go1.26.5` and passes under `go1.26.10`.
-
 - A `null_ok: no` field with no default makes its table drop every row, silently.
 	- ID: 2026102407331876
 	- Type: Bug
@@ -180,6 +155,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- ID: 2026102407295324
 	- Type: Enhancement
 	- Status: Waiting on UAT
+	- Test environment: b23 runs `ngdb 1.0.0-beta.1 (3a91f1a)`, checked 20261024, which doesn't have this. Needs a dogfood of `dev` first.
 	- Needs hand testing: A look at both UIs, which now list the two tables after the user's own.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-072953
@@ -208,6 +184,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- ID: 2026102407295335
 	- Type: Enhancement
 	- Status: Waiting on UAT
+	- Test environment: b23 runs `ngdb 1.0.0-beta.1 (3a91f1a)`, checked 20261024, which doesn't have this. Needs a dogfood of `dev` first.
 		- For a look at the Decisions: an edit form keeps the idx in its input, with the value shown beside it.
 	- Needs hand testing: A look at both UIs with a few emoji symbols, in the usual terminal and font.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
@@ -243,6 +220,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- ID: 2026102408470113
 	- Type: Enhancement
 	- Status: Waiting on UAT
+	- Test environment: b23 runs `ngdb 1.0.0-beta.1 (3a91f1a)`, checked 20261024, which doesn't have this. Needs a dogfood of `dev` first.
 	- Needs hand testing: A look at both pickers with a few emoji symbols, in the usual terminal and font.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-084701
@@ -271,6 +249,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- ID: 2026102408470118
 	- Type: Enhancement
 	- Status: Waiting on UAT
+	- Test environment: b23 runs `ngdb 1.0.0-beta.1 (3a91f1a)`, checked 20261024, which doesn't have this. Needs a dogfood of `dev` first.
 	- Needs hand testing: A look at the `lookup_values` form's group picker in both UIs.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261024-084701
@@ -370,6 +349,32 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- `id` and `date_created` show read-only and are never written from a form. That likely means honoring `ui: readonly` first.
 	- Progress log:
 		- 20261024: Lists already honor `visible_list` on system fields. The example DDL's built-in `lookups` and `lookup_values` tables ask for `id` on forms, read-only.
+
+- govulncheck flags the pinned Go toolchain.
+	- ID: 2026102407051369
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-070513
+	- Opened by: JC
+	- Incorrect behavior [Bug]: govulncheck reports 5 standard library advisories against the `go1.26.5` toolchain pin, so the security gate fails on `dev`.
+	- Expected behavior [Bug]: govulncheck passes under the pinned toolchain.
+	- Reproduced [Bug]: 20261024, on `dev` at ce5dfa0.
+	- Possible cause [Bug]: The advisories are fixed in go1.26.10. Enterprise and vendor may pin the same toolchain.
+	- Actual cause [Bug]:
+		- The `go1.26.5` pin fell behind. By 20261024 govulncheck listed 10 stdlib advisories against it, in `net/http`, `net/textproto`, `crypto/tls`, `crypto/x509` and `html/template`. One needs go1.26.10, the rest go1.26.9.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: Bumped the pin to `go1.26.10`, the newest 1.26 release, in `go.mod`, `ci.yml` and `release.yml`. govulncheck is clean, with 2 `golang.org/x/text` advisories it says the code never calls, filed as 2026102407094415.
+		- 20261024: Enterprise and vendor pin the same `go1.26.5`, in `source/go.mod`, `ci.yml` and `release.yml`. Left alone, since only floss is in this round. Enterprise builds floss through a `replace`, but its own `toolchain` line picks the compiler, so it needs its own bump.
+		- 20261024: The full run at 6bb9d3d passed govulncheck under `go1.26.10`: no vulnerabilities found. The hosted `ci.yml` run starts only after the merge push to `dev`, so the status waits on that.
+		- 20261024: Hosted CI run 40111439236 on the merge to `dev` passed, Linux and macOS jobs.
+	- Actual fix [Bug]: Toolchain pin bumped to `go1.26.10`.
+		- Swept: every `1.26.x` pin outside `vendor/`, in `go.mod`, the workflows, `tool-versions.bash`, `.goreleaser.yaml`, `dependabot.yml` and the docs. Only the 3 changed files had one.
+	- Branch: round1024
+	- Test case: The govulncheck gate. It failed under `go1.26.5` and passes under `go1.26.10`.
+	- Closed: 20261024-092700
 
 - Off flags for the cicd.bash stages that install, publish, or rewrite tracked files.
 	- ID: 2026102407051370
