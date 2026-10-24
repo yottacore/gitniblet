@@ -410,6 +410,37 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Test case: The govulncheck gate. It listed both advisories at v0.21.0 and lists none at v0.41.0.
 	- Closed: 20261024-071232
 
+- Encrypt the schema, query, and script sidecar files.
+	- ID: 2026102408284572
+	- Type: Feature
+	- Status: Deferred
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-082845
+	- Opened by: JC
+	- Requirements [Feature]:
+		- Phase two of the old-format "Optional encrypted data in the transaction log" item, which closed with phase one.
+		- Also encrypt the DDL, `.queries.shcl` and `.lua` files, with flags to decrypt and re-encrypt them for editing.
+		- The `ddl:`, `named_queries:` and `config:` file-level encryption labels that design.md lists as deferred.
+	- Progress log:
+		- 20261024: Filed from the old item, which marked this part deferred.
+
+- More encryption key options.
+	- ID: 2026102408284578
+	- Type: Feature
+	- Status: Deferred
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-082845
+	- Opened by: JC
+	- Related IDs: 2026102408284572
+	- Requirements [Feature]:
+		- From the old-format "Optional encrypted data in the transaction log" item, which marked these as future.
+		- Multiple keys by role or team.
+		- Public and private keys for read-only roles.
+		- Keys made from a passphrase.
+		- Re-encrypt existing data under a new key.
+	- Progress log:
+		- 20261024: Filed from the old item. Today there's one key per database.
+
 ## Old format
 
 ### Bugs
@@ -419,24 +450,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - 🛠️ Figure a clean and consistent way to show emojis or other short symbolic text in TUI, for lookup items, rather than description.
 	- Design settled: built-in `lookups`/`lookup_values` tables with a `symbol` column, `lookup_in_lists`/`lookup_in_forms: symbol|title|both` display enums, int `idx` reference keys, seed rows in the schema. Spec in example.shcl, decisions in design.md Lookups section. The syntax migration it was waiting on is done; idx assignment, the seed engine and the display enums are still to do.
 	- 20261024: Split into 2026102407295324 (tables and idx), 2026102407295329 (seed), 2026102407295335 (display) and 2026102407295340 (picker and write check). This item closes with the last of them.
-
-- 🛠️ Need to research, decide, and document how to separate different concerns in the enterprise repo (and identify what the concerns even are), e.g.:
-	- Customer-facing enterprise product
-	- Our owned side used to (possibly) generate license keys, process payment, check subscription status, etc. This would basically be a completely separate company presence, ecommerce, and validation system.
-		- Basic requirements:
-			- 🔘 Minimal web dependencies. (To minimize constant cascading updates pulling in potentially hundreds of unknown/untrusted dependencies, near-constant churn with breaking and deprecating third-party updates; and also the growing threat of "supply-chain attack" risk.)
-	- Decisions captured in the enterprise repo (`research-enterprise-concerns.md`); implementation is phased (see the folder-hierarchy item below).
-
-- 🛠️ Optional encrypted data in the transaction log. The local SQLite copy is always decrypted.
-	- Reason: keep the log unreadable to the git host, or to anyone who gets the repo.
-	- Note: some columns stay clear so git can still merge and replay (table and field names, row id, user, host, counts). Only the field values are private.
-	- Done: phase one encrypts field values. A field with no key reads back empty and warns, so ciphertext never reaches the view. Full design is in design.md.
-	- ✅ Key lives outside the repo, one per database. Users share it out of band.
-	- ✅ `--init --encrypt=on` sets up the key and turns encryption on. It can be toggled per host afterward.
-	- ✅ With encrypted data present but no key, the user is warned and can still read and write the clear fields.
-	- ✅ DDL `encryption: always|never|auto` at the database, table, and field level. `always` and `never` lock the levels below; `auto` defers to the local preference.
-	- 🔘 Deferred (phase two): also encrypt the DDL, query, and script sidecar files, with flags to decrypt and re-encrypt them for editing.
-	- 🔘 Future: multiple keys by role or team; public and private keys for read-only roles; passphrase-generated keys; re-encrypting existing data with a new key.
 
 ### Done
 
@@ -486,6 +499,27 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Item 12: for a database kept in the same folder as its schema, sync committed and pushed the derived SQLite file, and would have pushed an encryption key placed beside it. Both are now ignored in the log directory.
 
 #### Done - Features and enhancements
+
+- ✅ Need to research, decide, and document how to separate different concerns in the enterprise repo (and identify what the concerns even are), e.g.:
+	- Customer-facing enterprise product
+	- Our owned side used to (possibly) generate license keys, process payment, check subscription status, etc. This would basically be a completely separate company presence, ecommerce, and validation system.
+		- Basic requirements:
+			- ✅ Minimal web dependencies. (To minimize constant cascading updates pulling in potentially hundreds of unknown/untrusted dependencies, near-constant churn with breaking and deprecating third-party updates; and also the growing threat of "supply-chain attack" risk.)
+	- Decisions captured in the enterprise repo (`research-enterprise-concerns.md`); implementation is phased (see the folder-hierarchy item below).
+	- 20261024: Closed. Every decision in `research-enterprise-concerns.md` is answered, and the vendor repo's design.md has the rule under "Dependencies". The vendor module requires nothing outside the standard library so far.
+	- 20261024: What's left is the vendor repo's live wiring, the Postgres handle and the payment account, which its design.md defers until the endpoint is hosted.
+
+- ✅ Optional encrypted data in the transaction log. The local SQLite copy is always decrypted.
+	- Reason: keep the log unreadable to the git host, or to anyone who gets the repo.
+	- Note: some columns stay clear so git can still merge and replay (table and field names, row id, user, host, counts). Only the field values are private.
+	- Done: phase one encrypts field values. A field with no key reads back empty and warns, so ciphertext never reaches the view. Full design is in design.md.
+	- ✅ Key lives outside the repo, one per database. Users share it out of band.
+	- ✅ `--init --encrypt=on` sets up the key and turns encryption on. It can be toggled per host afterward.
+	- ✅ With encrypted data present but no key, the user is warned and can still read and write the clear fields.
+	- ✅ DDL `encryption: always|never|auto` at the database, table, and field level. `always` and `never` lock the levels below; `auto` defers to the local preference.
+	- ✋ Deferred (phase two): also encrypt the DDL, query, and script sidecar files, with flags to decrypt and re-encrypt them for editing. Moved to 2026102408284572.
+	- ✋ Future: multiple keys by role or team; public and private keys for read-only roles; passphrase-generated keys; re-encrypting existing data with a new key. Moved to 2026102408284578.
+	- 20261024: Closed with phase one done. The 2 open parts are their own Deferred items now.
 
 - ✅ Figure a clean and consistent way to hide list columns (or fields in general).
 	- Design settled: `visible_form`/`visible_list` per field (spec in example.shcl, decisions in design.md UI section). The syntax migration it was waiting on is done; the display work itself is still to do.
