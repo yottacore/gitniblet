@@ -4,6 +4,7 @@
 package schema
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -32,6 +33,7 @@ type lookupLabel struct{ symbol, title string }
 type LookupShow struct {
 	specs  map[string]lookupSpec
 	labels map[string]map[string]lookupLabel // group idx -> value idx -> label
+	picks  map[string][]string               // group idx -> active value idxs, in sort order
 
 	// SymbolOK, when set, says whether a symbol can be drawn at all. The TUI
 	// sets it for glyphs the terminal can't show, which then fall back to the
@@ -83,7 +85,7 @@ func modeOr(mode, dflt string) string {
 // them. A table with no such field costs no query.
 func (c *Catalog) Lookups(api *crud.API, table string) (*LookupShow, error) {
 	specs := c.lookups[table]
-	show := &LookupShow{specs: specs, labels: map[string]map[string]lookupLabel{}}
+	show := &LookupShow{specs: specs, labels: map[string]map[string]lookupLabel{}, picks: map[string][]string{}}
 	if len(specs) == 0 {
 		return show, nil
 	}
@@ -95,8 +97,15 @@ func (c *Catalog) Lookups(api *crud.API, table string) (*LookupShow, error) {
 			groups = append(groups, spec.group)
 		}
 	}
-	rows, err := api.Query(`SELECT "idx", "lookups_idx", "symbol", "title" FROM "lookup_values"
-		WHERE "lookups_idx" IN (?`+strings.Repeat(",?", len(groups)-1)+`)`, groups...)
+	order := `"idx"`
+	// a user schema that restates lookup_values may leave sort out
+	if slices.Contains(c.Fields["lookup_values"], "sort") {
+		order = `"sort" IS NULL, "sort", "idx"`
+	}
+	rows, err := api.Query(`SELECT "idx", "lookups_idx", "symbol", "title",
+			"is_active"<>0 AND "is_deleted"=0 AS "live" FROM "lookup_values"
+		WHERE "lookups_idx" IN (?`+strings.Repeat(",?", len(groups)-1)+`)
+		ORDER BY `+order, groups...)
 	if err != nil {
 		return nil, err
 	}
@@ -106,6 +115,9 @@ func (c *Catalog) Lookups(api *crud.API, table string) (*LookupShow, error) {
 			show.labels[group] = map[string]lookupLabel{}
 		}
 		show.labels[group][row["idx"]] = lookupLabel{symbol: row["symbol"], title: row["title"]}
+		if row["live"] == "1" {
+			show.picks[group] = append(show.picks[group], row["idx"])
+		}
 	}
 	return show, nil
 }
@@ -160,4 +172,33 @@ func (l *LookupShow) show(field, val, mode string) string {
 		return label.title
 	}
 	return symbol + " " + label.title
+}
+
+// LookupChoice is one entry in a lookup field's picker.
+type LookupChoice struct {
+	Value, Label string
+	Selected     bool
+}
+
+// Choices is what a form offers for a lookup field: none, then the group's
+// active values in sort order, labeled as Form shows them. A value the row
+// already holds that isn't among them is kept, second, so a save that leaves
+// the field alone doesn't drop it. Nil for anything that isn't a lookup field.
+func (l *LookupShow) Choices(field, current string) []LookupChoice {
+	if !l.IsLookup(field) {
+		return nil
+	}
+	spec := l.specs[field]
+	picks := l.picks[spec.group]
+	held := strings.TrimSpace(current)
+	choices := make([]LookupChoice, 0, len(picks)+2)
+	choices = append(choices, LookupChoice{Selected: held == ""})
+	if held != "" && !slices.Contains(picks, held) {
+		choices = append(choices, LookupChoice{Value: current, Label: l.Form(field, current), Selected: true})
+		held = ""
+	}
+	for _, idx := range picks {
+		choices = append(choices, LookupChoice{Value: idx, Label: l.Form(field, idx), Selected: idx == held && held != ""})
+	}
+	return choices
 }

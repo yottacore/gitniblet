@@ -360,14 +360,23 @@ func (a *App) editFormThen(table string, row map[string]string, back tview.Primi
 	form := tview.NewForm()
 	fields := a.cat.FormFields(table)
 	show := a.lookups(table)
-	for _, field := range fields {
-		label := field
-		if show.IsLookup(field) && row[field] != "" {
-			// The stored idx stays editable until the picker comes; the label
-			// says what it stands for.
-			label += " (" + show.Form(field, row[field]) + ")"
+	picks := map[int][]schema.LookupChoice{} // form item -> its picker's values
+	for i, field := range fields {
+		choices := show.Choices(field, row[field])
+		if choices == nil {
+			form.AddInputField(field, row[field], 0, nil, nil)
+			continue
 		}
-		form.AddInputField(label, row[field], 0, nil, nil)
+		labels := make([]string, len(choices))
+		current := 0
+		for c, choice := range choices {
+			labels[c] = choice.Label
+			if choice.Selected {
+				current = c
+			}
+		}
+		form.AddDropDown(field, labels, current, nil)
+		picks[i] = choices
 	}
 	title := " new " + table + " "
 	if row != nil {
@@ -376,7 +385,16 @@ func (a *App) editFormThen(table string, row map[string]string, back tview.Primi
 	form.AddButton("Save", func() {
 		vals := map[string]string{}
 		for i, field := range fields {
-			val := form.GetFormItem(i).(*tview.InputField).GetText()
+			var val string
+			switch item := form.GetFormItem(i).(type) {
+			case *tview.DropDown:
+				picked, _ := item.GetCurrentOption()
+				if picked >= 0 {
+					val = picks[i][picked].Value
+				}
+			case *tview.InputField:
+				val = item.GetText()
+			}
 			if row == nil || row[field] != val {
 				vals[field] = val
 			}

@@ -277,6 +277,34 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: round1024
 	- Test case: `TestLookupShow` in `source/internal/core/schema/lookupshow_test.go`, `TestLookupsShowInTUI` and `TestLookupsFallBackToTitleInTUI` in `source/internal/tui/lookups_test.go`, and `TestLookupsShowInWeb` in `source/internal/web/lookups_test.go`.
 
+- Edit a `list_type: lookup` field through a picker, in the TUI and web.
+	- ID: 2026102408470113
+	- Type: Enhancement
+	- Status: Waiting on UAT
+	- Needs hand testing: A look at both pickers with a few emoji symbols, in the usual terminal and font.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-084701
+	- Opened by: JC
+	- Parent ID: 2026102407295340
+	- Prereq IDs: 2026102408470107
+	- Requirements [Feature]:
+		- The edit form offers the group's active values, in sort order, shown per `lookup_in_forms`.
+		- A row that holds an inactive or deleted value keeps it until another is picked.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: Edit forms in both UIs pick a lookup field from a list: none first, then the group's active values by `sort`, then idx, labeled per `lookup_in_forms`. Values with no sort come last. The TUI's labels fall back to the title for a symbol the terminal can't draw, as lists do.
+		- A value the row holds that isn't offered, such as an inactive or deleted one, or one from an older build, is listed second and stays picked. A save that leaves it alone doesn't write it.
+		- A user schema that restates `lookup_values` with no `sort` field orders by idx.
+		- syntax.md's lookup line says what the form offers.
+		- 20261024: `TestLookupsShowInTUI` waited for the label `status (🔘`, and now checks the picker shows the value. `TestLookupsShowInWeb` checked for `name="status" value="7"` and a `<span>` label, and now checks for `<option value="7" selected>`. Both were the stand-in until this picker.
+		- Verified: the new and changed tests fail with the picker turned off and pass with it, 3 runs under `-race` too. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass.
+		- Swept: every edit form (the TUI's table grid and view blocks both go through `editFormThen`, and the web's through `form.html`). View form blocks only display.
+	- Decisions:
+		- The none entry stays on every form, so a field can be cleared. A `null_ok: no` field then gets the crud refusal on save.
+	- Branch: round1024
+	- Test case: `TestLookupChoices` in `source/internal/core/schema/lookupshow_test.go`, `TestLookupPickerInTUI` and the updated `TestLookupsShowInTUI` in `source/internal/tui/lookups_test.go`, and `TestLookupPickerInWeb` and the updated `TestLookupsShowInWeb` in `source/internal/web/lookups_test.go`.
+
 - Refuse a create whose unique value is already taken in the view, before it's logged.
 	- ID: 2026102408084809
 	- Type: Enhancement
@@ -306,20 +334,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Estimated effort: Avg
 	- Progress log:
 		- 20261024: Split into 2026102408470107 (write check), 2026102408470113 (lookup picker) and 2026102408470118 (`literal` and `sql` pickers). This item closes with the last of them.
-
-- Edit a `list_type: lookup` field through a picker, in the TUI and web.
-	- ID: 2026102408470113
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-084701
-	- Opened by: JC
-	- Parent ID: 2026102407295340
-	- Prereq IDs: 2026102408470107
-	- Requirements [Feature]:
-		- The edit form offers the group's active values, in sort order, shown per `lookup_in_forms`.
-		- A row that holds an inactive or deleted value keeps it until another is picked.
-	- Estimated effort: Avg
 
 - Pickers for `list_type: literal` and `list_type: sql` fields.
 	- ID: 2026102408470118

@@ -44,6 +44,7 @@ func runLookups(t *testing.T, charset string) (*simScreen, *App, func(string), c
 	for _, row := range []map[string]string{
 		{"idx": "1", "lookups_idx": "1", "title": "Open", "symbol": "🔘"},
 		{"idx": "2", "lookups_idx": "2", "title": "Big", "symbol": "B"},
+		{"idx": "3", "lookups_idx": "1", "title": "Shut", "sort": "0"},
 	} {
 		if _, err := api.Create("lookup_values", row); err != nil {
 			t.Fatal(err)
@@ -111,7 +112,7 @@ func runeIndex(line []rune, sub string) int {
 }
 
 // A lookup field lists as its symbol, the double-width symbol keeps the next
-// column in line, and the edit form says what the stored idx stands for.
+// column in line, and the edit form's picker shows the stored value.
 func TestLookupsShowInTUI(t *testing.T) {
 	screen, a, waitFor, done := runLookups(t, "UTF-8")
 	header, row := lineWith(screen, "status"), lineWith(screen, "t1")
@@ -123,7 +124,10 @@ func TestLookupsShowInTUI(t *testing.T) {
 	}
 
 	screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone) // edit t1
-	waitFor("status (🔘")
+	waitFor(" edit tasks")
+	if line := string(lineWith(screen, "║ status")); !strings.Contains(line, "🔘") || !strings.Contains(line, "Open") {
+		t.Fatalf("the picker should show the stored value:\n%s", screenText(screen))
+	}
 	// Saving after a label change must still read every field by position.
 	screen.InjectKey(tcell.KeyRune, 'x', tcell.ModNone)
 	for range 3 {
@@ -131,17 +135,44 @@ func TestLookupsShowInTUI(t *testing.T) {
 	}
 	screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone) // Save
 	// The input shows t1x before the save runs, so wait for the form to go.
-	for deadline := time.Now().Add(3 * time.Second); strings.Contains(screenText(screen), "status (🔘"); {
+	waitFormGone(t, screen, a)
+	waitFor("t1x")
+	rows, err := a.api.Query(`SELECT name, status, size FROM tasks`)
+	if err != nil || len(rows) != 1 || rows[0]["name"] != "t1x" || rows[0]["status"] != "1" || rows[0]["size"] != "2" {
+		t.Fatalf("save after the edit form: %v %v", rows, err)
+	}
+	quitLookups(t, screen, a, done)
+}
+
+func waitFormGone(t *testing.T, screen *simScreen, a *App) {
+	t.Helper()
+	for deadline := time.Now().Add(3 * time.Second); strings.Contains(screenText(screen), " edit tasks"); {
 		if time.Now().After(deadline) {
 			a.Stop()
 			t.Fatalf("edit form never closed:\n%s", screenText(screen))
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	waitFor("t1x")
-	rows, err := a.api.Query(`SELECT name, status, size FROM tasks`)
-	if err != nil || len(rows) != 1 || rows[0]["name"] != "t1x" || rows[0]["status"] != "1" || rows[0]["size"] != "2" {
-		t.Fatalf("save after the edit form: %v %v", rows, err)
+}
+
+// Picking another value in the edit form saves its idx.
+func TestLookupPickerInTUI(t *testing.T) {
+	screen, a, waitFor, done := runLookups(t, "UTF-8")
+	screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone) // edit t1
+	waitFor(" edit tasks")
+	screen.InjectKey(tcell.KeyTab, 0, tcell.ModNone)   // status
+	screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone) // open the picker
+	waitFor("Shut")
+	screen.InjectKey(tcell.KeyUp, 0, tcell.ModNone) // Shut sorts above Open
+	screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone)
+	for range 2 {
+		screen.InjectKey(tcell.KeyTab, 0, tcell.ModNone)
+	}
+	screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone) // Save
+	waitFormGone(t, screen, a)
+	rows, err := a.api.Query(`SELECT name, status FROM tasks`)
+	if err != nil || len(rows) != 1 || rows[0]["name"] != "t1" || rows[0]["status"] != "3" {
+		t.Fatalf("after picking Shut: %v %v", rows, err)
 	}
 	quitLookups(t, screen, a, done)
 }

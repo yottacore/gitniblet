@@ -153,3 +153,55 @@ func TestLookupShow(t *testing.T) {
 		t.Errorf("a table with no lookup fields: %v, %q", err, plain.List("title", "Status"))
 	}
 }
+
+// A form picks from the group's active values in sort order, and keeps a
+// retired value the row already holds.
+func TestLookupChoices(t *testing.T) {
+	api, cat, ids := lookupShowSetup(t)
+	if _, err := api.Create("lookup_values", map[string]string{"idx": "5", "lookups_idx": "1", "title": "First", "sort": "1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := api.SetField("lookup_values", ids["Later"], "sort", "2.5"); err != nil {
+		t.Fatal(err)
+	}
+	show, err := cat.Lookups(api, "tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	picked := func(choices []LookupChoice) (vals []string, sel string) {
+		sel = "none"
+		for _, choice := range choices {
+			vals = append(vals, choice.Value+"="+choice.Label)
+			if choice.Selected {
+				sel = choice.Value
+			}
+		}
+		return vals, sel
+	}
+	for _, tc := range []struct{ field, cur, want, sel string }{
+		{"status", "", "=|5=First|3=Later|1=🔘 Open", ""},
+		{"status", "1", "=|5=First|3=Later|1=🔘 Open", "1"},
+		{"status", " 3 ", "=|5=First|3=Later|1=🔘 Open", "3"},
+		{"status", "2", "=|2=✅ Closed|5=First|3=Later|1=🔘 Open", "2"}, // inactive, held
+		{"status", "99", "=|99=99|5=First|3=Later|1=🔘 Open", "99"},
+		{"size", "4", "=|4=B", "4"},
+	} {
+		vals, sel := picked(show.Choices(tc.field, tc.cur))
+		if got := strings.Join(vals, "|"); got != tc.want || sel != tc.sel {
+			t.Errorf("Choices(%s, %q) = %s selecting %q, want %s selecting %q", tc.field, tc.cur, got, sel, tc.want, tc.sel)
+		}
+	}
+	if show.Choices("name", "1") != nil || show.Choices("broken", "1") != nil {
+		t.Error("only lookup fields get choices")
+	}
+
+	if err := api.MarkDelete("lookup_values", ids["Later"]); err != nil {
+		t.Fatal(err)
+	}
+	if show, err = cat.Lookups(api, "tasks"); err != nil {
+		t.Fatal(err)
+	}
+	if vals, _ := picked(show.Choices("status", "")); strings.Join(vals, "|") != "=|5=First|1=🔘 Open" {
+		t.Errorf("a deleted value is still offered: %v", vals)
+	}
+}
