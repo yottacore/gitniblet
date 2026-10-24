@@ -97,35 +97,11 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Progress log:
 		- 20261024: Bumped the pin to `go1.26.10`, the newest 1.26 release, in `go.mod`, `ci.yml` and `release.yml`. govulncheck is clean, with 2 `golang.org/x/text` advisories it says the code never calls, filed as 2026102407094415.
 		- 20261024: Enterprise and vendor pin the same `go1.26.5`, in `source/go.mod`, `ci.yml` and `release.yml`. Left alone, since only floss is in this round. Enterprise builds floss through a `replace`, but its own `toolchain` line picks the compiler, so it needs its own bump.
+		- 20261024: The full run at 6bb9d3d passed govulncheck under `go1.26.10`: no vulnerabilities found. The hosted `ci.yml` run starts only after the merge push to `dev`, so the status waits on that.
 	- Actual fix [Bug]: Toolchain pin bumped to `go1.26.10`.
 		- Swept: every `1.26.x` pin outside `vendor/`, in `go.mod`, the workflows, `tool-versions.bash`, `.goreleaser.yaml`, `dependabot.yml` and the docs. Only the 3 changed files had one.
 	- Branch: round1024
 	- Test case: The govulncheck gate. It failed under `go1.26.5` and passes under `go1.26.10`.
-
-- Off flags for the cicd.bash stages that install, publish, or rewrite tracked files.
-	- ID: 2026102407051370
-	- Type: Task
-	- Status: Waiting on automated testing
-	- Needs local test suite run?: One full run with the new flags, `cicd/cicd.bash -q --no-install --no-hooks --no-publish --no-format`, with the demo either off by `--no-demo` or run with `assets/demo.gif` copied aside.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-070513
-	- Opened by: JC
-	- Requirements [Feature]:
-		- A full run can turn off, by its own flag, each stage that installs, commits, pushes, or rewrites a tracked file. Lint and test stages need none.
-		- Stages with no off flag now: dogfood install, local hooks, and backup and publish.
-		- The demo stage rewrites `assets/demo.gif`, and only `--quick` turns it off, along with every other slow stage. It gets its own flag.
-		- The lint stage's `gofmt -w` rewrites unformatted Go files.
-	- Estimated effort: Avg
-	- Actual effort: Low
-	- Progress log:
-		- 2026-10-24: Added `--no-install`, `--no-hooks`, `--no-publish`, `--no-demo` and `--no-format`. Each skips only its own stage, and the skip shows in the stage header and the preflight list.
-		- `--no-format` runs `gofmt -l` and fails on any unformatted file, rather than rewriting it.
-		- With `--no-publish`, an interactive run no longer asks for a commit message.
-		- design.md's CI/CD section lists the flags.
-		- Verified: each flag alone, all five together, and none. 9 of 11 cases fail on the old script, and all pass on the new one.
-		- Swept: enterprise `cicd.bash` has none of these stages, and vendor has no `cicd.bash`. Fuzz can still write a crash input into `testdata/`, but it's a test stage, so it gets no flag.
-	- Branch: round1024
-	- Test case: None in the repo, since it needs a stand-in for every stage. The check is kept outside the repo.
 
 - A `null_ok: no` field with no default makes its table drop every row, silently.
 	- ID: 2026102407331876
@@ -394,6 +370,32 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- `id` and `date_created` show read-only and are never written from a form. That likely means honoring `ui: readonly` first.
 	- Progress log:
 		- 20261024: Lists already honor `visible_list` on system fields. The example DDL's built-in `lookups` and `lookup_values` tables ask for `id` on forms, read-only.
+
+- Off flags for the cicd.bash stages that install, publish, or rewrite tracked files.
+	- ID: 2026102407051370
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-070513
+	- Opened by: JC
+	- Requirements [Feature]:
+		- A full run can turn off, by its own flag, each stage that installs, commits, pushes, or rewrites a tracked file. Lint and test stages need none.
+		- Stages with no off flag now: dogfood install, local hooks, and backup and publish.
+		- The demo stage rewrites `assets/demo.gif`, and only `--quick` turns it off, along with every other slow stage. It gets its own flag.
+		- The lint stage's `gofmt -w` rewrites unformatted Go files.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 2026-10-24: Added `--no-install`, `--no-hooks`, `--no-publish`, `--no-demo` and `--no-format`. Each skips only its own stage, and the skip shows in the stage header and the preflight list.
+		- `--no-format` runs `gofmt -l` and fails on any unformatted file, rather than rewriting it.
+		- With `--no-publish`, an interactive run no longer asks for a commit message.
+		- design.md's CI/CD section lists the flags.
+		- Verified: each flag alone, all five together, and none. 9 of 11 cases fail on the old script, and all pass on the new one.
+		- Swept: enterprise `cicd.bash` has none of these stages, and vendor has no `cicd.bash`. Fuzz can still write a crash input into `testdata/`, but it's a test stage, so it gets no flag.
+		- 2026-10-24: Verified: one full run at 6bb9d3d with `--no-install --no-hooks --no-publish --no-demo --no-format`. Every other stage passed, the 5 off stages printed their skip headers, and `git status` was clean after.
+	- Branch: round1024
+	- Test case: None in the repo, since it needs a stand-in for every stage. The check is kept outside the repo.
+	- Closed: 20261024-091700
 
 - Refuse a lookup value that isn't in the field's group, on write.
 	- ID: 2026102408470107
