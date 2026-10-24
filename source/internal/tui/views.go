@@ -234,7 +234,7 @@ func (a *App) loadBlock(panel *blockPanel) {
 		if len(rows) > 0 {
 			row = rows[0]
 		}
-		for i, field := range a.cat.Fields[panel.b.Table] {
+		for i, field := range a.cat.FormFields(panel.b.Table) {
 			panel.tbl.SetCell(i, 0, tview.NewTableCell(field).SetAttributes(tcell.AttrBold))
 			panel.tbl.SetCell(i, 1, tview.NewTableCell(row[field]))
 		}

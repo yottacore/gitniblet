@@ -157,6 +157,9 @@ type Catalog struct {
 	DefaultView string                  // view the UIs open on start; "" only when no views resolved
 	Queries     []ddl.NamedQuery        // predefined queries; front-ends copy Client.Queries in
 	Warnings    []string                // view-resolution problems worth surfacing
+
+	fieldUI map[string]map[string]ddl.FieldUI // per table, DDL fields and system-field ui: entries
+	sysCols map[string]map[string]bool        // opt-in system columns the table really has
 }
 
 // QueriesFor lists the active queries offered on a view, dropdown order.
@@ -189,6 +192,8 @@ func NewCatalog(api *crud.API, schemas ...*ddl.Schema) (*Catalog, error) {
 		Fields:     map[string][]string{},
 		HasDeleted: map[string]bool{},
 		Features:   map[string]ddl.Features{},
+		fieldUI:    map[string]map[string]ddl.FieldUI{},
+		sysCols:    map[string]map[string]bool{},
 	}
 	rows, err := api.Query(
 		`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`)
@@ -210,10 +215,16 @@ func NewCatalog(api *crud.API, schemas ...*ddl.Schema) (*Catalog, error) {
 			}
 			names := make([]string, len(table.Fields))
 			fieldAcc := map[string]ddl.Access{}
+			ui := map[string]ddl.FieldUI{}
+			for name, sysUI := range table.SystemUI {
+				ui[name] = sysUI
+			}
 			for i, field := range table.Fields {
 				names[i] = field.Name
 				fieldAcc[field.Name] = field.Access
+				ui[field.Name] = field.UI
 			}
+			c.fieldUI[table.Name] = ui
 			c.Fields[table.Name] = names
 			c.Features[table.Name] = table.Features
 			tableAccess[table.Name] = table.Access
@@ -243,7 +254,15 @@ func NewCatalog(api *crud.API, schemas ...*ddl.Schema) (*Catalog, error) {
 			switch r["name"] {
 			case "is_deleted":
 				c.HasDeleted[table] = true
-			case "id", "is_active", "date_created":
+			case "is_active", "date_created":
+				if fieldOf(c.Fields[table], r["name"]) {
+					break // system_fields: no table declaring its own
+				}
+				if c.sysCols[table] == nil {
+					c.sysCols[table] = map[string]bool{}
+				}
+				c.sysCols[table][r["name"]] = true
+			case "id":
 			default:
 				plain = append(plain, r["name"])
 			}
@@ -270,9 +289,49 @@ func (c *Catalog) Has(table string) bool {
 	return false
 }
 
-// ColumnsFor is the grid column set: id first, then the editable fields.
+// ColumnsFor is the grid column set: id first, then the editable fields,
+// then any system column the DDL opts in. visible_list drops a column from
+// lists only (design.md UI); the data stays readable everywhere else.
 func (c *Catalog) ColumnsFor(table string) []string {
-	return append([]string{"id"}, c.Fields[table]...)
+	ui := c.fieldUI[table]
+	cols := make([]string, 0, len(c.Fields[table])+3)
+	if shown(ui["id"].VisibleList, true) {
+		cols = append(cols, "id")
+	}
+	for _, field := range c.Fields[table] {
+		if shown(ui[field].VisibleList, true) {
+			cols = append(cols, field)
+		}
+	}
+	for _, field := range []string{"is_active", "date_created"} {
+		if c.sysCols[table][field] && shown(ui[field].VisibleList, false) {
+			cols = append(cols, field)
+		}
+	}
+	if len(cols) == 0 { // a list with nothing in it can't pick a row
+		return []string{"id"}
+	}
+	return cols
+}
+
+// FormFields is the editable fields minus any the DDL hides from forms. A
+// hidden field keeps its value on save, since only shown fields are written.
+func (c *Catalog) FormFields(table string) []string {
+	ui := c.fieldUI[table]
+	fields := make([]string, 0, len(c.Fields[table]))
+	for _, field := range c.Fields[table] {
+		if shown(ui[field].VisibleForm, true) {
+			fields = append(fields, field)
+		}
+	}
+	return fields
+}
+
+func shown(visible *bool, dflt bool) bool {
+	if visible == nil {
+		return dflt
+	}
+	return *visible
 }
 
 // LiveRows loads a table's visible rows; soft-deleted ones are hidden when

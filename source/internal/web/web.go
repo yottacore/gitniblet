@@ -254,7 +254,7 @@ func (s *server) form(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data := map[string]any{
-		"Table": table, "ID": id, "Fields": s.cat.Fields[table], "Row": row,
+		"Table": table, "ID": id, "Fields": s.cat.FormFields(table), "Row": row,
 	}
 	// the row's opt-in extras only exist once the row does
 	if id != "" {

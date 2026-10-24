@@ -90,11 +90,24 @@ A `table:` has a name and a `fields:` block, plus optional `uniques:`, `indexes:
 Each `field:` has a name and, at minimum, a `type:`. Other per-field keys the current build honors:
 
 - `type:` - see below.
+
 - `aliases:` - former names, so a renamed field's history still replays (see [Aliases and renames](#aliases-and-renames)).
+
 - `access:` - per-field read/write rules (see [Access control](#access-control)).
+
 - `code:` - `before_update` / `after_update` trigger hooks (see [Triggers](#triggers-and-code-lua)).
 
-Additional keys appear in `project/example.shcl` (`ui:`, `validation:`, `special:`, `defaultval:`, widgets, formats). These parse but their runtime behavior is still being built out; treat them as forward-looking until a release note says otherwise.
+- `ui:` -> `visible_list:` and `visible_form:` - set either to `no` to keep the field out of lists or out of forms, in both the TUI and the web UI. Both default to `yes`. This is presentation only. The field can still be read and written through the CLI, a query, or SQL, and a form that hides it leaves its value alone on save. Use `access:` to actually restrict it.
+
+	```
+				field: pin
+					type: string
+					ui:
+						visible_form: no
+						visible_list: no
+	```
+
+Additional keys appear in `project/example.shcl` (the rest of `ui:`, `validation:`, `special:`, `defaultval:`, widgets, formats). These parse but their runtime behavior is still being built out; treat them as forward-looking until a release note says otherwise.
 
 ### Field types
 
@@ -117,9 +130,14 @@ Anything else stores as text with a warning, so a typo never breaks the load.
 Every table automatically gets these; you do not declare them:
 
 - `id` - the row's primary key, a GUID. Stored as raw bytes; reads render it as 22 characters of base64url (that is the form you pass back to `get`/`update`), and the longer 32-character hex form is also accepted as input. First column, unique, indexed.
+
 - `is_active` - defaults to on.
+
 - `date_created` - set at insert.
+
 - `is_deleted` - hidden; set by a soft-delete (`markdelete`), and folded into every unique index so a deleted row does not block re-creating its natural key.
+
+A `field:` entry naming `id`, `is_active` or `date_created` may carry a `ui:` block. Anything else on it warns and is ignored. Lists show `id` unless it says `visible_list: no`, and show `is_active` and `date_created` only when it says `visible_list: yes`. A list that would end up with no columns still shows `id`.
 
 A table can opt out of these with `system_fields: no` (used internally by the audit trail); such a table gets exactly the columns you declare.
 

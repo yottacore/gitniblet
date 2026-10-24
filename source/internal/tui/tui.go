@@ -314,7 +314,7 @@ func (a *App) editFormThen(table string, row map[string]string, back tview.Primi
 		return
 	}
 	form := tview.NewForm()
-	fields := a.cat.Fields[table]
+	fields := a.cat.FormFields(table)
 	for _, field := range fields {
 		form.AddInputField(field, row[field], 0, nil, nil)
 	}

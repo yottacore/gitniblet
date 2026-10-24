@@ -160,6 +160,19 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Progress log:
 		- 20261013: Go builds for plain x86-64 by default (`GOAMD64=v1`), and nothing here sets it, so this may already hold. Pin `GOAMD64=v1` in the release build so a stray environment can't raise it. The standard library already picks faster code at run time.
 
+- Show system fields on forms when their `ui:` opts them in.
+	- ID: 2026102407263968
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-072639
+	- Opened by: JC
+	- Requirements [Feature]:
+		- `visible_form: yes` on `id`, `is_active` or `date_created` shows that field on the edit form and in `form` blocks, in both UIs.
+		- `id` and `date_created` show read-only and are never written from a form. That likely means honoring `ui: readonly` first.
+	- Progress log:
+		- 20261024: Lists already honor `visible_list` on system fields. The example DDL's built-in `lookups` and `lookup_values` tables ask for `id` on forms, read-only.
+
 - govulncheck lists 2 `golang.org/x/text` advisories in a required module.
 	- ID: 2026102407094415
 	- Type: Bug
@@ -191,9 +204,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 ### Bugs
 
 ### Features and enhancements
-
-- 🛠️ Figure a clean and consistent way to hide list columns (or fields in general).
-	- Design settled: `visible_form`/`visible_list` per field (spec in example.shcl, decisions in design.md UI section). The syntax migration it was waiting on is done; the display work itself is still to do.
 
 - 🛠️ Figure a clean and consistent way to show emojis or other short symbolic text in TUI, for lookup items, rather than description.
 	- Design settled: built-in `lookups`/`lookup_values` tables with a `symbol` column, `lookup_in_lists`/`lookup_in_forms: symbol|title|both` display enums, int `idx` reference keys, seed rows in the schema. Spec in example.shcl, decisions in design.md Lookups section. The syntax migration it was waiting on is done; idx assignment, the seed engine and the display enums are still to do.
@@ -264,6 +274,17 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Item 12: for a database kept in the same folder as its schema, sync committed and pushed the derived SQLite file, and would have pushed an encryption key placed beside it. Both are now ignored in the log directory.
 
 #### Done - Features and enhancements
+
+- ✅ Figure a clean and consistent way to hide list columns (or fields in general).
+	- Design settled: `visible_form`/`visible_list` per field (spec in example.shcl, decisions in design.md UI section). The syntax migration it was waiting on is done; the display work itself is still to do.
+	- Status: Done
+	- Done: `visible_list: no` keeps a field out of table grids and view list blocks, and `visible_form: no` keeps it out of edit forms and form blocks, in both the TUI and the web UI. Saving a form leaves a field it didn't show alone. Hidden is presentation only, so the CLI, queries and a posted value still reach it.
+	- Done: `id` can be hidden from lists, and `is_active` and `date_created` can be shown in them with `visible_list: yes`. A list left with no columns still shows `id`. Documented in syntax.md and design.md.
+	- Showing system fields on forms is split out to 2026102407263968, since it needs `readonly` first.
+	- Swept: every list and form call site in the TUI and web, table pages and view blocks both. The web save filter stays on the full field list on purpose. The CLI is left alone by design. Enterprise and vendor have no callers.
+	- Branch: round1024
+	- Test case: `TestFieldVisibility` (schema), `TestHiddenFieldsStayPut` (web) and `TestHiddenFieldsInGridAndForm` (tui). Each failed against the old column and form lists and passes now.
+	- Closed: 20261024-072639
 
 - ✅ Code Review 20260805 item 21: replay prepared a fresh SQL statement for every log entry.
 	- Done: a pass reuses its statements, which are one shape per table and one per field however long the log is. Rebuilding a 5000-entry log went from about 240ms to about 97ms, on the path every open and every sync that brings changes takes.

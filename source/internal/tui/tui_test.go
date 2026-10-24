@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 
 	"github.com/jim-collier/nano-git-db/internal/core/crud"
 	"github.com/jim-collier/nano-git-db/internal/core/ddl"
@@ -30,7 +31,12 @@ tables:
 
 func setup(t *testing.T) (*crud.API, *ddl.Schema, *ddl.Schema) {
 	t.Helper()
-	sch, err := ddl.Parse([]byte(personDDL))
+	return setupFor(t, personDDL)
+}
+
+func setupFor(t *testing.T, src string) (*crud.API, *ddl.Schema, *ddl.Schema) {
+	t.Helper()
+	sch, err := ddl.Parse([]byte(src))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,4 +189,60 @@ func screenText(s tcell.SimulationScreen) string {
 		}
 	}
 	return b.String()
+}
+
+// Hidden fields drop out of the grid and the edit form, and saving the form
+// leaves a field it never showed alone.
+func TestHiddenFieldsInGridAndForm(t *testing.T) {
+	api, sch, bs := setupFor(t, `
+tables:
+	table: person
+		fields:
+			field: name
+				type: string
+			field: shoe_size
+				type: string
+				ui:
+					visible_list: n
+			field: pin
+				type: string
+				ui:
+					visible_form: n
+`)
+	id, err := api.Create("person", map[string]string{"name": "Ann", "shoe_size": "38", "pin": "4321"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := NewApp(api, sch, bs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.openTable("person")
+	var header []string
+	for c := 0; c < a.grid.GetColumnCount(); c++ {
+		header = append(header, a.grid.GetCell(0, c).Text)
+	}
+	if got := strings.Join(header, ","); got != "id,name,pin" {
+		t.Errorf("grid header = %q", got)
+	}
+
+	a.editForm("person", a.rows[0])
+	page := a.pages.GetPage("form").(*tview.Flex)
+	form := page.GetItem(1).(*tview.Flex).GetItem(1).(*tview.Form)
+	if form.GetFormItemByLabel("pin") != nil {
+		t.Error("edit form shows a visible_form: n field")
+	}
+	size, ok := form.GetFormItemByLabel("shoe_size").(*tview.InputField)
+	if !ok {
+		t.Fatal("edit form lost a field only hidden from lists")
+	}
+	size.SetText("39")
+	form.GetButton(0).InputHandler()(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), func(tview.Primitive) {})
+	row, _, err := api.Get("person", id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row["shoe_size"] != "39" || row["pin"] != "4321" || row["name"] != "Ann" {
+		t.Errorf("after save: %v", row)
+	}
 }

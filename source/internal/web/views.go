@@ -145,7 +145,7 @@ func (s *server) viewBlockRows(w http.ResponseWriter, r *http.Request) {
 		}
 		type fv struct{ F, V string }
 		var pairs []fv
-		for _, f := range s.cat.Fields[block.Table] {
+		for _, f := range s.cat.FormFields(block.Table) {
 			pairs = append(pairs, fv{f, row[f]})
 		}
 		data["FieldVals"] = pairs
