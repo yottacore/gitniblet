@@ -57,6 +57,10 @@ type API struct {
 	// a static default covers it (notnull.go).
 	notNull map[string]map[string]bool
 
+	// lookups maps each table's list_type: lookup fields to their group's
+	// lookups idx (lookupcheck.go).
+	lookups map[string]map[string]int
+
 	// UserID stamps the tx-log; front-ends set it to the current user.
 	UserID string
 
@@ -163,6 +167,10 @@ func (a *API) Create(table string, fields map[string]string) (string, error) {
 			return "", err
 		}
 	}
+	if fields, err = a.checkLookups(table, "", fields); err != nil {
+		unlock()
+		return "", err
+	}
 	if err := a.requireOnCreate(table, fields); err != nil {
 		unlock()
 		return "", err
@@ -202,6 +210,9 @@ func (a *API) Update(table, id string, fields map[string]string) error {
 	if fields, err = a.keepIdx(table, id, fields); err != nil {
 		return err
 	}
+	if fields, err = a.checkLookups(table, id, fields); err != nil {
+		return err
+	}
 	// audit next: it reads the OLD values, which the entries then overwrite
 	audit := a.audit(table, id, "update", fields)
 	var entries []txlog.Entry
@@ -238,6 +249,9 @@ func (a *API) SetField(table, id, field, value string) error {
 	}
 	if _, ok := fields[field]; !ok {
 		return nil // same idx written back
+	}
+	if fields, err = a.checkLookups(table, id, fields); err != nil {
+		return err
 	}
 	value = fields[field]
 	audit := a.audit(table, id, "update", fields)

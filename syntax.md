@@ -108,7 +108,7 @@ Each `field:` has a name and, at minimum, a `type:`. Other per-field keys the cu
 						visible_list: no
 	```
 
-- `ui:` -> `list_type: lookup` - the field stores a `lookup_values` idx, from the group whose `lookups` idx is given as `list_source:`. Lists show the value's symbol, or its title when it has none. Forms show the symbol, then the title. `lookup_in_lists:` and `lookup_in_forms:` each take `symbol`, `title` or `both` to change that. A value made inactive or soft-deleted still shows on the rows that have it. A value from another group shows as the stored idx. An edit form keeps the idx in its input, with the value beside it. The TUI shows the title in place of a symbol the terminal can't draw.
+- `ui:` -> `list_type: lookup` - the field stores a `lookup_values` idx, from the group whose `lookups` idx is given as `list_source:`. Lists show the value's symbol, or its title when it has none. Forms show the symbol, then the title. `lookup_in_lists:` and `lookup_in_forms:` each take `symbol`, `title` or `both` to change that. A value made inactive or soft-deleted still shows on the rows that have it. A write refuses a value that isn't active in the group, though a row can keep one it already holds. A value from another group shows as the stored idx. An edit form keeps the idx in its input, with the value beside it. The TUI shows the title in place of a symbol the terminal can't draw.
 
 	```
 				field: status

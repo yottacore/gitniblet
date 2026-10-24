@@ -304,6 +304,35 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- A write refuses a value that isn't in the group. Replay never re-checks.
 		- Per design.md, Lookups. No UI has a `list_type` picker yet, so this may need one for `literal` and `sql` too.
 	- Estimated effort: Avg
+	- Progress log:
+		- 20261024: Split into 2026102408470107 (write check), 2026102408470113 (lookup picker) and 2026102408470118 (`literal` and `sql` pickers). This item closes with the last of them.
+
+- Edit a `list_type: lookup` field through a picker, in the TUI and web.
+	- ID: 2026102408470113
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-084701
+	- Opened by: JC
+	- Parent ID: 2026102407295340
+	- Prereq IDs: 2026102408470107
+	- Requirements [Feature]:
+		- The edit form offers the group's active values, in sort order, shown per `lookup_in_forms`.
+		- A row that holds an inactive or deleted value keeps it until another is picked.
+	- Estimated effort: Avg
+
+- Pickers for `list_type: literal` and `list_type: sql` fields.
+	- ID: 2026102408470118
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-084701
+	- Opened by: JC
+	- Parent ID: 2026102407295340
+	- Prereq IDs: 2026102408470113
+	- Requirements [Feature]:
+		- Same picker as for lookups, fed from the literal list or the query in `list_source`. The built-in `lookup_values.lookups_idx` is one.
+	- Estimated effort: Avg
 
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161870
@@ -335,6 +364,32 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- `id` and `date_created` show read-only and are never written from a form. That likely means honoring `ui: readonly` first.
 	- Progress log:
 		- 20261024: Lists already honor `visible_list` on system fields. The example DDL's built-in `lookups` and `lookup_values` tables ask for `id` on forms, read-only.
+
+- Refuse a lookup value that isn't in the field's group, on write.
+	- ID: 2026102408470107
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-084701
+	- Opened by: JC
+	- Parent ID: 2026102407295340
+	- Prereq IDs: 2026102407295324
+	- Requirements [Feature]:
+		- A create or update of a `list_type: lookup` field refuses a value that isn't an active value in its group. Replay never re-checks.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: crud refuses a lookup value that isn't a whole number, isn't in the field's group, or is inactive or deleted. It's checked after the before-trigger, so a trigger's value is checked too. A value is stored as the bare idx, so " 1 " and "01" show as 1.
+		- A row that already holds an inactive or deleted value can write it back, as a form save does. Once it lets go of it, it can't pick it again.
+		- Like the null checks, it's on only after `EnableFeatures`. A field whose `list_source` isn't a group idx isn't checked, since the catalog already warns on it.
+		- syntax.md's lookup line says what a write refuses.
+		- Verified: the new tests fail with the check turned off, and the write-back test fails without the held-value rule. Both pass with the change. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass. Through the CLI, an inactive and a missing value are both refused, and a good one goes in.
+		- Swept: every crud write path (Create, Update, SetField, SetFieldNull, which only writes a null). The TUI, web, CLI and script binds all write through them. Replay goes through `txlog.Apply`, which doesn't check.
+	- Decisions:
+		- An inactive value is refused like a missing one, per design.md's "can't be picked", except where the row already holds it.
+	- Branch: round1024
+	- Test case: `TestLookupWriteCheck` and `TestLookupReplayDoesNotCheck` in `source/internal/core/crud/lookupcheck_test.go`.
+	- Closed: 20261024-085223
 
 - The TUI's simulation-screen tests fail under `-race`.
 	- ID: 2026102408252318
