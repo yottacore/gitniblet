@@ -116,19 +116,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- The lint stage's `gofmt -w` rewrites unformatted Go files.
 	- Estimated effort: Avg
 
-- govulncheck lists 2 `golang.org/x/text` advisories in a required module.
-	- ID: 2026102407094415
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261024-070944
-	- Opened by: JC
-	- Related IDs: 2026102407051369
-	- Incorrect behavior [Bug]: `govulncheck -show verbose` lists GO-2026-6629 and GO-2026-5970 against `golang.org/x/text@v0.21.0`. It says the code doesn't call them, so the gate still passes.
-	- Expected behavior [Bug]: No known advisories in required modules.
-	- Possible cause [Bug]: `x/text` is behind. The fixes are in v0.39.0 and v0.41.0. Bumping it means a vendor refresh, then the vendor re-scrub.
-	- Estimated effort: Low
-
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161870
 	- Type: Enhancement
@@ -146,6 +133,32 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Tests run the release build on an emulated Penryn and Phenom II, through Intel SDE or QEMU's `-cpu Penryn` and `-cpu phenom`.
 	- Progress log:
 		- 20261013: Go builds for plain x86-64 by default (`GOAMD64=v1`), and nothing here sets it, so this may already hold. Pin `GOAMD64=v1` in the release build so a stray environment can't raise it. The standard library already picks faster code at run time.
+
+- govulncheck lists 2 `golang.org/x/text` advisories in a required module.
+	- ID: 2026102407094415
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-070944
+	- Opened by: JC
+	- Related IDs: 2026102407051369
+	- Incorrect behavior [Bug]: `govulncheck -show verbose` lists GO-2026-6629 and GO-2026-5970 against `golang.org/x/text@v0.21.0`. It says the code doesn't call them, so the gate still passes.
+	- Expected behavior [Bug]: No known advisories in required modules.
+	- Reproduced [Bug]: 20261024, on `round1024` at 91739b7, under `go1.26.10`.
+	- Possible cause [Bug]: `x/text` is behind. The fixes are in v0.39.0 and v0.41.0. Bumping it means a vendor refresh, then the vendor re-scrub.
+	- Actual cause [Bug]:
+		- `x/text` came in at v0.21.0 through tcell and tview, and was never bumped.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: Bumped `x/text` to v0.41.0, the newest that still says `go 1.25.0`. v0.42.0 and up want `go 1.26.0`, which would raise our `go` line. The vendored `x/text` files came out byte-identical, so only `go.mod`, `go.sum` and `modules.txt` changed.
+		- 20261024: The refresh put back the old copyright line in vendored `shcl.go`, which b977f98 had edited by hand, so that file was kept as committed. The vendor scrub ran after.
+		- 20261024: Enterprise also requires `x/text v0.21.0`, and builds floss through a `replace`, so after the merge its `go.mod` needs the same bump and a vendor refresh. Vendor doesn't use `x/text`.
+	- Actual fix [Bug]: `golang.org/x/text` v0.21.0 -> v0.41.0, with a vendor refresh.
+		- Swept: every `go.mod` in floss (just the one), and `x/text` mentions outside `vendor/`. Enterprise and vendor `go.mod` checked, not changed.
+	- Branch: round1024
+	- Test case: The govulncheck gate. It listed both advisories at v0.21.0 and lists none at v0.41.0.
+	- Closed: 20261024-071232
 
 ## Old format
 
