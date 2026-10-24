@@ -81,7 +81,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - govulncheck flags the pinned Go toolchain.
 	- ID: 2026102407051369
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs external testing: The hosted `ci.yml` run, Linux and macOS jobs, on the new `1.26.10` pin.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-070513
 	- Opened by: JC
@@ -89,7 +90,17 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Expected behavior [Bug]: govulncheck passes under the pinned toolchain.
 	- Reproduced [Bug]: 20261024, on `dev` at ce5dfa0.
 	- Possible cause [Bug]: The advisories are fixed in go1.26.10. Enterprise and vendor may pin the same toolchain.
+	- Actual cause [Bug]:
+		- The `go1.26.5` pin fell behind. By 20261024 govulncheck listed 10 stdlib advisories against it, in `net/http`, `net/textproto`, `crypto/tls`, `crypto/x509` and `html/template`. One needs go1.26.10, the rest go1.26.9.
 	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: Bumped the pin to `go1.26.10`, the newest 1.26 release, in `go.mod`, `ci.yml` and `release.yml`. govulncheck is clean, with 2 `golang.org/x/text` advisories it says the code never calls, filed as 2026102407094415.
+		- 20261024: Enterprise and vendor pin the same `go1.26.5`, in `source/go.mod`, `ci.yml` and `release.yml`. Left alone, since only floss is in this round. Enterprise builds floss through a `replace`, but its own `toolchain` line picks the compiler, so it needs its own bump.
+	- Actual fix [Bug]: Toolchain pin bumped to `go1.26.10`.
+		- Swept: every `1.26.x` pin outside `vendor/`, in `go.mod`, the workflows, `tool-versions.bash`, `.goreleaser.yaml`, `dependabot.yml` and the docs. Only the 3 changed files had one.
+	- Branch: round1024
+	- Test case: The govulncheck gate. It failed under `go1.26.5` and passes under `go1.26.10`.
 
 - Off flags for the cicd.bash stages that install, publish, or rewrite tracked files.
 	- ID: 2026102407051370
@@ -104,6 +115,19 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- The demo stage rewrites `assets/demo.gif`, and only `--quick` turns it off, along with every other slow stage. It gets its own flag.
 		- The lint stage's `gofmt -w` rewrites unformatted Go files.
 	- Estimated effort: Avg
+
+- govulncheck lists 2 `golang.org/x/text` advisories in a required module.
+	- ID: 2026102407094415
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-070944
+	- Opened by: JC
+	- Related IDs: 2026102407051369
+	- Incorrect behavior [Bug]: `govulncheck -show verbose` lists GO-2026-6629 and GO-2026-5970 against `golang.org/x/text@v0.21.0`. It says the code doesn't call them, so the gate still passes.
+	- Expected behavior [Bug]: No known advisories in required modules.
+	- Possible cause [Bug]: `x/text` is behind. The fixes are in v0.39.0 and v0.41.0. Bumping it means a vendor refresh, then the vendor re-scrub.
+	- Estimated effort: Low
 
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161870
