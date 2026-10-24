@@ -32,6 +32,52 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 ## Issues
 
+- Tests wrote to the real database registry on macOS.
+	- ID: 2026102318473520
+	- Type: Bug
+	- Status: Waiting on signoff
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261023-184735
+	- Opened by: JC
+	- Target OS: macOS
+	- Incorrect behavior [Bug]: The config and TUI tests set `XDG_CONFIG_HOME` and `AppData` to a temp dir, but macOS reads neither, so the tests registered databases under the real `~/Library/Application Support/ngdb`. The cli init tests also failed there, since `/var` is a link to `/private/var`.
+	- Expected behavior [Bug]: Tests never touch the real registry on any OS.
+	- Reproduced [Bug]: 20261023, on the first arm64 macOS CI run.
+	- Actual fix [Bug]: The test helpers set `HOME` too, and the init tests compare against the resolved temp dir.
+	- Test case: The same tests, now passing on the macOS CI job. Checked on Intel macOS too, where the real registry folder never appeared.
+	- Related IDs: 2026102318473519
+	- Branch: macci
+
+- Run CI on GitHub's free arm64 macOS runners.
+	- ID: 2026102318473519
+	- Type: Task
+	- Status: Waiting on signoff
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261023-184735
+	- Opened by: JC
+	- Target OS: macOS
+	- Requirements [Feature]:
+		- Build, run the tests, and smoke-test the CLI on the built binary.
+	- Progress log:
+		- 20261023: New `macos` job in `ci.yml`. It checks it's on arm64, runs the tests, builds with `cicd/build.bash`, then runs `cicd/utility/smoke-cli.bash`. The Linux job runs the smoke test too. Only floss gets it, since macOS minutes on the private repos aren't free.
+	- Test case: `cicd/utility/smoke-cli.bash`, also passing under stock bash 3.2 on Intel macOS.
+	- Branch: macci
+
+- Show the build date on non-release builds.
+	- ID: 2026102318473518
+	- Type: Enhancement
+	- Status: Waiting on signoff
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261023-184735
+	- Opened by: JC
+	- Requirements [Feature]:
+		- Add " (YYYY-mm-DD)" after the build number.
+		- Show the date in the local time zone of whoever views the version.
+	- Progress log:
+		- 20261023: `cicd/build.bash` stamps the UTC build time, and `--version` shows it as a local date, as in `ngdb 1.0.0-beta.2 (c6cc12b) (2026-10-23)`. Release builds from goreleaser don't stamp it, so they show no date. The enterprise build doesn't stamp it yet.
+	- Test case: `TestVersionLine` in `source/app/app_test.go`, and the date check in `smoke-cli.bash`.
+	- Branch: macci
+
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161870
 	- Type: Enhancement
@@ -403,10 +449,10 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 	- The ID is the local time to the hundredth of a second. Opened is when it was written down, which may differ. (Use a keyboard macro and possibly something like project 'zuid' to generate.)
 
-	- Status values meaning: Testing means the fix is in and checks are running or still to run. Waiting on signoff means automated testing passed. Moot means something else changed that made it irrelevant. Canceled means it still applies but was decided against. Waiting for testing means the fix is in and waits on a long CI run or an outside test host. Can't reproduce means a real attempt to reproduce it failed.
+	- Status values meaning: Testing means the fix is in and checks are running or still to run. Waiting on signoff means automated testing passed. Moot means something else changed that made it irrelevant. Canceled means it still applies but was decided against. The 4 Waiting on statuses mean the fix is in and waits on the named test. Waiting on automated testing is run by automation, such as the git host's CI. Waiting on a full CICD run and Waiting on a partial CICD run can be started by a person or by automation. Waiting on UAT needs a person. Can't reproduce means a real attempt to reproduce it failed.
 
 	- As issues are worked, and statuses change, place them in correct sorting order within the list:
-		- First by status: Waiting for answers, Waiting on signoff, Testing, Waiting for testing, Can't reproduce, Stalled, Started, Queued, Done, Deferred, Canceled, Moot
+		- First by status: Waiting for answers, Waiting on signoff, Testing, Waiting on automated testing, Waiting on a full CICD run, Waiting on a partial CICD run, Waiting on UAT, Can't reproduce, Stalled, Started, Queued, Done, Deferred, Canceled, Moot
 		- Then by severity|priority: Critical, High, Avg, Low
 		- Then by type: Bugs, [not bugs together]
 
@@ -417,7 +463,7 @@ Template:
 - Title
 	- ID: YYYYmmDDHHMMSSNN
 	- Type: [Bug|Feature|Enhancement|Task]
-	- Status: [Queued|Waiting for answers|Waiting on signoff|Waiting for testing|Started|Testing|Stalled|Can't reproduce|Moot|Canceled|Deferred|Done]
+	- Status: [Queued|Waiting for answers|Waiting on signoff|Waiting on automated testing|Waiting on a full CICD run|Waiting on a partial CICD run|Waiting on UAT|Started|Testing|Stalled|Can't reproduce|Moot|Canceled|Deferred|Done]
 	- Needs local test suite run?:
 	- Needs external testing:
 	- Priority [Feature|Enhancement] | Severity [Bug]: [Critical|High|Avg|Low]

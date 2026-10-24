@@ -28,7 +28,9 @@ fi
 build="$(git rev-parse --short HEAD 2>/dev/null || true)"
 [[ -n "${build}" && -n "$(git status --porcelain 2>/dev/null)" ]]  &&  build="${build}-dirty"
 
-ldflags="-X github.com/jim-collier/nano-git-db/app.Build=${build}"
+# Build time in UTC; --version shows it as a date in the viewer's own time zone.
+# goreleaser doesn't stamp it, so release binaries show no date.
+ldflags="-X github.com/jim-collier/nano-git-db/app.Build=${build} -X github.com/jim-collier/nano-git-db/app.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 trim="-trimpath"
 if ((debug)); then
 	trim=""

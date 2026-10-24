@@ -1,5 +1,6 @@
-# Safety-net CI: proves the tree builds and passes off this machine. The full
-# local pipeline (fuzz, profiling, dogfood, publish) stays in cicd/cicd.bash.
+# Safety-net CI: proves the tree builds and passes off this machine, on Linux
+# and arm64 macOS. The full local pipeline (fuzz, profiling, dogfood, publish)
+# stays in cicd/cicd.bash.
 name: CI
 
 on:
@@ -33,3 +34,30 @@ jobs:
         run: go test -mod=vendor ./...
       - name: build
         run: go build -mod=vendor ./...
+      - name: smoke
+        working-directory: .
+        run: |
+          bash cicd/build.bash
+          NGDB_SMOKE_EXPECT_DATE=1 bash cicd/utility/smoke-cli.bash bin/ngdb
+
+  # GitHub's free arm64 macOS runner. Build, test, then smoke-test the built CLI.
+  macos:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: source
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.5'
+          cache-dependency-path: source/go.sum
+      - name: arch
+        run: '[ "$(uname -m)" = arm64 ] || { echo "::error::expected arm64, got $(uname -m)"; exit 1; }'
+      - name: test
+        run: go test -mod=vendor ./...
+      - name: smoke
+        working-directory: .
+        run: |
+          bash cicd/build.bash
+          NGDB_SMOKE_EXPECT_DATE=1 bash cicd/utility/smoke-cli.bash bin/ngdb

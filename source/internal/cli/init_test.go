@@ -19,7 +19,12 @@ func initEnv(t *testing.T) (workDir, base string) {
 	config.SetBaseOverride(base)
 	t.Cleanup(func() { config.SetBaseOverride("") })
 
-	workDir = t.TempDir()
+	// Resolved, since --init records the working dir as os.Getwd sees it, and
+	// on macOS the temp dir under /var is a link to /private/var.
+	workDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(workDir, "todo.ddl"), []byte(personDDL), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -22,6 +22,7 @@ func isolateConfig(t *testing.T) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("AppData", t.TempDir())
+	t.Setenv("HOME", t.TempDir()) // macOS reads neither of the above
 	t.Setenv("XDG_CONFIG_DIRS", t.TempDir())
 	t.Setenv("ProgramData", t.TempDir())
 }
