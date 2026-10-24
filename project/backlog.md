@@ -155,7 +155,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- ID: 2026102407295324
 	- Type: Enhancement
 	- Status: Waiting on UAT
-	- Test environment: b23 runs `ngdb 1.0.0-beta.1 (3a91f1a)`, checked 20261024, which doesn't have this. Needs a dogfood of `dev` first.
+	- Test environment: b23 runs `ngdb 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
 	- Needs hand testing: A look at both UIs, which now list the two tables after the user's own.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-072953
@@ -177,6 +177,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Departs from the wording: `title` and `lookups_idx` aren't NOT NULL yet, unlike example.shcl, since bug 2026102407331876 makes such a table drop every row. They stay `required: y`.
 		- 20261024: That bug is fixed in d459e1f, and `title` and `lookups_idx` are `null_ok: n` again.
 		- A user schema that restates either table, as example.shcl does, keeps its own shape and warns, as for any built-in name. The idx rules apply either way.
+		- 20261024 JC: A restated built-in should merge into the built-in, as a system field does, so example.shcl can keep documenting both tables. Filed as 2026102409431186.
 	- Branch: round1024
 	- Test case: `TestLookupsIdx` and `TestLookupsIdxConcurrent` in `source/internal/core/schema/lookups_test.go`.
 
@@ -184,7 +185,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- ID: 2026102407295335
 	- Type: Enhancement
 	- Status: Waiting on UAT
-	- Test environment: b23 runs `ngdb 1.0.0-beta.1 (3a91f1a)`, checked 20261024, which doesn't have this. Needs a dogfood of `dev` first.
+	- Test environment: b23 runs `ngdb 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
 		- For a look at the Decisions: an edit form keeps the idx in its input, with the value shown beside it.
 	- Needs hand testing: A look at both UIs with a few emoji symbols, in the usual terminal and font.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
@@ -220,7 +221,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- ID: 2026102408470113
 	- Type: Enhancement
 	- Status: Waiting on UAT
-	- Test environment: b23 runs `ngdb 1.0.0-beta.1 (3a91f1a)`, checked 20261024, which doesn't have this. Needs a dogfood of `dev` first.
+	- Test environment: b23 runs `ngdb 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
 	- Needs hand testing: A look at both pickers with a few emoji symbols, in the usual terminal and font.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-084701
@@ -249,7 +250,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- ID: 2026102408470118
 	- Type: Enhancement
 	- Status: Waiting on UAT
-	- Test environment: b23 runs `ngdb 1.0.0-beta.1 (3a91f1a)`, checked 20261024, which doesn't have this. Needs a dogfood of `dev` first.
+	- Test environment: b23 runs `ngdb 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
 	- Needs hand testing: A look at the `lookup_values` form's group picker in both UIs.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261024-084701
@@ -305,6 +306,19 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Progress log:
 		- 20261024: Split into 2026102408470107 (write check), 2026102408470113 (lookup picker) and 2026102408470118 (`literal` and `sql` pickers). This item closes with the last of them.
 		- 20261024: All 3 are in. The write check is Done, and the 2 pickers wait on a look by eye.
+
+- A user table that restates a built-in table merges into it, as a system field does.
+	- ID: 2026102409431186
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-094311
+	- Opened by: JC
+	- Related IDs: 2026102407295324
+	- Requirements [Feature]:
+		- Today a schema that restates `lookups` or `lookup_values`, as example.shcl does, keeps its own shape and warns twice on open.
+		- The built-in fields keep their definitions, a restated built-in field may set `ui:` only, and extra user fields are added. No warning when it only restates.
+	- Estimated effort: Avg
 
 - Refuse a create whose unique value is already taken in the view, before it's logged.
 	- ID: 2026102408084809
@@ -375,6 +389,23 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: round1024
 	- Test case: The govulncheck gate. It failed under `go1.26.5` and passes under `go1.26.10`.
 	- Closed: 20261024-092700
+
+- cicd's local hooks stopped running when the repo moved into `nano-git-db-floss/repo`.
+	- ID: 2026102409431176
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-094311
+	- Opened by: JC
+	- Incorrect behavior [Bug]: `cicd.bash` looked for hooks in `../private/cicd-hooks` beside the repo, which no longer exists, so `scrub-vendor.bash` never ran before a publish, with no warning.
+	- Expected behavior [Bug]: The hooks in the project's own `private/cicd-hooks` run before publish.
+	- Reproduced [Bug]: 20261024, from the floss main checkout.
+	- Actual cause [Bug]: The folder rename added a level, and the path is relative to the repo.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Actual fix [Bug]: The hooks dir is now `../../private/cicd-hooks`, which is the same folder from the main checkout and from a worktree beside it.
+	- Branch: ciflow
+	- Test case: Not applicable, a path in a local-only stage.
 
 - Off flags for the cicd.bash stages that install, publish, or rewrite tracked files.
 	- ID: 2026102407051370
@@ -514,6 +545,22 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: round1024
 	- Test case: The govulncheck gate. It listed both advisories at v0.21.0 and lists none at v0.41.0.
 	- Closed: 20261024-071232
+
+- Hosted CI can be started by hand.
+	- ID: 2026102409431181
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-094311
+	- Opened by: JC
+	- Requirements [Feature]:
+		- `ci.yml` takes `workflow_dispatch`, so a round can run it on its branch before the merge, as gitsby, shcl and zuid do.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: Added. `gitsby raw gh workflow run ci.yml --ref ciflow` started a run on the branch.
+	- Branch: ciflow
+	- Test case: Not applicable, workflow trigger only.
 
 - Encrypt the schema, query, and script sidecar files.
 	- ID: 2026102408284572
