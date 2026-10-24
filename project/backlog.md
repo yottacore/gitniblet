@@ -102,6 +102,21 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: round1024
 	- Test case: The govulncheck gate. It failed under `go1.26.5` and passes under `go1.26.10`.
 
+- Bump enterprise and vendor to the floss Go toolchain and `x/text`.
+	- ID: 2026102407133557
+	- Type: Task
+	- Status: Stalled
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-071335
+	- Opened by: JC
+	- Related IDs: 2026102407051369, 2026102407094415
+	- Requirements [Feature]:
+		- Enterprise and vendor pin `toolchain go1.26.5` in `source/go.mod`, `ci.yml` and `release.yml`. floss moved to `go1.26.10`.
+		- Enterprise requires `golang.org/x/text v0.21.0`, and builds floss through a `replace`, so its vendor tree needs the floss bump to v0.41.0 too.
+		- Then `go build ./...` and govulncheck pass in both.
+	- Progress log:
+		- 20261024: Held for the uncommitted enterprise edits from 2026-10-19, in `go.mod`, `ci.yml` and `release.yml`, to be committed. Enterprise isn't in floss rounds.
+
 - Off flags for the cicd.bash stages that install, publish, or rewrite tracked files.
 	- ID: 2026102407051370
 	- Type: Task
