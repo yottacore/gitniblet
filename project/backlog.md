@@ -271,6 +271,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Swept: every place the TUI and web render a table row (table grid, view grid, tree grid, form block, edit form). Named query results are left as the SQL returns them, since their columns aren't tied to a field.
 	- Decisions:
 		- An edit form keeps the idx editable, since the picker is 2026102407295340. The value shows beside it, from the stored idx, so it doesn't follow typing.
+			- 20261024: The picker is in now, through 2026102408470113, so an edit form picks from a list.
 		- Soft-deleted values still show, like inactive ones. An idx is never handed out twice, so the label can't be wrong.
 		- Only values in the field's own group show. Another group's value shows as the stored idx, rather than a title that looks right.
 		- The TUI now starts its own terminal screen before handing it to tview, so the charset check works before the first draw.
