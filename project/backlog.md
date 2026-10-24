@@ -120,7 +120,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - Off flags for the cicd.bash stages that install, publish, or rewrite tracked files.
 	- ID: 2026102407051370
 	- Type: Task
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: One full run with the new flags, `cicd/cicd.bash -q --no-install --no-hooks --no-publish --no-format`, with the demo either off by `--no-demo` or run with `assets/demo.gif` copied aside.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-070513
 	- Opened by: JC
@@ -130,6 +131,16 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- The demo stage rewrites `assets/demo.gif`, and only `--quick` turns it off, along with every other slow stage. It gets its own flag.
 		- The lint stage's `gofmt -w` rewrites unformatted Go files.
 	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 2026-10-24: Added `--no-install`, `--no-hooks`, `--no-publish`, `--no-demo` and `--no-format`. Each skips only its own stage, and the skip shows in the stage header and the preflight list.
+		- `--no-format` runs `gofmt -l` and fails on any unformatted file, rather than rewriting it.
+		- With `--no-publish`, an interactive run no longer asks for a commit message.
+		- design.md's CI/CD section lists the flags.
+		- Verified: each flag alone, all five together, and none. 9 of 11 cases fail on the old script, and all pass on the new one.
+		- Swept: enterprise `cicd.bash` has none of these stages, and vendor has no `cicd.bash`. Fuzz can still write a crash input into `testdata/`, but it's a test stage, so it gets no flag.
+	- Branch: round1024
+	- Test case: None in the repo, since it needs a stand-in for every stage. The check is kept outside the repo.
 
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161870
