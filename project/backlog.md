@@ -102,49 +102,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: round1024
 	- Test case: The govulncheck gate. It failed under `go1.26.5` and passes under `go1.26.10`.
 
-- Built-in `lookups` and `lookup_values` tables, with an auto-assigned `idx`.
-	- ID: 2026102407295324
-	- Type: Enhancement
-	- Status: Waiting on UAT
-	- Needs hand testing: A look at both UIs, which now list the two tables after the user's own.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-072953
-	- Opened by: JC
-	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
-	- Related IDs: 2026102407331876
-	- Requirements [Feature]:
-		- Both tables exist in every database, shaped as in example.shcl, and list like normal tables.
-		- `idx` is a unique int, assigned max+1 on create when not given. A given one is kept, so seeds can name theirs.
-		- `idx` can't be changed once set.
-	- Estimated effort: Avg
-	- Actual effort: Low
-	- Progress log:
-		- 20261024: Both tables are built-in and always-on. Creating a row mints max+1 per table, and deleted rows count, so an idx is never handed out twice.
-		- A given idx must be a whole number above 0 and not taken by a live row. Changing a set idx is refused, and writing the same one back is let through, as a form save does.
-		- Verified: the new tests fail without the crud change and pass with it, the concurrent one under `-race` too. `test.bash`, the CLI smoke, staticcheck and gosec pass. Create, refuse and replay checked through the CLI.
-		- Swept: every crud write path (Create, Update, SetField, SetFieldNull). The TUI, web, CLI and scripts all write through those. Replay doesn't check, by design.
-	- Decisions:
-		- Departs from the wording: `title` and `lookups_idx` aren't NOT NULL yet, unlike example.shcl, since bug 2026102407331876 makes such a table drop every row. They stay `required: y`.
-		- 20261024: That bug is fixed in d459e1f, and `title` and `lookups_idx` are `null_ok: n` again.
-		- A user schema that restates either table, as example.shcl does, keeps its own shape and warns, as for any built-in name. The idx rules apply either way.
-	- Branch: round1024
-	- Test case: `TestLookupsIdx` and `TestLookupsIdxConcurrent` in `source/internal/core/schema/lookups_test.go`.
-
-- Bump enterprise and vendor to the floss Go toolchain and `x/text`.
-	- ID: 2026102407133557
-	- Type: Task
-	- Status: Stalled
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-071335
-	- Opened by: JC
-	- Related IDs: 2026102407051369, 2026102407094415
-	- Requirements [Feature]:
-		- Enterprise and vendor pin `toolchain go1.26.5` in `source/go.mod`, `ci.yml` and `release.yml`. floss moved to `go1.26.10`.
-		- Enterprise requires `golang.org/x/text v0.21.0`, and builds floss through a `replace`, so its vendor tree needs the floss bump to v0.41.0 too.
-		- Then `go build ./...` and govulncheck pass in both.
-	- Progress log:
-		- 20261024: Held for the uncommitted enterprise edits from 2026-10-19, in `go.mod`, `ci.yml` and `release.yml`, to be committed. Enterprise isn't in floss rounds.
-
 - Off flags for the cicd.bash stages that install, publish, or rewrite tracked files.
 	- ID: 2026102407051370
 	- Type: Task
@@ -243,6 +200,34 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: round1024
 	- Test case: `TestReplayDropsCreateTwin` in `source/internal/core/txlog/replay_test.go`, `TestSeedRowsTwoClients` in `source/internal/core/schema/seed_test.go`, and the updated `TestCreateReportsAFieldTheViewRefused` in `source/internal/core/crud/write_test.go`.
 
+- Built-in `lookups` and `lookup_values` tables, with an auto-assigned `idx`.
+	- ID: 2026102407295324
+	- Type: Enhancement
+	- Status: Waiting on UAT
+	- Needs hand testing: A look at both UIs, which now list the two tables after the user's own.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-072953
+	- Opened by: JC
+	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
+	- Related IDs: 2026102407331876
+	- Requirements [Feature]:
+		- Both tables exist in every database, shaped as in example.shcl, and list like normal tables.
+		- `idx` is a unique int, assigned max+1 on create when not given. A given one is kept, so seeds can name theirs.
+		- `idx` can't be changed once set.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: Both tables are built-in and always-on. Creating a row mints max+1 per table, and deleted rows count, so an idx is never handed out twice.
+		- A given idx must be a whole number above 0 and not taken by a live row. Changing a set idx is refused, and writing the same one back is let through, as a form save does.
+		- Verified: the new tests fail without the crud change and pass with it, the concurrent one under `-race` too. `test.bash`, the CLI smoke, staticcheck and gosec pass. Create, refuse and replay checked through the CLI.
+		- Swept: every crud write path (Create, Update, SetField, SetFieldNull). The TUI, web, CLI and scripts all write through those. Replay doesn't check, by design.
+	- Decisions:
+		- Departs from the wording: `title` and `lookups_idx` aren't NOT NULL yet, unlike example.shcl, since bug 2026102407331876 makes such a table drop every row. They stay `required: y`.
+		- 20261024: That bug is fixed in d459e1f, and `title` and `lookups_idx` are `null_ok: n` again.
+		- A user schema that restates either table, as example.shcl does, keeps its own shape and warns, as for any built-in name. The idx rules apply either way.
+	- Branch: round1024
+	- Test case: `TestLookupsIdx` and `TestLookupsIdxConcurrent` in `source/internal/core/schema/lookups_test.go`.
+
 - Show lookup values per `lookup_in_lists` and `lookup_in_forms`.
 	- ID: 2026102407295335
 	- Type: Enhancement
@@ -333,18 +318,20 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: round1024
 	- Test case: `TestPickerChoices` in `source/internal/core/schema/picker_test.go`, `TestLiteralPickerInTUI` in `source/internal/tui/lookups_test.go`, and `TestListPickersInWeb` in `source/internal/web/lookups_test.go`.
 
-- Refuse a create whose unique value is already taken in the view, before it's logged.
-	- ID: 2026102408084809
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261024-080848
+- Bump enterprise and vendor to the floss Go toolchain and `x/text`.
+	- ID: 2026102407133557
+	- Type: Task
+	- Status: Stalled
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-071335
 	- Opened by: JC
-	- Related IDs: 2026102407584270
+	- Related IDs: 2026102407051369, 2026102407094415
 	- Requirements [Feature]:
-		- Today the create is logged, the view drops the row, and the caller gets the id with a refusal. The log then holds a row no view will show.
-		- Check the unique groups in crud, under the commit lock, and refuse with a plain message instead. Replay keeps settling clashes between clients.
-	- Estimated effort: Low
+		- Enterprise and vendor pin `toolchain go1.26.5` in `source/go.mod`, `ci.yml` and `release.yml`. floss moved to `go1.26.10`.
+		- Enterprise requires `golang.org/x/text v0.21.0`, and builds floss through a `replace`, so its vendor tree needs the floss bump to v0.41.0 too.
+		- Then `go build ./...` and govulncheck pass in both.
+	- Progress log:
+		- 20261024: Held for the uncommitted enterprise edits from 2026-10-19, in `go.mod`, `ci.yml` and `release.yml`, to be committed. Enterprise isn't in floss rounds.
 
 - Lookup picker and write-time value check.
 	- ID: 2026102407295340
@@ -363,6 +350,19 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Progress log:
 		- 20261024: Split into 2026102408470107 (write check), 2026102408470113 (lookup picker) and 2026102408470118 (`literal` and `sql` pickers). This item closes with the last of them.
 		- 20261024: All 3 are in. The write check is Done, and the 2 pickers wait on a look by eye.
+
+- Refuse a create whose unique value is already taken in the view, before it's logged.
+	- ID: 2026102408084809
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-080848
+	- Opened by: JC
+	- Related IDs: 2026102407584270
+	- Requirements [Feature]:
+		- Today the create is logged, the view drops the row, and the caller gets the id with a refusal. The log then holds a row no view will show.
+		- Check the unique groups in crud, under the commit lock, and refuse with a plain message instead. Replay keeps settling clashes between clients.
+	- Estimated effort: Low
 
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161870
@@ -421,35 +421,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Test case: `TestLookupWriteCheck` and `TestLookupReplayDoesNotCheck` in `source/internal/core/crud/lookupcheck_test.go`.
 	- Closed: 20261024-085223
 
-- The TUI's simulation-screen tests fail under `-race`.
-	- ID: 2026102408252318
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261024-082523
-	- Opened by: JC
-	- Related IDs: 2026102407295335
-	- Steps to reproduce [Bug]:
-		- From `source/`, `go test -mod=vendor -race -run TestViewOpensAndLoadsOnSimulationScreen ./internal/tui`.
-	- Incorrect behavior [Bug]: 12 data race reports, and the test fails.
-	- Expected behavior [Bug]: It passes under `-race`, as the other packages' tests do.
-	- Reproduced [Bug]: 20261024, on `round1024`, while working 2026102407295335. Its own simulation-screen tests race the same way.
-	- Possible cause [Bug]: The test reads the screen's cells from its own goroutine while the app goroutine runs `Init` and draws. tcell's simulation screen doesn't lock `GetContents`. The app code isn't involved.
-	- Actual cause [Bug]:
-		- Both races are in the tests. tview's `SetScreen` runs `Init` again on the screen the test already started, from the app goroutine, while the test reads it. That second `Init` also resets the screen to 80x25, so the tests never got the size they set.
-		- `GetContents` does lock, but it returns the live cells, which the next draw writes. `Fini` writes them with no lock.
-		- `TestLookupsShowInTUI` also waited for `t1x`, which the edit form's input shows before Save runs. Under `-race` its DB check ran before the save.
-	- Estimated effort: Low
-	- Actual effort: Low
-	- Progress log:
-		- 20261024: The tests share one screen type, `simScreen` in `tui_test.go`. It's started once, skips tview's `Init`, and draws and reads under one lock. All 7 places that built a simulation screen use it. `TestLookupsShowInTUI` now waits for the edit form to close before it checks the DB.
-		- Verified: before the fix, the package under `-race` gave 74 race reports and 11 failing tests. With the screen type alone, only `TestLookupsShowInTUI` failed, 5 runs of 5. With both changes, the package passes under `-race` 3 runs in a row, and that test 10. `test.bash`, the wide gofmt, the CLI smoke and staticcheck pass.
-		- Swept: every simulation screen and `screenText` caller in the TUI tests (tui, views, lookups, gate, picker), and every test that types into a form and then checks the DB. Only the lookups one waited on the typed text.
-	- Actual fix [Bug]: A shared test screen that starts once and keeps draws and reads apart. No app code changed.
-	- Branch: round1024
-	- Test case: The TUI package's simulation-screen tests under `-race`, such as `TestViewOpensAndLoadsOnSimulationScreen` and `TestLookupsShowInTUI`.
-	- Closed: 20261024-084419
-
 - Seed rows from the schema's `seed:` section.
 	- ID: 2026102407295329
 	- Type: Enhancement
@@ -481,6 +452,35 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: round1024
 	- Test case: `TestSeedParse` and `TestSeedParseExample` in `source/internal/core/ddl/seed_test.go`, `TestSeedRowsLogFirst` and `TestSeedRowsExample` in `source/internal/core/schema/seed_test.go`.
 	- Closed: 20261024-075842
+
+- The TUI's simulation-screen tests fail under `-race`.
+	- ID: 2026102408252318
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-082523
+	- Opened by: JC
+	- Related IDs: 2026102407295335
+	- Steps to reproduce [Bug]:
+		- From `source/`, `go test -mod=vendor -race -run TestViewOpensAndLoadsOnSimulationScreen ./internal/tui`.
+	- Incorrect behavior [Bug]: 12 data race reports, and the test fails.
+	- Expected behavior [Bug]: It passes under `-race`, as the other packages' tests do.
+	- Reproduced [Bug]: 20261024, on `round1024`, while working 2026102407295335. Its own simulation-screen tests race the same way.
+	- Possible cause [Bug]: The test reads the screen's cells from its own goroutine while the app goroutine runs `Init` and draws. tcell's simulation screen doesn't lock `GetContents`. The app code isn't involved.
+	- Actual cause [Bug]:
+		- Both races are in the tests. tview's `SetScreen` runs `Init` again on the screen the test already started, from the app goroutine, while the test reads it. That second `Init` also resets the screen to 80x25, so the tests never got the size they set.
+		- `GetContents` does lock, but it returns the live cells, which the next draw writes. `Fini` writes them with no lock.
+		- `TestLookupsShowInTUI` also waited for `t1x`, which the edit form's input shows before Save runs. Under `-race` its DB check ran before the save.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: The tests share one screen type, `simScreen` in `tui_test.go`. It's started once, skips tview's `Init`, and draws and reads under one lock. All 7 places that built a simulation screen use it. `TestLookupsShowInTUI` now waits for the edit form to close before it checks the DB.
+		- Verified: before the fix, the package under `-race` gave 74 race reports and 11 failing tests. With the screen type alone, only `TestLookupsShowInTUI` failed, 5 runs of 5. With both changes, the package passes under `-race` 3 runs in a row, and that test 10. `test.bash`, the wide gofmt, the CLI smoke and staticcheck pass.
+		- Swept: every simulation screen and `screenText` caller in the TUI tests (tui, views, lookups, gate, picker), and every test that types into a form and then checks the DB. Only the lookups one waited on the typed text.
+	- Actual fix [Bug]: A shared test screen that starts once and keeps draws and reads apart. No app code changed.
+	- Branch: round1024
+	- Test case: The TUI package's simulation-screen tests under `-race`, such as `TestViewOpensAndLoadsOnSimulationScreen` and `TestLookupsShowInTUI`.
+	- Closed: 20261024-084419
 
 - govulncheck lists 2 `golang.org/x/text` advisories in a required module.
 	- ID: 2026102407094415
