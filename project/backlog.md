@@ -333,6 +333,43 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Check the unique groups in crud, under the commit lock, and refuse with a plain message instead. Replay keeps settling clashes between clients.
 	- Estimated effort: Low
 
+- Support `--help`, `--about`, and `--donate` flags in the FLOSS version.
+	- ID: 2026101915293585
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261019-152935
+	- Opened by: JC
+	- Version and build: Pre-next-cut
+	- Requirements [Feature]:
+		- FLOSS version: Support `--help`|`--about`|`--donate`, in a similar way as sister project shcl.
+
+- Give every CI test a unique ID.
+	- ID: 2026101915293586
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261019-152935
+	- Opened by: JC
+	- Version and build: Pre-next-cut
+	- Requirements [Feature]:
+		- Try to estimate the time the test was created, directly or indirectly.
+		- Test ID format: Take that time, convert it to milliseconds since 2000-01-01 00:00, then base 62 of that number.
+
+- Regression tests for all completed features and bug reports.
+	- ID: 2026101915305767
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261019-153057
+	- Opened by: JC
+	- Version and build: Pre-next-cut
+	- Requirements [Feature]:
+		- Make sure all completed features and bug reports on all subproject backlogs have a corresponding regression test in CI. At least, missing a test that could exist and would make sense to exist.
+		- Where missing such tests, create them. (In addition to what's already been done for bug-report-only regression tests.)
+		- For each issue, note its test case, or why it doesn't have one.
+	- Related IDs: 2026101915293586
+
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161870
 	- Type: Enhancement
@@ -592,6 +629,20 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Re-encrypt existing data under a new key.
 	- Progress log:
 		- 20261024: Filed from the old item. Today there's one key per database.
+
+- Build and test in a pinned container.
+	- ID: 2026101303344552
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261013-033445
+	- Opened by: JC
+	- Target OS: Linux
+	- Requirements [Feature]:
+		- `cicd.bash --container` runs the build and test stages in an image built from a pinned recipe in `cicd/container/`. Toolchains come from pinned downloads with checksums.
+		- Toolchains on the build box clash between projects, such as 2 Zig versions on one link. A container keeps this project's pins apart.
+		- Other test boxes stay native, since their OS is what's being tested.
+		- zuid's `--container` stage is the model. gitsby and convert-base-v2 have one too.
 
 ## Old format
 

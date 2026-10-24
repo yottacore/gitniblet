@@ -27,10 +27,10 @@ Work in a scratch directory so the demo is self-contained and easy to reset:
 
 ```bash
 mkdir -p /tmp/ngdb-demo && cd /tmp/ngdb-demo
-cp <this-repo>/github_floss/demos/t7em6_issue-tracker/issues.shcl issues.queries.shcl .
+cp <this-repo>/nano-git-db-floss/repo/demos/t7em6_issue-tracker/issues.shcl issues.queries.shcl .
 export NANOGITDB_USER=demo NANOGITDB_HOST=workstation
 
-exe=<this-repo>/github_floss/bin/ngdb
+exe=<this-repo>/nano-git-db-floss/repo/bin/ngdb
 ```
 
 Register this folder's schema as a database named **issues** (one time). The name is all you type from here on - ngdb remembers where the schema, tx-log, and view live:

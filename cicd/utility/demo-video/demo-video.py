@@ -41,7 +41,7 @@ import time
 from pathlib import Path
 
 ME_DIR  = Path(__file__).resolve().parent
-REPO    = ME_DIR.parents[2]                       # cicd/utility/demo-video -> github_floss
+REPO    = ME_DIR.parents[2]                       # cicd/utility/demo-video -> nano-git-db-floss/repo
 PRIVATE = REPO.parent / "private" / "demo-video"  # ../private symlink -> synced tree
 DEMO_DB = ME_DIR / "demo-db.bash"
 
