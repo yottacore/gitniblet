@@ -22,6 +22,7 @@ The complete DDL, sidecar-file, CLI, and run-mode reference. For a five-minute i
 	- [Encryption](#encryption)
 	- [Aliases and renames](#aliases-and-renames)
 - [Relationships](#relationships)
+- [Seed rows](#seed-rows)
 - [Views](#views)
 - [Tunables](#tunables)
 - [Sidecar files](#sidecar-files)
@@ -252,6 +253,26 @@ database:
 ```
 
 Name each relationship. The name is only a label, but it is what tells two `relationship:` entries apart - leave them both blank and they merge into one.
+
+## Seed rows
+
+The built-in `lookups` and `lookup_values` tables can start out with rows from the schema, under `seed:` (or `database.seed:`).
+
+~~~shcl
+database:
+	seed:
+		table: lookups
+			row: idx=1, title="Task status"
+		table: lookup_values
+			row: idx=1, lookups_idx=1, title="Open",   symbol="🔘", sort=1
+			row: idx=2, lookups_idx=1, title="Closed", symbol="✅", sort=2
+~~~
+
+Each `row:` is a comma list of `field=value` pairs, and has to give its `idx`. Quote a value that has a comma in it.
+
+At open, after the log is replayed, each row whose `idx` no row holds yet is created through the log, like any other write. A row that's already there is never touched, so once a row is seeded, edits made to it in the UI win for good. That goes for deleting one too: a deleted row still holds its idx, so it doesn't come back.
+
+A row that can't go in, such as one naming a field the table doesn't have, is skipped with a warning, and the database still opens. Only `lookups` and `lookup_values` take seed rows.
 
 ## Views
 

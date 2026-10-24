@@ -205,19 +205,21 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: round1024
 	- Test case: `TestNotNullRowReachesView`, `TestNotNullRefusedUpFront` and `TestNotNullReplayKeepsLoggedNull` in `source/internal/core/crud/notnull_test.go`, `TestBuildRelaxesOldNotNull` in `store_test.go`, `TestReplayWarnsOnRefusedCreate` in `txlog/replay_test.go`, and `TestLookupsNotNull` in `schema/lookups_test.go`.
 
-- Seed rows from the schema's `seed:` section.
-	- ID: 2026102407295329
-	- Type: Enhancement
+- Two clients that create the same unique value before syncing both keep it in the view, one with that field empty.
+	- ID: 2026102407584270
+	- Type: Bug
 	- Status: Queued
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-072953
+	- Opened: 20261024-075842
 	- Opened by: JC
-	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
-	- Prereq IDs: 2026102407295324
-	- Requirements [Feature]:
-		- Parse `seed:` (the vocabulary already accepts it) into the schema.
-		- At open, after the replay, insert each seed row log-first when its idx is absent. Never overwrite, so a later edit wins for good.
-		- Per design.md, Lookups.
+	- Related IDs: 2026102407295329, 2026102407295324
+	- Steps to reproduce [Bug]:
+		- Open a new database whose schema has `seed:` rows from two clones, before either syncs. Sync both, then open one.
+	- Incorrect behavior [Bug]: Each seeded value is listed twice. The second copy has an empty idx and the rest of its fields set.
+	- Expected behavior [Bug]: One copy, as design.md's Lookups says: the unique index drops one at replay with a warning.
+	- Reproduced [Bug]: 20261024, on `round1024`, by replaying two clients' merged logs into a fresh view. The default groups' `name` updates warn the same way at that replay, so they likely get twins too.
+	- Possible cause [Bug]: Replay applies a create as an id-only insert, then one update per field. The unique clash refuses only the update, so the row stays.
+		- Two fixes to weigh: derive a seed row's id from its table and idx, so both clients log the same row, or have replay drop a create when one of its own field updates hits a unique clash. The second also covers runtime idx minting and the default groups.
 	- Estimated effort: Avg
 
 - Show lookup values per `lookup_in_lists` and `lookup_in_forms`.
@@ -281,6 +283,38 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- `id` and `date_created` show read-only and are never written from a form. That likely means honoring `ui: readonly` first.
 	- Progress log:
 		- 20261024: Lists already honor `visible_list` on system fields. The example DDL's built-in `lookups` and `lookup_values` tables ask for `id` on forms, read-only.
+
+- Seed rows from the schema's `seed:` section.
+	- ID: 2026102407295329
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-072953
+	- Opened by: JC
+	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
+	- Prereq IDs: 2026102407295324
+	- Related IDs: 2026102407584270
+	- Requirements [Feature]:
+		- Parse `seed:` (the vocabulary already accepts it) into the schema.
+		- At open, after the replay, insert each seed row log-first when its idx is absent. Never overwrite, so a later edit wins for good.
+		- Per design.md, Lookups.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: `seed:` rows parse into the schema, under `database:` or bare. At open, and in `replay` and `sync`, each row whose idx no row holds yet is created through crud, so it goes into the log.
+		- A deleted row still holds its idx, so deleting a seeded value sticks, as an edit does.
+		- A bad row is skipped with a warning and the database still opens. That's a row with no idx or a bad pair at parse, and an unknown field or a refused create at open.
+		- syntax.md has a new "Seed rows" section.
+		- Verified: the new open tests fail with the open-time seeding left out, and with deleted rows not counted, and pass with both. `test.bash`, the wide gofmt, the CLI smoke, staticcheck, gosec, the seed tests under `-race`, and 10s of `FuzzParse` pass. Through the CLI, `--init` on example.shcl seeds both values, and an edit to one survives `replay` with no duplicate.
+		- Swept: every open path that replays (`OpenClientWith`, the CLI `replay`, and `sync` through it). The data verbs and autosync don't seed, the same as for the default groups.
+	- Decisions:
+		- Only `lookups` and `lookup_values` take seed rows, since their unique idx is what keeps seeding idempotent. Any other table warns and is skipped.
+		- Every seed row has to name its idx. One left to max+1 would seed again on every open.
+		- A seed problem only warns, rather than counting as a schema error, since a missing pick-list value isn't worth greying out the database.
+		- Two clients that both seed before their first sync each log the same rows, and replay keeps both copies. Filed as 2026102407584270.
+	- Branch: round1024
+	- Test case: `TestSeedParse` and `TestSeedParseExample` in `source/internal/core/ddl/seed_test.go`, `TestSeedRowsLogFirst` and `TestSeedRowsExample` in `source/internal/core/schema/seed_test.go`.
+	- Closed: 20261024-075842
 
 - govulncheck lists 2 `golang.org/x/text` advisories in a required module.
 	- ID: 2026102407094415

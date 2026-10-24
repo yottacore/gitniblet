@@ -47,7 +47,8 @@ func OpenClient(ddlPath, dbPath, logDir, userID string) (*Client, error) {
 // OpenClientWith parses the DDL, opens and additively migrates the view,
 // bootstraps the built-in tables, loads the encryption key (if any), replays
 // the tx-log (decrypting field values along the way), then seeds the default
-// groups (after the replay, so an already-seeded log is a no-op).
+// groups and the DDL's seed: rows (after the replay, so an already-seeded log
+// is a no-op).
 func OpenClientWith(opts OpenOpts) (*Client, error) {
 	sch, err := ddl.ParseFile(opts.DDLPath)
 	if err != nil {
@@ -109,6 +110,7 @@ func OpenClientWith(opts OpenOpts) (*Client, error) {
 	if err := SeedDefaults(api); err != nil {
 		return fail(err)
 	}
+	applyWarns = append(applyWarns, SeedRows(api, sch)...)
 	applyWarns = append(applyWarns, encryptionWarnings(sch, hasKey, pref, unreadable)...)
 	return &Client{
 		Schema:   sch,
