@@ -102,6 +102,33 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: round1024
 	- Test case: The govulncheck gate. It failed under `go1.26.5` and passes under `go1.26.10`.
 
+- Built-in `lookups` and `lookup_values` tables, with an auto-assigned `idx`.
+	- ID: 2026102407295324
+	- Type: Enhancement
+	- Status: Waiting on UAT
+	- Needs hand testing: A look at both UIs, which now list the two tables after the user's own.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-072953
+	- Opened by: JC
+	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
+	- Related IDs: 2026102407331876
+	- Requirements [Feature]:
+		- Both tables exist in every database, shaped as in example.shcl, and list like normal tables.
+		- `idx` is a unique int, assigned max+1 on create when not given. A given one is kept, so seeds can name theirs.
+		- `idx` can't be changed once set.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: Both tables are built-in and always-on. Creating a row mints max+1 per table, and deleted rows count, so an idx is never handed out twice.
+		- A given idx must be a whole number above 0 and not taken by a live row. Changing a set idx is refused, and writing the same one back is let through, as a form save does.
+		- Verified: the new tests fail without the crud change and pass with it, the concurrent one under `-race` too. `test.bash`, the CLI smoke, staticcheck and gosec pass. Create, refuse and replay checked through the CLI.
+		- Swept: every crud write path (Create, Update, SetField, SetFieldNull). The TUI, web, CLI and scripts all write through those. Replay doesn't check, by design.
+	- Decisions:
+		- Departs from the wording: `title` and `lookups_idx` aren't NOT NULL yet, unlike example.shcl, since bug 2026102407331876 makes such a table drop every row. They stay `required: y`.
+		- A user schema that restates either table, as example.shcl does, keeps its own shape and warns, as for any built-in name. The idx rules apply either way.
+	- Branch: round1024
+	- Test case: `TestLookupsIdx` and `TestLookupsIdxConcurrent` in `source/internal/core/schema/lookups_test.go`.
+
 - Bump enterprise and vendor to the floss Go toolchain and `x/text`.
 	- ID: 2026102407133557
 	- Type: Task
@@ -141,6 +168,69 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Swept: enterprise `cicd.bash` has none of these stages, and vendor has no `cicd.bash`. Fuzz can still write a crash input into `testdata/`, but it's a test stage, so it gets no flag.
 	- Branch: round1024
 	- Test case: None in the repo, since it needs a stand-in for every stage. The check is kept outside the repo.
+
+- A `null_ok: no` field with no default makes its table drop every row, silently.
+	- ID: 2026102407331876
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-073318
+	- Opened by: JC
+	- Related IDs: 2026102407295324
+	- Steps to reproduce [Bug]:
+		- Give a table a `null_ok: no` field with no `defaultval`, then create a row with that field set.
+	- Incorrect behavior [Bug]: The create succeeds and the row is in the log, but not in the view. No error or warning.
+	- Expected behavior [Bug]: The row reaches the view, or the write is refused up front.
+	- Reproduced [Bug]: 20261024, with the built-in `lookups` table while working 2026102407295324.
+	- Possible cause [Bug]: Replay inserts a create as the bare id with `INSERT OR IGNORE`, and SQLite's OR IGNORE also skips a NOT NULL failure. The field values come after it as updates, against no row.
+		- Once fixed, put `null_ok: n` back on the built-in lookups' `title` and `lookups_idx`.
+	- Estimated effort: Avg
+
+- Seed rows from the schema's `seed:` section.
+	- ID: 2026102407295329
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-072953
+	- Opened by: JC
+	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
+	- Prereq IDs: 2026102407295324
+	- Requirements [Feature]:
+		- Parse `seed:` (the vocabulary already accepts it) into the schema.
+		- At open, after the replay, insert each seed row log-first when its idx is absent. Never overwrite, so a later edit wins for good.
+		- Per design.md, Lookups.
+	- Estimated effort: Avg
+
+- Show lookup values per `lookup_in_lists` and `lookup_in_forms`.
+	- ID: 2026102407295335
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-072953
+	- Opened by: JC
+	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
+	- Prereq IDs: 2026102407295324
+	- Requirements [Feature]:
+		- A `list_type: lookup` field shows its stored idx as symbol, title or both, in the TUI and web.
+		- Lists default to symbol, falling back to title. Forms default to both, symbol first.
+		- The TUI handles double-width and unrenderable symbols, falling back to title.
+		- Inactive values still render on existing rows.
+	- Estimated effort: Avg
+
+- Lookup picker and write-time value check.
+	- ID: 2026102407295340
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-072953
+	- Opened by: JC
+	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
+	- Prereq IDs: 2026102407295324
+	- Requirements [Feature]:
+		- A `list_type: lookup` field edits through a picker of the group's active values, in sort order.
+		- A write refuses a value that isn't in the group. Replay never re-checks.
+		- Per design.md, Lookups. No UI has a `list_type` picker yet, so this may need one for `literal` and `sql` too.
+	- Estimated effort: Avg
 
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161870
@@ -207,6 +297,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 - 🛠️ Figure a clean and consistent way to show emojis or other short symbolic text in TUI, for lookup items, rather than description.
 	- Design settled: built-in `lookups`/`lookup_values` tables with a `symbol` column, `lookup_in_lists`/`lookup_in_forms: symbol|title|both` display enums, int `idx` reference keys, seed rows in the schema. Spec in example.shcl, decisions in design.md Lookups section. The syntax migration it was waiting on is done; idx assignment, the seed engine and the display enums are still to do.
+	- 20261024: Split into 2026102407295324 (tables and idx), 2026102407295329 (seed), 2026102407295335 (display) and 2026102407295340 (picker and write check). This item closes with the last of them.
 
 - 🛠️ Need to research, decide, and document how to separate different concerns in the enterprise repo (and identify what the concerns even are), e.g.:
 	- Customer-facing enterprise product

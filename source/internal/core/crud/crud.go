@@ -44,7 +44,8 @@ type API struct {
 	log *txlog.Log
 
 	mu       sync.Mutex
-	lastDate string // last timestamp issued; see now()
+	lastDate string     // last timestamp issued; see now()
+	idxMu    sync.Mutex // mint-to-commit of an auto idx (idx.go)
 
 	// features gates the opt-in behaviors (features.go); nil = all off.
 	// access/fieldAccess carry the DDL rules access.go enforces.
@@ -149,6 +150,15 @@ func (a *API) Create(table string, fields map[string]string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	unlock := func() {}
+	if autoIdx[table] {
+		a.idxMu.Lock()
+		unlock = a.idxMu.Unlock // before runAfter, so a trigger can create one too
+		if fields, err = a.withIdx(table, fields); err != nil {
+			unlock()
+			return "", err
+		}
+	}
 	id := newID()
 	entries := []txlog.Entry{a.entry(table, id, "", "create", "")}
 	for _, field := range sortedKeys(fields) {
@@ -158,7 +168,9 @@ func (a *API) Create(table string, fields map[string]string) (string, error) {
 		entries = append(entries, a.entry(table, id, field, "update", fields[field]))
 	}
 	entries = append(entries, a.audit(table, id, "create", nil)...)
-	if err := a.commit(entries); err != nil {
+	err = a.commit(entries)
+	unlock()
+	if err != nil {
 		if IsViewRejected(err) {
 			return id, err
 		}
@@ -175,6 +187,9 @@ func (a *API) Update(table, id string, fields map[string]string) error {
 	}
 	fields, err := a.runBefore(table, id, fields)
 	if err != nil {
+		return err
+	}
+	if fields, err = a.keepIdx(table, id, fields); err != nil {
 		return err
 	}
 	// audit next: it reads the OLD values, which the entries then overwrite
@@ -208,6 +223,12 @@ func (a *API) SetField(table, id, field, value string) error {
 	if err != nil {
 		return err
 	}
+	if fields, err = a.keepIdx(table, id, fields); err != nil {
+		return err
+	}
+	if _, ok := fields[field]; !ok {
+		return nil // same idx written back
+	}
 	value = fields[field]
 	audit := a.audit(table, id, "update", fields)
 	if err := a.commit(append([]txlog.Entry{a.entry(table, id, field, "update", value)}, audit...)); err != nil {
@@ -222,6 +243,9 @@ func (a *API) SetField(table, id, field, value string) error {
 func (a *API) SetFieldNull(table, id, field string) error {
 	if field == "id" {
 		return fmt.Errorf("crud: cannot set the id field")
+	}
+	if field == "idx" && autoIdx[table] {
+		return fmt.Errorf("crud: %s idx is fixed once set", table)
 	}
 	if err := a.authorize(table, id, "write", map[string]string{field: ""}); err != nil {
 		return err
