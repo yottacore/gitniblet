@@ -53,6 +53,10 @@ type API struct {
 	access      map[string]ddl.Access
 	fieldAccess map[string]map[string]ddl.Access
 
+	// notNull holds the null_ok: no fields per table, each mapped to whether
+	// a static default covers it (notnull.go).
+	notNull map[string]map[string]bool
+
 	// UserID stamps the tx-log; front-ends set it to the current user.
 	UserID string
 
@@ -159,6 +163,10 @@ func (a *API) Create(table string, fields map[string]string) (string, error) {
 			return "", err
 		}
 	}
+	if err := a.requireOnCreate(table, fields); err != nil {
+		unlock()
+		return "", err
+	}
 	id := newID()
 	entries := []txlog.Entry{a.entry(table, id, "", "create", "")}
 	for _, field := range sortedKeys(fields) {
@@ -248,6 +256,9 @@ func (a *API) SetFieldNull(table, id, field string) error {
 		return fmt.Errorf("crud: %s idx is fixed once set", table)
 	}
 	if err := a.authorize(table, id, "write", map[string]string{field: ""}); err != nil {
+		return err
+	}
+	if err := a.requireNullable(table, field); err != nil {
 		return err
 	}
 	audit := a.audit(table, id, "update", map[string]string{field: ""})

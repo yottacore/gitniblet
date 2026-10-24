@@ -172,7 +172,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - A `null_ok: no` field with no default makes its table drop every row, silently.
 	- ID: 2026102407331876
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on UAT
+		- For a look at the Decisions: the view no longer holds NOT NULL for any field.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-073318
 	- Opened by: JC
@@ -184,7 +185,24 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Reproduced [Bug]: 20261024, with the built-in `lookups` table while working 2026102407295324.
 	- Possible cause [Bug]: Replay inserts a create as the bare id with `INSERT OR IGNORE`, and SQLite's OR IGNORE also skips a NOT NULL failure. The field values come after it as updates, against no row.
 		- Once fixed, put `null_ok: n` back on the built-in lookups' `title` and `lookups_idx`.
+	- Actual cause [Bug]:
+		- As guessed. The view made `null_ok: no` a NOT NULL column, and OR IGNORE dropped the bare-id insert.
+		- Same shape: a logged null on a NOT NULL column that has a default, or on a system column, failed the whole replay. `SetFieldNull` on one wrote the log first, so the database then failed to open.
 	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261024: The view no longer makes any field NOT NULL. A view built before has those columns relaxed on the next open, keeping its rows and columns, and the replay then fills them.
+		- crud checks `null_ok: no` on write. A create that leaves such a field out with no static default is refused, and so is `SetFieldNull` on one, or on a system column. An empty string still goes through, since that's `empty_ok`.
+		- Replay's bare-id insert only ignores an id clash now, so any other refusal warns. A NOT NULL failure skips with a warning, like a unique clash.
+		- `null_ok: n` is back on lookups `title`, and on lookup_values `lookups_idx` and `title`, as in example.shcl. design.md's DDL section says where `null_ok` is checked.
+		- Verified: the new tests fail before the fix and pass after. `test.bash`, the CLI smoke, staticcheck and gosec pass, and the new tests pass under `-race`. Through the CLI, a view the old build left empty showed both rows after one replay with the new one.
+		- Swept: every crud write path (Create, Update, SetField, SetFieldNull). Only SetFieldNull can write a null. Both bare-id inserts in replay, and every NOT NULL in `store.go`. Only the system columns keep one, and they all have defaults.
+	- Decisions:
+		- The SQLite view doesn't enforce `null_ok`. The rule lives at write time, as the lookup value check will, and replay never re-checks.
+		- A `@previous` or function default doesn't count as filling a field, since no front-end computes them yet. Such a field is refused when left out.
+	- Actual fix [Bug]: `null_ok: no` is checked by crud on write instead of as NOT NULL in the view. Old views are relaxed on open.
+	- Branch: round1024
+	- Test case: `TestNotNullRowReachesView`, `TestNotNullRefusedUpFront` and `TestNotNullReplayKeepsLoggedNull` in `source/internal/core/crud/notnull_test.go`, `TestBuildRelaxesOldNotNull` in `store_test.go`, `TestReplayWarnsOnRefusedCreate` in `txlog/replay_test.go`, and `TestLookupsNotNull` in `schema/lookups_test.go`.
 
 - Seed rows from the schema's `seed:` section.
 	- ID: 2026102407295329

@@ -152,3 +152,37 @@ func TestLookupsIdxConcurrent(t *testing.T) {
 		t.Fatalf("want %d rows with idx 1..%d, got rows=%d distinct=%d max=%d", n, n, rows, distinct, top)
 	}
 }
+
+// title and lookups_idx are null_ok: no. A row with them set reaches the view,
+// and one without is refused (backlog 2026102407331876).
+func TestLookupsNotNull(t *testing.T) {
+	api, _, _ := lookupsAPI(t)
+	builtins, err := Builtins()
+	if err != nil {
+		t.Fatal(err)
+	}
+	api.EnableFeatures(builtins)
+
+	group, err := api.Create("lookups", map[string]string{"title": "Status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gidx := idxOf(t, api, "lookups", group)
+	value, err := api.Create("lookup_values", map[string]string{"lookups_idx": gidx, "title": "Open"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row, ok, _ := api.Get("lookup_values", value); !ok || row["title"] != "Open" {
+		t.Fatalf("lookup value missing from the view: ok=%v row=%+v", ok, row)
+	}
+
+	if _, err := api.Create("lookups", map[string]string{"description": "untitled"}); err == nil {
+		t.Error("lookups row without a title went through")
+	}
+	if _, err := api.Create("lookup_values", map[string]string{"title": "Stray"}); err == nil {
+		t.Error("lookup value without a group went through")
+	}
+	if err := api.SetFieldNull("lookup_values", value, "lookups_idx"); err == nil {
+		t.Error("nulling lookups_idx went through")
+	}
+}

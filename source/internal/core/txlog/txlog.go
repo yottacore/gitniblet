@@ -381,9 +381,9 @@ var errBadEntry = errors.New("bad log entry")
 // skippable classifies per-entry errors replay tolerates: unknown tables or
 // columns (the design says DDL drift is ignored, and Build only migrates
 // additively), unique violations (two clients created the same natural key;
-// the deterministic order picks the same winner everywhere), and entry-local
-// data errors. SQLite rolls back only the failed statement, not the enclosing
-// transaction.
+// the deterministic order picks the same winner everywhere), a logged null on
+// a system column, and entry-local data errors. SQLite rolls back only the
+// failed statement, not the enclosing transaction.
 func skippable(err error) bool {
 	if errors.Is(err, errBadEntry) {
 		return true
@@ -391,7 +391,8 @@ func skippable(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "no such table") ||
 		strings.Contains(msg, "no such column") ||
-		strings.Contains(msg, "UNIQUE constraint failed")
+		strings.Contains(msg, "UNIQUE constraint failed") ||
+		strings.Contains(msg, "NOT NULL constraint failed")
 }
 
 // stmts holds the statements one Apply pass reuses, keyed by their own SQL.
@@ -440,7 +441,9 @@ func applyOne(cache *stmts, st *store.Store, entry Entry) error {
 
 	switch entry.Op {
 	case "create":
-		if err := cache.exec(`INSERT OR IGNORE INTO `+tbl+` ("id") VALUES (?)`, id); err != nil {
+		// ON CONFLICT, not OR IGNORE: that also swallows a NOT NULL failure and
+		// drops the row without a word (backlog 2026102407331876).
+		if err := cache.exec(`INSERT INTO `+tbl+` ("id") VALUES (?) ON CONFLICT("id") DO NOTHING`, id); err != nil {
 			return err
 		}
 		if entry.Field != "" {
@@ -449,7 +452,7 @@ func applyOne(cache *stmts, st *store.Store, entry Entry) error {
 		return nil
 	case "update":
 		// Upsert: replay must tolerate the create entry having been GC'd.
-		if err := cache.exec(`INSERT OR IGNORE INTO `+tbl+` ("id") VALUES (?)`, id); err != nil {
+		if err := cache.exec(`INSERT INTO `+tbl+` ("id") VALUES (?) ON CONFLICT("id") DO NOTHING`, id); err != nil {
 			return err
 		}
 		return setField(cache, tbl, entry, id, st.IsRef(entry.Table, entry.Field))

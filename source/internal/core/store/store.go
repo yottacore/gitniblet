@@ -92,6 +92,9 @@ func (s *Store) buildTable(table ddl.Table) error {
 			s.refs[table.Name][f.Name] = true
 		}
 	}
+	if err := s.relaxNotNull(table); err != nil {
+		return err
+	}
 	stmts := []string{createTableSQL(table)}
 	existing, err := s.columns(table.Name)
 	if err != nil {
@@ -101,7 +104,7 @@ func (s *Store) buildTable(table ddl.Table) error {
 		for _, f := range table.Fields {
 			if !existing[f.Name] {
 				stmts = append(stmts, "ALTER TABLE "+quoteIdent(table.Name)+
-					" ADD COLUMN "+columnDef(f, true)+";")
+					" ADD COLUMN "+columnDef(f)+";")
 			}
 		}
 	}
@@ -135,10 +138,87 @@ func (s *Store) columns(table string) (map[string]bool, error) {
 	return out, rows.Err()
 }
 
+// relaxNotNull rebuilds a table an older build gave NOT NULL field columns, so
+// replay can fill it again (see columnDef). SQLite can't drop a constraint in
+// place, so it's a copy into a new table, keeping every row and column.
+func (s *Store) relaxNotNull(table ddl.Table) error {
+	fields := map[string]bool{}
+	for _, f := range table.Fields {
+		fields[f.Name] = true
+	}
+	rows, err := s.db.Query(`SELECT name, type, "notnull" FROM pragma_table_info(?)`, table.Name)
+	if err != nil {
+		return err
+	}
+	type column struct{ name, typ string }
+	var old []column
+	strict := false
+	for rows.Next() {
+		var col column
+		var notNull bool
+		if err := rows.Scan(&col.name, &col.typ, &notNull); err != nil {
+			rows.Close()
+			return err
+		}
+		old = append(old, col)
+		strict = strict || (notNull && fields[col.name])
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil || !strict {
+		return err
+	}
+
+	fresh := table
+	fresh.Name = table.Name + "__relaxed"
+	stmts := []string{
+		"DROP TABLE IF EXISTS " + quoteIdent(fresh.Name) + ";",
+		createTableSQL(fresh),
+	}
+	have := map[string]bool{"id": true}
+	for _, f := range table.Fields {
+		have[f.Name] = true
+	}
+	if !table.NoSystemFields {
+		have["is_active"], have["date_created"], have["is_deleted"] = true, true, true
+	}
+	names := make([]string, len(old))
+	for i, col := range old {
+		names[i] = quoteIdent(col.name)
+		if !have[col.name] { // a field the DDL dropped; additive, so it stays
+			stmts = append(stmts, "ALTER TABLE "+quoteIdent(fresh.Name)+" ADD COLUMN "+quoteIdent(col.name)+" "+col.typ+";")
+		}
+	}
+	list := strings.Join(names, ", ")
+	stmts = append(stmts,
+		"INSERT INTO "+quoteIdent(fresh.Name)+" ("+list+") SELECT "+list+" FROM "+quoteIdent(table.Name)+";",
+		"DROP TABLE "+quoteIdent(table.Name)+";",
+		"ALTER TABLE "+quoteIdent(fresh.Name)+" RENAME TO "+quoteIdent(table.Name)+";",
+	)
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() // no-op after Commit
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("dropping NOT NULL: %w\n%s", err, stmt)
+		}
+	}
+	return tx.Commit()
+}
+
+// HasDefault reports whether the view fills a field the write left out, from a
+// static DDL default.
+func HasDefault(field ddl.Field) bool {
+	_, ok := defaultLiteral(field)
+	return ok
+}
+
 func createTableSQL(table ddl.Table) string {
 	cols := []string{`"id" BLOB PRIMARY KEY`}
 	for _, f := range table.Fields {
-		cols = append(cols, columnDef(f, false))
+		cols = append(cols, columnDef(f))
 	}
 	// system_fields: no (built-in audit_trail) keeps id but skips the rest.
 	if !table.NoSystemFields {
@@ -174,20 +254,15 @@ func indexStatements(table ddl.Table) []string {
 	return stmts
 }
 
-// columnDef renders one column. forAlter drops NOT NULL when there is no
-// default: SQLite refuses ADD COLUMN NOT NULL without a non-null default, and
-// existing rows need a value anyway.
-func columnDef(field ddl.Field, forAlter bool) string {
+// columnDef renders one column. null_ok: no never becomes NOT NULL here: replay
+// inserts a row as its bare id and sets each field after, so the view would
+// drop the row. crud refuses the null on write instead (crud/notnull.go).
+func columnDef(field ddl.Field) string {
 	var b strings.Builder
 	b.WriteString(quoteIdent(field.Name))
 	b.WriteByte(' ')
 	b.WriteString(sqlType(field.Type))
-	def, hasDef := defaultLiteral(field)
-	// null_ok defaults true, so only an explicit "no" makes a column NOT NULL.
-	if field.NullOK != nil && !*field.NullOK && (!forAlter || hasDef) {
-		b.WriteString(" NOT NULL")
-	}
-	if hasDef {
+	if def, hasDef := defaultLiteral(field); hasDef {
 		b.WriteString(" DEFAULT ")
 		b.WriteString(def)
 	}

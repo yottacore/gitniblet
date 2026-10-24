@@ -130,6 +130,7 @@ tables:
 			field: title
 				type: string
 				validation:
+					null_ok: n
 					empty_ok: n
 					required: y
 			field: description
@@ -153,6 +154,7 @@ tables:
 			field: lookups_idx
 				type: int
 				validation:
+					null_ok: n
 					empty_ok: n
 					required: y
 				ui:
@@ -163,6 +165,7 @@ tables:
 			field: title
 				type: string
 				validation:
+					null_ok: n
 					empty_ok: n
 					required: y
 			field: symbol  ## e.g. a single emoji

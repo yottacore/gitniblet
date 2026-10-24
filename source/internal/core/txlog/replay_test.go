@@ -237,3 +237,27 @@ func TestApplySkipsMalformedRef(t *testing.T) {
 		t.Fatalf("warnings = %v, want one naming the ref column", warns)
 	}
 }
+
+// A create the view can't take must warn, not vanish. OR IGNORE on the bare-id
+// insert hid a NOT NULL failure and dropped the row (backlog 2026102407331876).
+func TestReplayWarnsOnRefusedCreate(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "v.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	if _, err := st.DB().Exec(`CREATE TABLE "tag" ("id" BLOB PRIMARY KEY, "title" TEXT NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	row := testID("01")
+	warns, err := Apply(st, []Entry{
+		{Date: "1", TxID: "a", Op: "create", Table: "tag", RowID: row},
+		{Date: "2", TxID: "b", Op: "update", Table: "tag", RowID: row, Field: "title", NewValue: "x"},
+	})
+	if err != nil {
+		t.Fatalf("replay failed: %v", err)
+	}
+	if len(warns) == 0 {
+		t.Fatal("refused create gave no warning")
+	}
+}

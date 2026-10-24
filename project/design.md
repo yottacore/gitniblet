@@ -187,6 +187,8 @@ Also:
 
 - Load-time validation fixes what it safely can with a warning - nameless fields are dropped, a field colliding with an auto-added system column is dropped, an unknown field type stores as text - and never hard-errors. Same philosophy on the tx-log: torn or unreadable lines skip with a warning naming the file and line, repeated header rows (union-merge leftovers) skip silently, and replay skips-and-warns entry-local data errors (mangled row id, an operation this build does not know - possibly a newer client's) exactly like schema drift.
 
+- `null_ok: no` is checked on write, not by the SQLite view. Replay builds a row one field at a time, so a NOT NULL column made the view drop the row. A create that leaves such a field null, with no static default to fill it, is refused, and also setting it to null is refused. Replay never re-checks. A view built before 2026-10-24 has its NOT NULL columns dropped on the next open.
+
 - Most schema keys are optional, with sane defaults.
 
 - Special values (without quotes):
