@@ -23,6 +23,7 @@ func isolate(t *testing.T) string {
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)        // Linux user base
 	t.Setenv("AppData", home)                // Windows user base
+	t.Setenv("HOME", home)                   // macOS user base, under ~/Library
 	t.Setenv("XDG_CONFIG_DIRS", t.TempDir()) // empty system base
 	t.Setenv("ProgramData", t.TempDir())
 	base, err := UserBase()
