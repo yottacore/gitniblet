@@ -248,3 +248,52 @@ func TestRefColumnIsBlob(t *testing.T) {
 		t.Fatal("IsRef must not mark a plain string field")
 	}
 }
+
+// A view an older build made with NOT NULL on a null_ok: no field loses that
+// constraint on the next Build, with its rows, extra columns and indexes intact
+// (backlog 2026102407331876).
+func TestBuildRelaxesOldNotNull(t *testing.T) {
+	schema, err := ddl.Parse([]byte(personDDL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := openTemp(t)
+	for _, stmt := range []string{
+		`CREATE TABLE "person" ("id" BLOB PRIMARY KEY, "name" TEXT NOT NULL, "age" INTEGER NOT NULL DEFAULT 0, "gone" TEXT,
+			"is_active" INTEGER NOT NULL DEFAULT 1, "date_created" TEXT NOT NULL DEFAULT 'then', "is_deleted" INTEGER NOT NULL DEFAULT 0)`,
+		`INSERT INTO "person" ("id", "name", "age", "gone") VALUES (x'01', 'Ann', 7, 'kept')`,
+	} {
+		if _, err := st.DB().Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.Build(schema); err != nil {
+		t.Fatal(err)
+	}
+
+	var name, gone, created string
+	var age int
+	if err := st.DB().QueryRow(`SELECT "name", "age", "gone", "date_created" FROM "person" WHERE "id"=x'01'`).
+		Scan(&name, &age, &gone, &created); err != nil {
+		t.Fatal(err)
+	}
+	if name != "Ann" || age != 7 || gone != "kept" || created != "then" {
+		t.Fatalf("row after rebuild: %q %d %q %q", name, age, gone, created)
+	}
+	var strict int
+	if err := st.DB().QueryRow(`SELECT COUNT(*) FROM pragma_table_info('person') WHERE "notnull" AND name IN ('name','age')`).Scan(&strict); err != nil {
+		t.Fatal(err)
+	}
+	if strict != 0 {
+		t.Fatalf("%d field column(s) still NOT NULL", strict)
+	}
+	if _, err := st.DB().Exec(`INSERT INTO "person" ("id") VALUES (x'02')`); err != nil {
+		t.Fatalf("bare-id insert, as replay does it: %v", err)
+	}
+	if !indexExists(t, st, "ux_person__name") || !indexExists(t, st, "ix_person__age") {
+		t.Fatal("indexes missing after rebuild")
+	}
+	if cols := columns(t, st, "person__relaxed"); len(cols) > 0 {
+		t.Fatalf("temp table left behind: %v", cols)
+	}
+}

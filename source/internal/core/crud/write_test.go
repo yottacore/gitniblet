@@ -70,13 +70,9 @@ func TestCreateReportsAFieldTheViewRefused(t *testing.T) {
 	if !strings.Contains(err.Error(), "UNIQUE constraint failed") {
 		t.Errorf("the refusal should say what the view objected to: %v", err)
 	}
-	// The row exists; only the colliding field is missing.
-	row, ok, err := a.Get("person", id)
-	if err != nil || !ok {
-		t.Fatalf("Get: ok=%v err=%v", ok, err)
-	}
-	if row["name"] != "" {
-		t.Errorf("name = %q, want empty (the view refused it)", row["name"])
+	// The view drops the whole row, not just the field (backlog 2026102407584270).
+	if _, ok, err := a.Get("person", id); err != nil || ok {
+		t.Fatalf("Get: ok=%v err=%v, want the row dropped", ok, err)
 	}
 }
 

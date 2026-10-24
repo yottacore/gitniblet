@@ -46,6 +46,8 @@ if [[ -z "${doQuietly+x}" ]]; then
 	declare  -i doQuietly=0
 	declare  -i doQuick=0  ## --quick: skip the slow stages (cross-builds, fuzz, profiler, govulncheck, gosec)
 	declare  -i doNoArm=0  ## --no-arm: build/package amd64 only (arm64 is cheap here, so this is just a run-time trim)
+	## Off switches for the stages that touch the box or the tracked tree, so a full run can stay hands-off
+	declare  -i doInstall=1  doHooks=1  doPublish=1  doDemo=1  doFormat=1
 	declare  -i doPromptToContinue=1
 	declare -r  thisVersion="1.0.0-beta3"         ## Put you script's semantic version here.
 	declare -r  thisBuild="1mzfd9c"
@@ -102,6 +104,12 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "      --quick         Skip the slow stages: cross-builds, packaging, fuzz,"
 	fEcho_Clean "                      profiler, demo recording, govulncheck + gosec."
 	fEcho_Clean "      --no-arm        Build/package amd64 only (skip arm64) to trim a full run."
+	fEcho_Clean "      --no-install    Skip the dogfood install of the built binary."
+	fEcho_Clean "      --no-hooks      Skip the local pre-publish hooks (../private/cicd-hooks)."
+	fEcho_Clean "      --no-publish    Skip backup + publish: no commit, no push."
+	fEcho_Clean "      --no-demo       Skip the demo recording, which rewrites assets/demo.gif."
+	fEcho_Clean "      --no-format     Check gofmt only, fail on unformatted Go files rather"
+	fEcho_Clean "                      than rewriting them."
 	fEcho_Clean "  -m, --message MSG   Commit message for publish (also --msg; -m MSG or -m=MSG)."
 	fEcho_Clean "                      With -q and no -m, a message is auto-generated."
 	fEcho_Clean "  -h, --help          Show this."
@@ -120,6 +128,11 @@ fMain(){
 		-q|--quiet)                doQuietly=1                          ; shift ;;
 		--quick)                   doQuick=1                            ; shift ;;
 		--no-arm)                  doNoArm=1                            ; shift ;;
+		--no-install)              doInstall=0                          ; shift ;;
+		--no-hooks)                doHooks=0                            ; shift ;;
+		--no-publish)              doPublish=0                          ; shift ;;
+		--no-demo)                 doDemo=0                             ; shift ;;
+		--no-format)               doFormat=0                           ; shift ;;
 		--message=*|--msg=*|-m=*)  cliMessage="${1#*=}"                 ; shift ;;
 		-m|--message|--msg)        cliMessage="${2-}"; shift; (($#)) && shift ;;
 		-h|--help)                 fCopyright; fAbout; fSyntax          ; return 0 ;;
@@ -167,11 +180,19 @@ fMain(){
 		if ((doNoArm)); then
 		fEcho_Clean "No-arm mode ..................: arm64 builds + packages skipped (amd64 only)"
 		fi
+		((doInstall))  ||  fEcho_Clean "Dogfood install ..............: skipped (--no-install)"
+		((doHooks))    ||  fEcho_Clean "Local hooks ..................: skipped (--no-hooks)"
+		((doDemo))     ||  fEcho_Clean "Demo recording ...............: skipped (--no-demo)"
+		((doFormat))   ||  fEcho_Clean "gofmt ........................: check only (--no-format)"
+		if ((! doPublish)); then
+		fEcho_Clean "Backup + publish .............: skipped (--no-publish)"
+		else
 		fEcho_Clean "Git commit and push script ...: ${gitAutomationScript}"
 		if [[ -n "${commitMessage}" ]]; then
 		fEcho_Clean "Publish commit message .......: \"${commitMessage}\""
 		else
 		fEcho_Clean "Publish commit message .......: (prompt below; blank = editor)"
+		fi
 		fi
 		fEcho_Clean
 
@@ -179,7 +200,7 @@ fMain(){
 		## unattended. This doubles as the go/no-go gate: Ctrl+C here aborts (there
 		## is no separate y/n prompt). A blank reply leaves the editor to open at
 		## publish; -m/-q skip this entirely.
-		if [[ -z "${commitMessage}" ]]; then
+		if [[ -z "${commitMessage}" ]] && ((doPublish)); then
 			read -r -p "Publish commit message (blank = editor; Ctrl+C aborts): " reply
 			fEcho_ResetBlankCounter
 			[[ -n "${reply}" ]]  &&  commitMessage="${reply}"
@@ -271,8 +292,15 @@ fMain(){
 	## its own module, so it runs outside vendor mode. go vet lives in test.bash.
 	## Under --quick, staticcheck's network fetch is skipped (gofmt still runs).
 	fEcho_Section "Lint + format"
-	( cd "${dirPath_Source}"  &&  gofmt -w cmd internal )
-	fEcho_Clean "gofmt: formatted in place"
+	if ((doFormat)); then
+		( cd "${dirPath_Source}"  &&  gofmt -w cmd internal )
+		fEcho_Clean "gofmt: formatted in place"
+	else
+		local unformatted  ## split so a gofmt parse error isn't masked by 'local'
+		unformatted="$(cd "${dirPath_Source}"  &&  gofmt -l cmd internal)"
+		[[ -z "${unformatted}" ]]  ||  fThrowError "gofmt needed (--no-format leaves them as is):\n${unformatted}"
+		fEcho_Clean "gofmt: clean (check only, --no-format)"
+	fi
 	if ((doQuick)); then
 		fEcho_Clean "staticcheck skipped (--quick)"
 	else
@@ -326,20 +354,24 @@ fMain(){
 
 	popd 1>/dev/null
 
+	if ((! doInstall)); then
+		fEcho_Section "Dogfood (skipped: --no-install)"
+	else
 		fEcho_Section "Dogfood (install locally)"
 
-	## Linux x86_64
-	for nextPath in "${preferredInstallPaths_Linux_x8664[@]}"; do
-		if [[ -d "${nextPath}" ]]; then
-			fEcho_Clean "copying ${filePath_ExecToTestAndInstall_FinalHome} -> ${nextPath%%/}/"
-			if { ! cp -av --update=older --reflink=auto "${filePath_ExecToTestAndInstall_FinalHome}"  "${nextPath%%/}/"; }  &&  [[ "${nextPath}" != "${HOME}/"* ]]; then
-				sudo cp -av --update=older --reflink=auto "${filePath_ExecToTestAndInstall_FinalHome}"  "${nextPath%%/}/"
+		## Linux x86_64
+		for nextPath in "${preferredInstallPaths_Linux_x8664[@]}"; do
+			if [[ -d "${nextPath}" ]]; then
+				fEcho_Clean "copying ${filePath_ExecToTestAndInstall_FinalHome} -> ${nextPath%%/}/"
+				if { ! cp -av --update=older --reflink=auto "${filePath_ExecToTestAndInstall_FinalHome}"  "${nextPath%%/}/"; }  &&  [[ "${nextPath}" != "${HOME}/"* ]]; then
+					sudo cp -av --update=older --reflink=auto "${filePath_ExecToTestAndInstall_FinalHome}"  "${nextPath%%/}/"
+				fi
+				ls  -lA  --color=always  --human-readable  --time-style=+"%Y-%m-%d %H:%M:%S"  "$(which "$(basename "${filePath_ExecToTestAndInstall_FinalHome}")")"
+				fEcho_Clean "Installed (linux x86_64) -> ${nextPath%%/}/"
+				break
 			fi
-			ls  -lA  --color=always  --human-readable  --time-style=+"%Y-%m-%d %H:%M:%S"  "$(which "$(basename "${filePath_ExecToTestAndInstall_FinalHome}")")"
-			fEcho_Clean "Installed (linux x86_64) -> ${nextPath%%/}/"
-			break
-		fi
-	done;:
+		done;:
+	fi
 
 	## Profiler: sample the CPU-hot replay path, render a flamegraph into
 	## cicd/artifacts/profiling, GFS-rotate the old ones, and print the hotspot
@@ -368,8 +400,8 @@ fMain(){
 	## full gif land in ../private/demo-video/{video,gif} (GFS-rotated, not
 	## committed); the latest gif is copied to assets/demo.gif for the README.
 	## Slow (headless capture + two encodes), so --quick skips it.
-	if ((doQuick)); then
-		fEcho_Section "Demo recording (skipped: --quick)"
+	if ((doQuick)) || ((! doDemo)); then
+		fEcho_Section "Demo recording (skipped: $( ((doQuick)) && echo "--quick" || echo "--no-demo"))"
 	elif [[ -x "${dirPath_Base}/cicd/utility/demo-video/demo-video.py" ]]; then
 		fEcho_Section "Demo recording"
 		python3 "${dirPath_Base}/cicd/utility/demo-video/demo-video.py" --no-build
@@ -381,7 +413,9 @@ fMain(){
 	## committed in the same run. No-op when the folder is absent. A hook gets the
 	## repo base path as $1; a failing hook warns but does not abort the run.
 	declare hooksDir="${dirPath_Base}/../private/cicd-hooks"
-	if [[ -d "${hooksDir}" ]]; then
+	if ((! doHooks)); then
+		fEcho_Section "Local hooks (skipped: --no-hooks)"
+	elif [[ -d "${hooksDir}" ]]; then
 		fEcho_Section "Local hooks"
 		for nextHook in "${hooksDir}"/*.bash; do
 			[[ -f "${nextHook}" ]]  ||  continue
@@ -392,15 +426,19 @@ fMain(){
 
 	## Git automation script (backup, commit, push). Flow the quiet flag and the
 	## resolved commit message through so an unattended run stays hands-off.
-	fEcho_Section "Backup + publish"
-	## doPromptToContinue=0: cicd already gated up front (message captured above),
-	## so the publish step keeps its remote/branch/SSH review but skips a second
-	## y/n. Set as a settings variable, not a switch - that script is kept
-	## identical across projects and takes no flag for this.
-	local -a gitArgs=()
-	if ((doQuietly));                then gitArgs+=(--quiet); fi
-	if [[ -n "${commitMessage}" ]];  then gitArgs+=("--message=${commitMessage}"); fi
-	doPromptToContinue=0  "${gitAutomationScript}"  "${gitArgs[@]}"
+	if ((! doPublish)); then
+		fEcho_Section "Backup + publish (skipped: --no-publish)"
+	else
+		fEcho_Section "Backup + publish"
+		## doPromptToContinue=0: cicd already gated up front (message captured above),
+		## so the publish step keeps its remote/branch/SSH review but skips a second
+		## y/n. Set as a settings variable, not a switch - that script is kept
+		## identical across projects and takes no flag for this.
+		local -a gitArgs=()
+		if ((doQuietly));                then gitArgs+=(--quiet); fi
+		if [[ -n "${commitMessage}" ]];  then gitArgs+=("--message=${commitMessage}"); fi
+		doPromptToContinue=0  "${gitAutomationScript}"  "${gitArgs[@]}"
+	fi
 
 	## Done
 	fEcho_Section "${exeName} CI/CD: done."
@@ -667,3 +705,4 @@ fMain  "${@}"
 ##		- 20260704 JC: Preflight now captures the commit message up front (Ctrl+C aborts) instead of a y/n gate; section headers get the letterbox rule; passes --no-prompt to the publish step so it doesn't re-ask.
 ##		- 20260711 JC: Full cross-platform packaging via goreleaser (binaries for linux/darwin/windows/freebsd amd64+arm64, .deb/.rpm, archives, checksums) plus a Windows .exe installer; split native debug (test/profile) from release (dogfood/package) builds; added --no-arm.
 ##		- 20260804 JC: Publish step skips its second y/n via the doPromptToContinue setting; the --no-prompt switch no longer exists in that script.
+##		- 20261024 JC: Added --no-install, --no-hooks, --no-publish, --no-demo and --no-format, so a full run can leave the box and the tracked tree alone.

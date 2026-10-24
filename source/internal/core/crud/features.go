@@ -20,6 +20,7 @@ import (
 
 	"github.com/jim-collier/nano-git-db/internal/core/ddl"
 	"github.com/jim-collier/nano-git-db/internal/core/guid"
+	"github.com/jim-collier/nano-git-db/internal/core/store"
 	"github.com/jim-collier/nano-git-db/internal/core/txlog"
 )
 
@@ -42,6 +43,8 @@ func (a *API) EnableFeatures(schemas ...*ddl.Schema) {
 	a.features = map[string]ddl.Features{}
 	a.access = map[string]ddl.Access{}
 	a.fieldAccess = map[string]map[string]ddl.Access{}
+	a.notNull = map[string]map[string]bool{}
+	a.lookups = map[string]map[string]int{}
 	for _, schema := range schemas {
 		for _, table := range schema.Tables {
 			if _, ok := a.features[table.Name]; ok {
@@ -50,10 +53,25 @@ func (a *API) EnableFeatures(schemas ...*ddl.Schema) {
 			a.features[table.Name] = table.Features
 			a.access[table.Name] = table.Access
 			fieldAcc := map[string]ddl.Access{}
+			strict := map[string]bool{}
+			groups := map[string]int{}
 			for _, field := range table.Fields {
 				fieldAcc[field.Name] = field.Access
+				if group := lookupGroup(field); group > 0 {
+					groups[field.Name] = group
+				}
+				if field.NullOK != nil && !*field.NullOK {
+					strict[field.Name] = store.HasDefault(field)
+				}
+			}
+			if !table.NoSystemFields {
+				strict["is_active"], strict["date_created"], strict["is_deleted"] = true, true, true
 			}
 			a.fieldAccess[table.Name] = fieldAcc
+			a.notNull[table.Name] = strict
+			if len(groups) > 0 {
+				a.lookups[table.Name] = groups
+			}
 		}
 	}
 }

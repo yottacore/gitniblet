@@ -237,3 +237,92 @@ func TestApplySkipsMalformedRef(t *testing.T) {
 		t.Fatalf("warnings = %v, want one naming the ref column", warns)
 	}
 }
+
+// A create the view can't take must warn, not vanish. OR IGNORE on the bare-id
+// insert hid a NOT NULL failure and dropped the row (backlog 2026102407331876).
+func TestReplayWarnsOnRefusedCreate(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "v.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	if _, err := st.DB().Exec(`CREATE TABLE "tag" ("id" BLOB PRIMARY KEY, "title" TEXT NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	row := testID("01")
+	warns, err := Apply(st, []Entry{
+		{Date: "1", TxID: "a", Op: "create", Table: "tag", RowID: row},
+		{Date: "2", TxID: "b", Op: "update", Table: "tag", RowID: row, Field: "title", NewValue: "x"},
+	})
+	if err != nil {
+		t.Fatalf("replay failed: %v", err)
+	}
+	if len(warns) == 0 {
+		t.Fatal("refused create gave no warning")
+	}
+}
+
+// Two clients that create the same unique value before syncing used to both
+// keep the row, the later one with that field empty (backlog 2026102407584270).
+// The later row goes whole, and a view that already held either side from an
+// earlier pass ends up the same as a fresh one.
+func TestReplayDropsCreateTwin(t *testing.T) {
+	const twinDDL = uniqueDDL + "\t\tfields:\n" +
+		"\t\t\tfield: note\n" +
+		"\t\t\t\ttype: string\n"
+	rowA, rowB := testID("0A"), testID("0B")
+	clientA := []Entry{
+		{Date: "10", TxID: "a1", Op: "create", Table: "person", RowID: rowA},
+		{Date: "11", TxID: "a2", Op: "create", Table: "person", RowID: rowA, Field: "name", NewValue: "Ann"},
+		{Date: "12", TxID: "a3", Op: "create", Table: "person", RowID: rowA, Field: "note", NewValue: "from a"},
+	}
+	clientB := []Entry{
+		{Date: "20", TxID: "b1", Op: "create", Table: "person", RowID: rowB},
+		{Date: "21", TxID: "b2", Op: "create", Table: "person", RowID: rowB, Field: "note", NewValue: "from b"},
+		{Date: "22", TxID: "b3", Op: "create", Table: "person", RowID: rowB, Field: "name", NewValue: "Ann"},
+		{Date: "30", TxID: "b4", Op: "update", Table: "person", RowID: rowB, Field: "note", NewValue: "b again"},
+	}
+	merged := append(append([]Entry{}, clientB...), clientA...)
+
+	for _, tc := range []struct {
+		name   string
+		before []Entry
+	}{
+		{"fresh", nil},
+		{"view held A", clientA},
+		{"view held B", clientB},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := newView(t, twinDDL)
+			if tc.before != nil {
+				if _, err := Apply(st, tc.before); err != nil {
+					t.Fatal(err)
+				}
+			}
+			warns, err := Apply(st, merged)
+			if err != nil {
+				t.Fatalf("replay failed: %v", err)
+			}
+			if len(warns) != 1 || !strings.Contains(warns[0], rowB) {
+				t.Errorf("warnings = %v, want one naming the dropped row", warns)
+			}
+			rows, err := st.DB().Query(`SELECT idtext("id"), coalesce("name", ''), coalesce("note", '') FROM "person"`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer rows.Close()
+			var got []string
+			for rows.Next() {
+				var id, name, note string
+				if err := rows.Scan(&id, &name, &note); err != nil {
+					t.Fatal(err)
+				}
+				got = append(got, id+"|"+name+"|"+note)
+			}
+			want := rowA + "|Ann|from a"
+			if len(got) != 1 || got[0] != want {
+				t.Errorf("rows = %v, want just %s", got, want)
+			}
+		})
+	}
+}

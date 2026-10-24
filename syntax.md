@@ -22,6 +22,7 @@ The complete DDL, sidecar-file, CLI, and run-mode reference. For a five-minute i
 	- [Encryption](#encryption)
 	- [Aliases and renames](#aliases-and-renames)
 - [Relationships](#relationships)
+- [Seed rows](#seed-rows)
 - [Views](#views)
 - [Tunables](#tunables)
 - [Sidecar files](#sidecar-files)
@@ -90,11 +91,45 @@ A `table:` has a name and a `fields:` block, plus optional `uniques:`, `indexes:
 Each `field:` has a name and, at minimum, a `type:`. Other per-field keys the current build honors:
 
 - `type:` - see below.
+
 - `aliases:` - former names, so a renamed field's history still replays (see [Aliases and renames](#aliases-and-renames)).
+
 - `access:` - per-field read/write rules (see [Access control](#access-control)).
+
 - `code:` - `before_update` / `after_update` trigger hooks (see [Triggers](#triggers-and-code-lua)).
 
-Additional keys appear in `project/example.shcl` (`ui:`, `validation:`, `special:`, `defaultval:`, widgets, formats). These parse but their runtime behavior is still being built out; treat them as forward-looking until a release note says otherwise.
+- `ui:` -> `visible_list:` and `visible_form:` - set either to `no` to keep the field out of lists or out of forms, in both the TUI and the web UI. Both default to `yes`. This is presentation only. The field can still be read and written through the CLI, a query, or SQL, and a form that hides it leaves its value alone on save. Use `access:` to actually restrict it.
+
+	```
+				field: pin
+					type: string
+					ui:
+						visible_form: no
+						visible_list: no
+	```
+
+- `ui:` -> `list_type: lookup` - the field stores a `lookup_values` idx, from the group whose `lookups` idx is given as `list_source:`. Lists show the value's symbol, or its title when it has none. Forms show the symbol, then the title. `lookup_in_lists:` and `lookup_in_forms:` each take `symbol`, `title` or `both` to change that. A value made inactive or soft-deleted still shows on the rows that have it. A write refuses a value that isn't active in the group, though a row can keep one it already holds. A value from another group shows as the stored idx. An edit form picks from the group's active values, in `sort` order, and keeps an inactive one the row already holds. The TUI shows the title in place of a symbol the terminal can't draw.
+
+	```
+				field: status
+					type: int
+					ui:
+						list_type: lookup
+						list_source: 1
+						lookup_in_lists: both
+	```
+
+- `ui:` -> `list_type: literal` or `list_type: sql` - an edit form picks the field's value from a list. For `literal`, `list_source:` is a comma list of values, quoted where one holds a comma. For `sql`, it's a backtick query run each time the form opens: the first column is the value stored, and the second, if there is one, is what the list shows. Lists show the stored value. Nothing checks it on write.
+
+	```shcl
+				field: kind
+					type: string
+					ui:
+						list_type: literal
+						list_source: "Bug", "Task", "Chore"
+	```
+
+Additional keys appear in `project/example.shcl` (the rest of `ui:`, `validation:`, `special:`, `defaultval:`, widgets, formats). These parse but their runtime behavior is still being built out; treat them as forward-looking until a release note says otherwise.
 
 ### Field types
 
@@ -117,9 +152,14 @@ Anything else stores as text with a warning, so a typo never breaks the load.
 Every table automatically gets these; you do not declare them:
 
 - `id` - the row's primary key, a GUID. Stored as raw bytes; reads render it as 22 characters of base64url (that is the form you pass back to `get`/`update`), and the longer 32-character hex form is also accepted as input. First column, unique, indexed.
+
 - `is_active` - defaults to on.
+
 - `date_created` - set at insert.
+
 - `is_deleted` - hidden; set by a soft-delete (`markdelete`), and folded into every unique index so a deleted row does not block re-creating its natural key.
+
+A `field:` entry naming `id`, `is_active` or `date_created` may carry a `ui:` block. Anything else on it warns and is ignored. Lists show `id` unless it says `visible_list: no`, and show `is_active` and `date_created` only when it says `visible_list: yes`. A list that would end up with no columns still shows `id`.
 
 A table can opt out of these with `system_fields: no` (used internally by the audit trail); such a table gets exactly the columns you declare.
 
@@ -234,6 +274,26 @@ database:
 ```
 
 Name each relationship. The name is only a label, but it is what tells two `relationship:` entries apart - leave them both blank and they merge into one.
+
+## Seed rows
+
+The built-in `lookups` and `lookup_values` tables can start out with rows from the schema, under `seed:` (or `database.seed:`).
+
+~~~shcl
+database:
+	seed:
+		table: lookups
+			row: idx=1, title="Task status"
+		table: lookup_values
+			row: idx=1, lookups_idx=1, title="Open",   symbol="🔘", sort=1
+			row: idx=2, lookups_idx=1, title="Closed", symbol="✅", sort=2
+~~~
+
+Each `row:` is a comma list of `field=value` pairs, and has to give its `idx`. Quote a value that has a comma in it.
+
+At open, after the log is replayed, each row whose `idx` no row holds yet is created through the log, like any other write. A row that's already there is never touched, so once a row is seeded, edits made to it in the UI win for good. That goes for deleting one too: a deleted row still holds its idx, so it doesn't come back.
+
+A row that can't go in, such as one naming a field the table doesn't have, is skipped with a warning, and the database still opens. Only `lookups` and `lookup_values` take seed rows.
 
 ## Views
 

@@ -120,6 +120,14 @@ func (s *server) viewBlockRows(w http.ResponseWriter, r *http.Request) {
 		"Type": block.Type, "Table": block.Table, "Readonly": block.Readonly,
 		"Cols": s.cat.ColumnsFor(block.Table), "View": spec.Name, "CommentsTarget": -1,
 	}
+	if block.Type != "comments" {
+		show, err := s.cat.Lookups(s.api, block.Table)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		data["Show"] = show
+	}
 	// A row of a list block that feeds a comments pane gets a link that loads
 	// that row's thread into the pane.
 	if leaves := spec.CommentsLeavesFor(i); len(leaves) > 0 {
@@ -145,8 +153,9 @@ func (s *server) viewBlockRows(w http.ResponseWriter, r *http.Request) {
 		}
 		type fv struct{ F, V string }
 		var pairs []fv
-		for _, f := range s.cat.Fields[block.Table] {
-			pairs = append(pairs, fv{f, row[f]})
+		show := data["Show"].(*schema.LookupShow)
+		for _, f := range s.cat.FormFields(block.Table) {
+			pairs = append(pairs, fv{f, show.Form(f, row[f])})
 		}
 		data["FieldVals"] = pairs
 	case "tree_grid":

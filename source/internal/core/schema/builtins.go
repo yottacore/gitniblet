@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 
-// Package schema owns the built-in tables: users, groups, and the opt-in
+// Package schema owns the built-in tables: users, groups, lookups, and the opt-in
 // feature tables (many2many, comments, audit trail, row access, attachments).
 // They are written in the same DDL end-users write, embedded in this one file
 // so developers can tweak them but end-users cannot - it ships compiled in.
@@ -116,6 +116,71 @@ tables:
 				type: string
 			field: extension  ## original extension; stored file is named <id>, no extension
 				type: string
+	table: lookups  ## design.md Lookups; idx is assigned by crud
+		fields:
+			field: id
+				ui:
+					visible_form: y
+					visible_list: n
+					readonly: y
+			field: idx
+				type: int
+				ui:
+					readonly: y
+			field: title
+				type: string
+				validation:
+					null_ok: n
+					empty_ok: n
+					required: y
+			field: description
+				type: string
+			field: is_active
+				ui:
+					label: "Active"
+		uniques:
+			unique: idx
+	table: lookup_values
+		fields:
+			field: id
+				ui:
+					visible_form: y
+					visible_list: n
+					readonly: y
+			field: idx  ## what a lookup-backed field stores
+				type: int
+				ui:
+					readonly: y
+			field: lookups_idx
+				type: int
+				validation:
+					null_ok: n
+					empty_ok: n
+					required: y
+				ui:
+					description: "Lookup group"
+					widget: listbox
+					list_type: sql
+					list_source: ` + "`SELECT idx, title FROM lookups WHERE is_active ORDER BY title`" + `
+			field: title
+				type: string
+				validation:
+					null_ok: n
+					empty_ok: n
+					required: y
+			field: symbol  ## e.g. a single emoji
+				type: string
+			field: description
+				type: string
+			field: sort  ## picker order within a group; idx never sorts
+				type: float
+			field: is_active
+				ui:
+					label: "Active"
+		uniques:
+			unique: idx
+		indexes:
+			index: lookups_idx
 
 relationships:
 	relationship: users_groups  ## implied by design: every user belongs to groups
@@ -132,9 +197,9 @@ relationships:
 		enable_audit_trail: y
 `
 
-// alwaysOn are created unconditionally: users/groups per the design, and
-// many2many because the implied users<->groups m:m lives there.
-var alwaysOn = []string{"users", "groups", "many2many"}
+// alwaysOn are created unconditionally: users/groups and the lookups pair per
+// the design, and many2many because the implied users<->groups m:m lives there.
+var alwaysOn = []string{"users", "groups", "many2many", "lookups", "lookup_values"}
 
 // Builtins parses the embedded DDL. It is small, so no caching.
 func Builtins() (*ddl.Schema, error) {

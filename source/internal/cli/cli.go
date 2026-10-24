@@ -414,7 +414,7 @@ func buildDB(ddlPath, dbPath string) error {
 	for _, w := range append(sch.Warnings, bootWarns...) {
 		fmt.Println("  warning:", w)
 	}
-	fmt.Println("  note: default groups get seeded by replay/sync (they are log-first)")
+	fmt.Println("  note: default groups and seed: rows get seeded by replay/sync (they are log-first)")
 	return nil
 }
 
@@ -473,6 +473,7 @@ func replay(ddlPath, dbPath, logDir string) error {
 	if err := schema.SeedDefaults(api); err != nil {
 		return err
 	}
+	warns = append(warns, schema.SeedRows(api, sch)...)
 	fmt.Printf("applied %d log entr%s into %s\n", len(entries), plural(len(entries)), dbPath)
 	for _, w := range append(bootWarns, warns...) {
 		fmt.Println("  warning:", w)

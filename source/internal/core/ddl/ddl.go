@@ -34,9 +34,10 @@ type Schema struct {
 	Tables      []Table
 	Relations   []Relationship
 	Views       []View
-	DefaultView string   // ui: default_view; empty means "first view defined"
-	Encryption  string   // database-level encryption: always|never|auto ("" = unset)
-	Warnings    []string // soft issues; parsing still succeeds
+	Seeds       []SeedRow // seed: rows, file order
+	DefaultView string    // ui: default_view; empty means "first view defined"
+	Encryption  string    // database-level encryption: always|never|auto ("" = unset)
+	Warnings    []string  // soft issues; parsing still succeeds
 	// Errors counts the error-severity diagnostics behind Warnings: lines that
 	// were skipped or repaired, and failed validation. Parsing still produced a
 	// schema, but something in the file did not survive intact - discovery uses
@@ -193,6 +194,7 @@ func Parse(src []byte) (*Schema, error) {
 	s.mapTables(root)
 	s.mapRelationships(root)
 	s.mapViews(root)
+	s.mapSeeds(root)
 	return s, nil
 }
 

@@ -228,8 +228,13 @@ func (s *server) rows(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	show, err := s.cat.Lookups(s.api, table)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	s.render(w, "rows.html", map[string]any{
-		"Table": table, "Cols": s.cat.ColumnsFor(table), "Rows": rows,
+		"Table": table, "Cols": s.cat.ColumnsFor(table), "Rows": rows, "Show": show,
 	})
 }
 
@@ -253,8 +258,13 @@ func (s *server) form(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	show, err := s.cat.FormChoices(s.api, table)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	data := map[string]any{
-		"Table": table, "ID": id, "Fields": s.cat.Fields[table], "Row": row,
+		"Table": table, "ID": id, "Fields": s.cat.FormFields(table), "Row": row, "Show": show,
 	}
 	// the row's opt-in extras only exist once the row does
 	if id != "" {

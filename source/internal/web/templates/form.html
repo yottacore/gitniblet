@@ -2,7 +2,11 @@
 <form hx-post="/t/{{.Table}}{{if .ID}}/{{.ID}}{{end}}" hx-target="#main">
 	{{$r := .Row}}
 	{{range .Fields}}
+	{{if $.Show.HasPicker .}}
+	<label>{{.}}<br><select name="{{.}}">{{range $.Show.Choices . (index $r .)}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></label><br>
+	{{else}}
 	<label>{{.}}<br><input name="{{.}}" value="{{index $r .}}"></label><br>
+	{{end}}
 	{{end}}
 	<button type="submit">Save</button>
 	<button type="button" hx-get="/t/{{.Table}}" hx-target="#main">Cancel</button>

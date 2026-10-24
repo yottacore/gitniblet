@@ -71,7 +71,7 @@ Manually kicked off via `cicd/cicd.bash`. Stages, in order (each fails early and
 - **Screenshots**: regenerate the README thumbnails.
 - **Publish**: `n8git_backup-and-publish`.
 
-The whole run is tee'd to a rotated `cicd/artifacts/lint/run_<ts>.log` so warnings from any stage can be reviewed after the fact (`lint-report.bash`). `--quick` skips the slow stages (cross-builds, fuzz, profiler, screenshots, govulncheck, gosec); lint + tests still run. Every step is capped to at most half the cores (`cpu-limit.bash`: `GOMAXPROCS` + `-p`). `cicd/artifacts/` is gitignored.
+The whole run is tee'd to a rotated `cicd/artifacts/lint/run_<ts>.log` so warnings from any stage can be reviewed after the fact (`lint-report.bash`). `--quick` skips the slow stages (cross-builds, fuzz, profiler, screenshots, govulncheck, gosec); lint + tests still run. Each stage that installs, commits, pushes or rewrites a tracked file has its own off flag: `--no-install` (dogfood), `--no-hooks` (local pre-publish hooks), `--no-publish`, `--no-demo` (rewrites `assets/demo.gif`), and `--no-format`, which checks with `gofmt -l` and fails on unformatted files instead of running `gofmt -w`. Every step is capped to at most half the cores (`cpu-limit.bash`: `GOMAXPROCS` + `-p`). `cicd/artifacts/` is gitignored.
 
 ## Language and stack
 
@@ -187,6 +187,8 @@ Also:
 
 - Load-time validation fixes what it safely can with a warning - nameless fields are dropped, a field colliding with an auto-added system column is dropped, an unknown field type stores as text - and never hard-errors. Same philosophy on the tx-log: torn or unreadable lines skip with a warning naming the file and line, repeated header rows (union-merge leftovers) skip silently, and replay skips-and-warns entry-local data errors (mangled row id, an operation this build does not know - possibly a newer client's) exactly like schema drift.
 
+- `null_ok: no` is checked on write, not by the SQLite view. Replay builds a row one field at a time, so a NOT NULL column made the view drop the row. A create that leaves such a field null, with no static default to fill it, is refused, and also setting it to null is refused. Replay never re-checks. A view built before 2026-10-24 has its NOT NULL columns dropped on the next open.
+
 - Most schema keys are optional, with sane defaults.
 
 - Special values (without quotes):
@@ -243,6 +245,8 @@ Reads map columns by the header row's names, not by position, so field order doe
 `ok_to_garbage_collect` is populated automatically, when the original record (or table) referred to no longer exists. Only log records N-days old are garbage collected (by any client). Default is 90 days.
 
 `host_name` is stamped automatically from the OS hostname (override with `NANOGITDB_HOST`), the machine analogue of `user_id`'s `NANOGITDB_USER`. It is txlog metadata only - replay does not apply it to the view.
+
+A create logs the bare row id and then each of the row's starting values, all as `create` entries. Later edits are `update` entries. That split is how replay settles two clients that created the same unique value before syncing: the row created later in log order is dropped whole, with a warning, instead of kept with the clashing field empty. A view kept from an earlier pass can already hold the later row, so replay drops whichever one a fresh rebuild would. Logs from before the split carry starting values as updates, and a clash there still skips only the field.
 
 On-disk encoding: every entry is exactly one physical line. Characters that would force CSV quoting or break line-based union merging (newline, return, comma, quotes, backtick, slashes) are stored as named markers - 🗦NEWLINE🗧, 🗦COMMA🗧, etc. - and a `new_value` of exactly 🗦NULL🗧 means SQL NULL (distinct from empty string). Literal 🗦/🗧 in content encode as 🗦LDELIM🗧/🗦RDELIM🗧, so user text can never spoof a marker. Other control characters are scrubbed. Decoding happens on read; the SQLite view always holds the real characters.
 
@@ -316,6 +320,8 @@ The `--init`, `--config`, and `--encrypt` CLI flags drive the same registry from
 	- Editing from a web view block jumps to the table's form for now; returning into the view is future polish.
 - Field UI metadata (spec settled 2026-07, implementation waits for the shcl syntax migration; current vocabulary in [example.shcl](example.shcl)):
 	- `visible` splits into `visible_form` and `visible_list`. Presentation only, never access control - a hidden field stays fully readable via CLI/query/SQL; the `access:` lists are the only thing that gates data.
+		- Built 2026-10-24 in both UIs, through the shared catalog. `visible_list` trims table grids and view `grid`/`tree_grid` blocks. `visible_form` trims edit forms and `form` blocks, and a save writes only the fields the form showed, so a hidden value is never blanked. A posted hidden field still saves.
+		- On system fields: `id` is listed unless `visible_list: no`, and `is_active`/`date_created` only with `visible_list: yes`. A list left with no columns falls back to `id`, so a row can still be picked. Showing system fields on forms waits on `readonly`.
 	- `title` becomes `label`; `list_type` values are `literal|sql|lookup` (`sql` replaces `dynamic`); `lookup` wires a field to the built-in lookup tables (see Lookups).
 	- A DDL field entry naming a system field (`id`, `is_active`, `date_created`) merges its `ui:` block onto it instead of being dropped. Presentation-only merge: `type:`, `validation:`, `defaultval:` on a system field warn and are ignored - system fields stay structurally immutable, presentationally customizable.
 	- `defaultval` takes three forms: a static value, a sentinel from a closed set (`@null`, `@previous`), or a script function `"fFunc()"`. The `@` marker was chosen over brackets because `[` `]` are reserved value characters in shcl. Quoting escapes a sentinel, so `"@null"` is the literal text. `@previous` (value from the previously entered row, this session) applies in interactive front-ends only - programmatic writes never inherit a sticky session value; an omitted field is null or a required-field error.

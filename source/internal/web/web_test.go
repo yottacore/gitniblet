@@ -35,7 +35,12 @@ tables:
 
 func newTestServer(t *testing.T) (*server, *crud.API) {
 	t.Helper()
-	sch, err := ddl.Parse([]byte(personDDL))
+	return newTestServerFor(t, personDDL)
+}
+
+func newTestServerFor(t *testing.T, src string) (*server, *crud.API) {
+	t.Helper()
+	sch, err := ddl.Parse([]byte(src))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,5 +227,64 @@ func TestAssetsServed(t *testing.T) {
 		if w := do(t, s.routes(), "GET", p, nil); w.Code != 200 || w.Body.Len() == 0 {
 			t.Errorf("%s: %d len=%d", p, w.Code, w.Body.Len())
 		}
+	}
+}
+
+// Hidden fields drop out of the list and the form, and saving the form
+// leaves a field it never showed alone.
+func TestHiddenFieldsStayPut(t *testing.T) {
+	s, api := newTestServerFor(t, `
+tables:
+	table: person
+		fields:
+			field: name
+				type: string
+			field: shoe_size
+				type: string
+				ui:
+					visible_list: n
+			field: pin
+				type: string
+				ui:
+					visible_form: n
+`)
+	h := s.routes()
+	id, err := api.Create("person", map[string]string{"name": "Ann", "shoe_size": "38", "pin": "4321"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	list := do(t, h, "GET", "/t/person", nil).Body.String()
+	if strings.Contains(list, "shoe_size") || strings.Contains(list, ">38<") {
+		t.Errorf("list shows a visible_list: n column:\n%s", list)
+	}
+	if !strings.Contains(list, "<th>pin</th>") || !strings.Contains(list, "4321") {
+		t.Errorf("list lost a column only hidden from forms:\n%s", list)
+	}
+
+	form := do(t, h, "GET", "/t/person/"+id+"/edit", nil).Body.String()
+	if strings.Contains(form, `name="pin"`) || strings.Contains(form, "4321") {
+		t.Errorf("form shows a visible_form: n field:\n%s", form)
+	}
+	if !strings.Contains(form, `name="shoe_size"`) {
+		t.Errorf("form lost a field only hidden from lists:\n%s", form)
+	}
+
+	if w := do(t, h, "POST", "/t/person/"+id, url.Values{"name": {"Bea"}, "shoe_size": {"39"}}); w.Code != 200 {
+		t.Fatalf("update: %d\n%s", w.Code, w.Body)
+	}
+	row, _, err := api.Get("person", id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row["name"] != "Bea" || row["shoe_size"] != "39" || row["pin"] != "4321" {
+		t.Errorf("after save: %v", row)
+	}
+	// hidden is presentation only, so a posted hidden field still saves
+	if w := do(t, h, "POST", "/t/person/"+id, url.Values{"pin": {"0000"}}); w.Code != 200 {
+		t.Fatalf("update pin: %d", w.Code)
+	}
+	if row, _, _ := api.Get("person", id); row["pin"] != "0000" {
+		t.Errorf("posted hidden field was dropped: %v", row)
 	}
 }

@@ -78,6 +78,268 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Test case: `TestVersionLine` in `source/app/app_test.go`, and the date check in `smoke-cli.bash`.
 	- Branch: macci
 
+- govulncheck flags the pinned Go toolchain.
+	- ID: 2026102407051369
+	- Type: Bug
+	- Status: Waiting on automated testing
+	- Needs external testing: The hosted `ci.yml` run, Linux and macOS jobs, on the new `1.26.10` pin.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-070513
+	- Opened by: JC
+	- Incorrect behavior [Bug]: govulncheck reports 5 standard library advisories against the `go1.26.5` toolchain pin, so the security gate fails on `dev`.
+	- Expected behavior [Bug]: govulncheck passes under the pinned toolchain.
+	- Reproduced [Bug]: 20261024, on `dev` at ce5dfa0.
+	- Possible cause [Bug]: The advisories are fixed in go1.26.10. Enterprise and vendor may pin the same toolchain.
+	- Actual cause [Bug]:
+		- The `go1.26.5` pin fell behind. By 20261024 govulncheck listed 10 stdlib advisories against it, in `net/http`, `net/textproto`, `crypto/tls`, `crypto/x509` and `html/template`. One needs go1.26.10, the rest go1.26.9.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: Bumped the pin to `go1.26.10`, the newest 1.26 release, in `go.mod`, `ci.yml` and `release.yml`. govulncheck is clean, with 2 `golang.org/x/text` advisories it says the code never calls, filed as 2026102407094415.
+		- 20261024: Enterprise and vendor pin the same `go1.26.5`, in `source/go.mod`, `ci.yml` and `release.yml`. Left alone, since only floss is in this round. Enterprise builds floss through a `replace`, but its own `toolchain` line picks the compiler, so it needs its own bump.
+		- 20261024: The full run at 6bb9d3d passed govulncheck under `go1.26.10`: no vulnerabilities found. The hosted `ci.yml` run starts only after the merge push to `dev`, so the status waits on that.
+	- Actual fix [Bug]: Toolchain pin bumped to `go1.26.10`.
+		- Swept: every `1.26.x` pin outside `vendor/`, in `go.mod`, the workflows, `tool-versions.bash`, `.goreleaser.yaml`, `dependabot.yml` and the docs. Only the 3 changed files had one.
+	- Branch: round1024
+	- Test case: The govulncheck gate. It failed under `go1.26.5` and passes under `go1.26.10`.
+
+- A `null_ok: no` field with no default makes its table drop every row, silently.
+	- ID: 2026102407331876
+	- Type: Bug
+	- Status: Waiting on UAT
+		- For a look at the Decisions: the view no longer holds NOT NULL for any field.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-073318
+	- Opened by: JC
+	- Related IDs: 2026102407295324
+	- Steps to reproduce [Bug]:
+		- Give a table a `null_ok: no` field with no `defaultval`, then create a row with that field set.
+	- Incorrect behavior [Bug]: The create succeeds and the row is in the log, but not in the view. No error or warning.
+	- Expected behavior [Bug]: The row reaches the view, or the write is refused up front.
+	- Reproduced [Bug]: 20261024, with the built-in `lookups` table while working 2026102407295324.
+	- Possible cause [Bug]: Replay inserts a create as the bare id with `INSERT OR IGNORE`, and SQLite's OR IGNORE also skips a NOT NULL failure. The field values come after it as updates, against no row.
+		- Once fixed, put `null_ok: n` back on the built-in lookups' `title` and `lookups_idx`.
+	- Actual cause [Bug]:
+		- As guessed. The view made `null_ok: no` a NOT NULL column, and OR IGNORE dropped the bare-id insert.
+		- Same shape: a logged null on a NOT NULL column that has a default, or on a system column, failed the whole replay. `SetFieldNull` on one wrote the log first, so the database then failed to open.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261024: The view no longer makes any field NOT NULL. A view built before has those columns relaxed on the next open, keeping its rows and columns, and the replay then fills them.
+		- crud checks `null_ok: no` on write. A create that leaves such a field out with no static default is refused, and so is `SetFieldNull` on one, or on a system column. An empty string still goes through, since that's `empty_ok`.
+		- Replay's bare-id insert only ignores an id clash now, so any other refusal warns. A NOT NULL failure skips with a warning, like a unique clash.
+		- `null_ok: n` is back on lookups `title`, and on lookup_values `lookups_idx` and `title`, as in example.shcl. design.md's DDL section says where `null_ok` is checked.
+		- Verified: the new tests fail before the fix and pass after. `test.bash`, the CLI smoke, staticcheck and gosec pass, and the new tests pass under `-race`. Through the CLI, a view the old build left empty showed both rows after one replay with the new one.
+		- Swept: every crud write path (Create, Update, SetField, SetFieldNull). Only SetFieldNull can write a null. Both bare-id inserts in replay, and every NOT NULL in `store.go`. Only the system columns keep one, and they all have defaults.
+	- Decisions:
+		- The SQLite view doesn't enforce `null_ok`. The rule lives at write time, as the lookup value check will, and replay never re-checks.
+		- A `@previous` or function default doesn't count as filling a field, since no front-end computes them yet. Such a field is refused when left out.
+	- Actual fix [Bug]: `null_ok: no` is checked by crud on write instead of as NOT NULL in the view. Old views are relaxed on open.
+	- Branch: round1024
+	- Test case: `TestNotNullRowReachesView`, `TestNotNullRefusedUpFront` and `TestNotNullReplayKeepsLoggedNull` in `source/internal/core/crud/notnull_test.go`, `TestBuildRelaxesOldNotNull` in `store_test.go`, `TestReplayWarnsOnRefusedCreate` in `txlog/replay_test.go`, and `TestLookupsNotNull` in `schema/lookups_test.go`.
+
+- Two clients that create the same unique value before syncing both keep it in the view, one with that field empty.
+	- ID: 2026102407584270
+	- Type: Bug
+	- Status: Waiting on UAT
+		- For a look at the Decisions: a create whose unique value is already taken now leaves no row in the view at all.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-075842
+	- Opened by: JC
+	- Related IDs: 2026102407295329, 2026102407295324
+	- Steps to reproduce [Bug]:
+		- Open a new database whose schema has `seed:` rows from two clones, before either syncs. Sync both, then open one.
+	- Incorrect behavior [Bug]: Each seeded value is listed twice. The second copy has an empty idx and the rest of its fields set.
+	- Expected behavior [Bug]: One copy, as design.md's Lookups says: the unique index drops one at replay with a warning.
+	- Reproduced [Bug]: 20261024, on `round1024`, by replaying two clients' merged logs into a fresh view. The default groups' `name` updates warn the same way at that replay, so they likely get twins too.
+	- Possible cause [Bug]: Replay applies a create as an id-only insert, then one update per field. The unique clash refuses only the update, so the row stays.
+		- Two fixes to weigh: derive a seed row's id from its table and idx, so both clients log the same row, or have replay drop a create when one of its own field updates hits a unique clash. The second also covers runtime idx minting and the default groups.
+	- Actual cause [Bug]:
+		- As guessed. The log had no way to tell a row's starting values from later edits, so replay could only skip the field.
+		- Same shape: a view kept from an earlier pass kept its own client's row, so 2 clients could each keep a different one.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261024: crud logs a create's starting values as `create` entries, not `update`. Replay already read that form, so older builds apply it the same way.
+		- On a unique clash with a starting value, replay drops the row created later in log order, whole, with a warning. Its later edits are skipped too, so it can't come back as a stub.
+		- When the view already holds the later row from an earlier pass, that row is the one dropped. So every client keeps the same row as a fresh rebuild.
+		- design.md's Transaction log section says how creates are logged and settled.
+		- Verified: the new tests fail before the fix and pass after. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass, and the new tests pass under `-race`. Taking out the earlier-pass check makes the "view held B" case fail.
+		- Swept: every path that logs a new row (`Create`, which seeding and the default groups go through, and the audit records, which have no unique field). Every replay caller (`OpenClientWith`, CLI `replay`, autosync, the live write) goes through `txlog.Apply`.
+	- Decisions:
+		- Replay drops the clashing create, rather than seed rows getting an id from their table and idx. That also covers runtime idx minting and the default groups.
+		- 20261024: `TestCreateReportsAFieldTheViewRefused` in `crud/write_test.go` asserted the second row stays with an empty `name`. It now asserts the row isn't in the view. The id and the refusal still come back.
+		- Logs written before this keep starting values as updates, so their clashes still skip only the field. Twins those logs already made stay.
+		- For a unique group over several fields, the earlier-pass check only spots a later row that sets the clashing field itself at create.
+		- Refusing a clashing create up front, before it's logged, is filed as 2026102408084809.
+	- Actual fix [Bug]: A create's values are logged as create entries, and replay drops the later of 2 rows that clash on one.
+	- Branch: round1024
+	- Test case: `TestReplayDropsCreateTwin` in `source/internal/core/txlog/replay_test.go`, `TestSeedRowsTwoClients` in `source/internal/core/schema/seed_test.go`, and the updated `TestCreateReportsAFieldTheViewRefused` in `source/internal/core/crud/write_test.go`.
+
+- Built-in `lookups` and `lookup_values` tables, with an auto-assigned `idx`.
+	- ID: 2026102407295324
+	- Type: Enhancement
+	- Status: Waiting on UAT
+	- Needs hand testing: A look at both UIs, which now list the two tables after the user's own.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-072953
+	- Opened by: JC
+	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
+	- Related IDs: 2026102407331876
+	- Requirements [Feature]:
+		- Both tables exist in every database, shaped as in example.shcl, and list like normal tables.
+		- `idx` is a unique int, assigned max+1 on create when not given. A given one is kept, so seeds can name theirs.
+		- `idx` can't be changed once set.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: Both tables are built-in and always-on. Creating a row mints max+1 per table, and deleted rows count, so an idx is never handed out twice.
+		- A given idx must be a whole number above 0 and not taken by a live row. Changing a set idx is refused, and writing the same one back is let through, as a form save does.
+		- Verified: the new tests fail without the crud change and pass with it, the concurrent one under `-race` too. `test.bash`, the CLI smoke, staticcheck and gosec pass. Create, refuse and replay checked through the CLI.
+		- Swept: every crud write path (Create, Update, SetField, SetFieldNull). The TUI, web, CLI and scripts all write through those. Replay doesn't check, by design.
+	- Decisions:
+		- Departs from the wording: `title` and `lookups_idx` aren't NOT NULL yet, unlike example.shcl, since bug 2026102407331876 makes such a table drop every row. They stay `required: y`.
+		- 20261024: That bug is fixed in d459e1f, and `title` and `lookups_idx` are `null_ok: n` again.
+		- A user schema that restates either table, as example.shcl does, keeps its own shape and warns, as for any built-in name. The idx rules apply either way.
+	- Branch: round1024
+	- Test case: `TestLookupsIdx` and `TestLookupsIdxConcurrent` in `source/internal/core/schema/lookups_test.go`.
+
+- Show lookup values per `lookup_in_lists` and `lookup_in_forms`.
+	- ID: 2026102407295335
+	- Type: Enhancement
+	- Status: Waiting on UAT
+		- For a look at the Decisions: an edit form keeps the idx in its input, with the value shown beside it.
+	- Needs hand testing: A look at both UIs with a few emoji symbols, in the usual terminal and font.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-072953
+	- Opened by: JC
+	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
+	- Prereq IDs: 2026102407295324
+	- Requirements [Feature]:
+		- A `list_type: lookup` field shows its stored idx as symbol, title or both, in the TUI and web.
+		- Lists default to symbol, falling back to title. Forms default to both, symbol first.
+		- The TUI handles double-width and unrenderable symbols, falling back to title.
+		- Inactive values still render on existing rows.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261024: Table lists, view grids and tree grids show a lookup field per `lookup_in_lists`, and view form blocks per `lookup_in_forms`, in both UIs. Edit forms show the value beside the idx.
+		- A value with no symbol shows its title. A value from another group, or one that isn't there, shows the stored idx.
+		- The TUI shows the title for a symbol that's bad UTF-8, zero width, or has a control char, or a glyph the terminal's charset can't draw. A double-width symbol keeps the next column in line.
+		- A `list_source` that isn't a group idx warns at open, and the field shows as stored.
+		- syntax.md's Fields section has the new keys.
+		- Verified: the new tests fail with the display turned off and pass with it, and the charset test fails without the screen check. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass. The real TUI under a pty shows the symbol with a UTF-8 locale, and the title with `C`.
+		- Swept: every place the TUI and web render a table row (table grid, view grid, tree grid, form block, edit form). Named query results are left as the SQL returns them, since their columns aren't tied to a field.
+	- Decisions:
+		- An edit form keeps the idx editable, since the picker is 2026102407295340. The value shows beside it, from the stored idx, so it doesn't follow typing.
+			- 20261024: The picker is in now, through 2026102408470113, so an edit form picks from a list.
+		- Soft-deleted values still show, like inactive ones. An idx is never handed out twice, so the label can't be wrong.
+		- Only values in the field's own group show. Another group's value shows as the stored idx, rather than a title that looks right.
+		- The TUI now starts its own terminal screen before handing it to tview, so the charset check works before the first draw.
+	- Branch: round1024
+	- Test case: `TestLookupShow` in `source/internal/core/schema/lookupshow_test.go`, `TestLookupsShowInTUI` and `TestLookupsFallBackToTitleInTUI` in `source/internal/tui/lookups_test.go`, and `TestLookupsShowInWeb` in `source/internal/web/lookups_test.go`.
+
+- Edit a `list_type: lookup` field through a picker, in the TUI and web.
+	- ID: 2026102408470113
+	- Type: Enhancement
+	- Status: Waiting on UAT
+	- Needs hand testing: A look at both pickers with a few emoji symbols, in the usual terminal and font.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-084701
+	- Opened by: JC
+	- Parent ID: 2026102407295340
+	- Prereq IDs: 2026102408470107
+	- Requirements [Feature]:
+		- The edit form offers the group's active values, in sort order, shown per `lookup_in_forms`.
+		- A row that holds an inactive or deleted value keeps it until another is picked.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: Edit forms in both UIs pick a lookup field from a list: none first, then the group's active values by `sort`, then idx, labeled per `lookup_in_forms`. Values with no sort come last. The TUI's labels fall back to the title for a symbol the terminal can't draw, as lists do.
+		- A value the row holds that isn't offered, such as an inactive or deleted one, or one from an older build, is listed second and stays picked. A save that leaves it alone doesn't write it.
+		- A user schema that restates `lookup_values` with no `sort` field orders by idx.
+		- syntax.md's lookup line says what the form offers.
+		- 20261024: `TestLookupsShowInTUI` waited for the label `status (🔘`, and now checks the picker shows the value. `TestLookupsShowInWeb` checked for `name="status" value="7"` and a `<span>` label, and now checks for `<option value="7" selected>`. Both were the stand-in until this picker.
+		- Verified: the new and changed tests fail with the picker turned off and pass with it, 3 runs under `-race` too. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass.
+		- Swept: every edit form (the TUI's table grid and view blocks both go through `editFormThen`, and the web's through `form.html`). View form blocks only display.
+	- Decisions:
+		- The none entry stays on every form, so a field can be cleared. A `null_ok: no` field then gets the crud refusal on save.
+	- Branch: round1024
+	- Test case: `TestLookupChoices` in `source/internal/core/schema/lookupshow_test.go`, `TestLookupPickerInTUI` and the updated `TestLookupsShowInTUI` in `source/internal/tui/lookups_test.go`, and `TestLookupPickerInWeb` and the updated `TestLookupsShowInWeb` in `source/internal/web/lookups_test.go`.
+
+- Pickers for `list_type: literal` and `list_type: sql` fields.
+	- ID: 2026102408470118
+	- Type: Enhancement
+	- Status: Waiting on UAT
+	- Needs hand testing: A look at the `lookup_values` form's group picker in both UIs.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-084701
+	- Opened by: JC
+	- Parent ID: 2026102407295340
+	- Prereq IDs: 2026102408470113
+	- Requirements [Feature]:
+		- Same picker as for lookups, fed from the literal list or the query in `list_source`. The built-in `lookup_values.lookups_idx` is one.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: Edit forms in both UIs pick a `literal` or `sql` field from its `list_source`, with none first and a held value that isn't listed kept second, as for lookups.
+		- A literal list splits on commas outside quotes. A query gives the value in its first column and the label in its second, or the value again. It runs when a form opens, never for a list.
+		- A query that fails stops the form with an error naming the field. A `list_type` with no `list_source` warns at open.
+		- syntax.md has a line for both, with an example.
+		- Verified: the new tests fail with the pickers turned off and pass with them, 3 runs under `-race` too. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass.
+		- Swept: the same edit forms as 2026102408470113. No demo schema uses `list_type`.
+	- Decisions:
+		- Lists still show a `literal` or `sql` field as stored, not the query's label.
+		- A write isn't checked against the list, unlike a lookup. The requirement didn't ask for it, and a query's rows can change under a held value.
+	- Branch: round1024
+	- Test case: `TestPickerChoices` in `source/internal/core/schema/picker_test.go`, `TestLiteralPickerInTUI` in `source/internal/tui/lookups_test.go`, and `TestListPickersInWeb` in `source/internal/web/lookups_test.go`.
+
+- Bump enterprise and vendor to the floss Go toolchain and `x/text`.
+	- ID: 2026102407133557
+	- Type: Task
+	- Status: Stalled
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-071335
+	- Opened by: JC
+	- Related IDs: 2026102407051369, 2026102407094415
+	- Requirements [Feature]:
+		- Enterprise and vendor pin `toolchain go1.26.5` in `source/go.mod`, `ci.yml` and `release.yml`. floss moved to `go1.26.10`.
+		- Enterprise requires `golang.org/x/text v0.21.0`, and builds floss through a `replace`, so its vendor tree needs the floss bump to v0.41.0 too.
+		- Then `go build ./...` and govulncheck pass in both.
+	- Progress log:
+		- 20261024: Held for the uncommitted enterprise edits from 2026-10-19, in `go.mod`, `ci.yml` and `release.yml`, to be committed. Enterprise isn't in floss rounds.
+
+- Lookup picker and write-time value check.
+	- ID: 2026102407295340
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-072953
+	- Opened by: JC
+	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
+	- Prereq IDs: 2026102407295324
+	- Requirements [Feature]:
+		- A `list_type: lookup` field edits through a picker of the group's active values, in sort order.
+		- A write refuses a value that isn't in the group. Replay never re-checks.
+		- Per design.md, Lookups. No UI has a `list_type` picker yet, so this may need one for `literal` and `sql` too.
+	- Estimated effort: Avg
+	- Progress log:
+		- 20261024: Split into 2026102408470107 (write check), 2026102408470113 (lookup picker) and 2026102408470118 (`literal` and `sql` pickers). This item closes with the last of them.
+		- 20261024: All 3 are in. The write check is Done, and the 2 pickers wait on a look by eye.
+
+- Refuse a create whose unique value is already taken in the view, before it's logged.
+	- ID: 2026102408084809
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-080848
+	- Opened by: JC
+	- Related IDs: 2026102407584270
+	- Requirements [Feature]:
+		- Today the create is logged, the view drops the row, and the caller gets the id with a refusal. The log then holds a row no view will show.
+		- Check the unique groups in crud, under the commit lock, and refuse with a plain message instead. Replay keeps settling clashes between clients.
+	- Estimated effort: Low
+
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161870
 	- Type: Enhancement
@@ -96,35 +358,198 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Progress log:
 		- 20261013: Go builds for plain x86-64 by default (`GOAMD64=v1`), and nothing here sets it, so this may already hold. Pin `GOAMD64=v1` in the release build so a stray environment can't raise it. The standard library already picks faster code at run time.
 
+- Show system fields on forms when their `ui:` opts them in.
+	- ID: 2026102407263968
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-072639
+	- Opened by: JC
+	- Requirements [Feature]:
+		- `visible_form: yes` on `id`, `is_active` or `date_created` shows that field on the edit form and in `form` blocks, in both UIs.
+		- `id` and `date_created` show read-only and are never written from a form. That likely means honoring `ui: readonly` first.
+	- Progress log:
+		- 20261024: Lists already honor `visible_list` on system fields. The example DDL's built-in `lookups` and `lookup_values` tables ask for `id` on forms, read-only.
+
+- Off flags for the cicd.bash stages that install, publish, or rewrite tracked files.
+	- ID: 2026102407051370
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-070513
+	- Opened by: JC
+	- Requirements [Feature]:
+		- A full run can turn off, by its own flag, each stage that installs, commits, pushes, or rewrites a tracked file. Lint and test stages need none.
+		- Stages with no off flag now: dogfood install, local hooks, and backup and publish.
+		- The demo stage rewrites `assets/demo.gif`, and only `--quick` turns it off, along with every other slow stage. It gets its own flag.
+		- The lint stage's `gofmt -w` rewrites unformatted Go files.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 2026-10-24: Added `--no-install`, `--no-hooks`, `--no-publish`, `--no-demo` and `--no-format`. Each skips only its own stage, and the skip shows in the stage header and the preflight list.
+		- `--no-format` runs `gofmt -l` and fails on any unformatted file, rather than rewriting it.
+		- With `--no-publish`, an interactive run no longer asks for a commit message.
+		- design.md's CI/CD section lists the flags.
+		- Verified: each flag alone, all five together, and none. 9 of 11 cases fail on the old script, and all pass on the new one.
+		- Swept: enterprise `cicd.bash` has none of these stages, and vendor has no `cicd.bash`. Fuzz can still write a crash input into `testdata/`, but it's a test stage, so it gets no flag.
+		- 2026-10-24: Verified: one full run at 6bb9d3d with `--no-install --no-hooks --no-publish --no-demo --no-format`. Every other stage passed, the 5 off stages printed their skip headers, and `git status` was clean after.
+	- Branch: round1024
+	- Test case: None in the repo, since it needs a stand-in for every stage. The check is kept outside the repo.
+	- Closed: 20261024-091700
+
+- Refuse a lookup value that isn't in the field's group, on write.
+	- ID: 2026102408470107
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-084701
+	- Opened by: JC
+	- Parent ID: 2026102407295340
+	- Prereq IDs: 2026102407295324
+	- Requirements [Feature]:
+		- A create or update of a `list_type: lookup` field refuses a value that isn't an active value in its group. Replay never re-checks.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: crud refuses a lookup value that isn't a whole number, isn't in the field's group, or is inactive or deleted. It's checked after the before-trigger, so a trigger's value is checked too. A value is stored as the bare idx, so " 1 " and "01" show as 1.
+		- A row that already holds an inactive or deleted value can write it back, as a form save does. Once it lets go of it, it can't pick it again.
+		- Like the null checks, it's on only after `EnableFeatures`. A field whose `list_source` isn't a group idx isn't checked, since the catalog already warns on it.
+		- syntax.md's lookup line says what a write refuses.
+		- Verified: the new tests fail with the check turned off, and the write-back test fails without the held-value rule. Both pass with the change. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass. Through the CLI, an inactive and a missing value are both refused, and a good one goes in.
+		- Swept: every crud write path (Create, Update, SetField, SetFieldNull, which only writes a null). The TUI, web, CLI and script binds all write through them. Replay goes through `txlog.Apply`, which doesn't check.
+	- Decisions:
+		- An inactive value is refused like a missing one, per design.md's "can't be picked", except where the row already holds it.
+	- Branch: round1024
+	- Test case: `TestLookupWriteCheck` and `TestLookupReplayDoesNotCheck` in `source/internal/core/crud/lookupcheck_test.go`.
+	- Closed: 20261024-085223
+
+- Seed rows from the schema's `seed:` section.
+	- ID: 2026102407295329
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-072953
+	- Opened by: JC
+	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
+	- Prereq IDs: 2026102407295324
+	- Related IDs: 2026102407584270
+	- Requirements [Feature]:
+		- Parse `seed:` (the vocabulary already accepts it) into the schema.
+		- At open, after the replay, insert each seed row log-first when its idx is absent. Never overwrite, so a later edit wins for good.
+		- Per design.md, Lookups.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: `seed:` rows parse into the schema, under `database:` or bare. At open, and in `replay` and `sync`, each row whose idx no row holds yet is created through crud, so it goes into the log.
+		- A deleted row still holds its idx, so deleting a seeded value sticks, as an edit does.
+		- A bad row is skipped with a warning and the database still opens. That's a row with no idx or a bad pair at parse, and an unknown field or a refused create at open.
+		- syntax.md has a new "Seed rows" section.
+		- Verified: the new open tests fail with the open-time seeding left out, and with deleted rows not counted, and pass with both. `test.bash`, the wide gofmt, the CLI smoke, staticcheck, gosec, the seed tests under `-race`, and 10s of `FuzzParse` pass. Through the CLI, `--init` on example.shcl seeds both values, and an edit to one survives `replay` with no duplicate.
+		- Swept: every open path that replays (`OpenClientWith`, the CLI `replay`, and `sync` through it). The data verbs and autosync don't seed, the same as for the default groups.
+	- Decisions:
+		- Only `lookups` and `lookup_values` take seed rows, since their unique idx is what keeps seeding idempotent. Any other table warns and is skipped.
+		- Every seed row has to name its idx. One left to max+1 would seed again on every open.
+		- A seed problem only warns, rather than counting as a schema error, since a missing pick-list value isn't worth greying out the database.
+		- Two clients that both seed before their first sync each log the same rows, and replay keeps both copies. Filed as 2026102407584270.
+	- Branch: round1024
+	- Test case: `TestSeedParse` and `TestSeedParseExample` in `source/internal/core/ddl/seed_test.go`, `TestSeedRowsLogFirst` and `TestSeedRowsExample` in `source/internal/core/schema/seed_test.go`.
+	- Closed: 20261024-075842
+
+- The TUI's simulation-screen tests fail under `-race`.
+	- ID: 2026102408252318
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-082523
+	- Opened by: JC
+	- Related IDs: 2026102407295335
+	- Steps to reproduce [Bug]:
+		- From `source/`, `go test -mod=vendor -race -run TestViewOpensAndLoadsOnSimulationScreen ./internal/tui`.
+	- Incorrect behavior [Bug]: 12 data race reports, and the test fails.
+	- Expected behavior [Bug]: It passes under `-race`, as the other packages' tests do.
+	- Reproduced [Bug]: 20261024, on `round1024`, while working 2026102407295335. Its own simulation-screen tests race the same way.
+	- Possible cause [Bug]: The test reads the screen's cells from its own goroutine while the app goroutine runs `Init` and draws. tcell's simulation screen doesn't lock `GetContents`. The app code isn't involved.
+	- Actual cause [Bug]:
+		- Both races are in the tests. tview's `SetScreen` runs `Init` again on the screen the test already started, from the app goroutine, while the test reads it. That second `Init` also resets the screen to 80x25, so the tests never got the size they set.
+		- `GetContents` does lock, but it returns the live cells, which the next draw writes. `Fini` writes them with no lock.
+		- `TestLookupsShowInTUI` also waited for `t1x`, which the edit form's input shows before Save runs. Under `-race` its DB check ran before the save.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: The tests share one screen type, `simScreen` in `tui_test.go`. It's started once, skips tview's `Init`, and draws and reads under one lock. All 7 places that built a simulation screen use it. `TestLookupsShowInTUI` now waits for the edit form to close before it checks the DB.
+		- Verified: before the fix, the package under `-race` gave 74 race reports and 11 failing tests. With the screen type alone, only `TestLookupsShowInTUI` failed, 5 runs of 5. With both changes, the package passes under `-race` 3 runs in a row, and that test 10. `test.bash`, the wide gofmt, the CLI smoke and staticcheck pass.
+		- Swept: every simulation screen and `screenText` caller in the TUI tests (tui, views, lookups, gate, picker), and every test that types into a form and then checks the DB. Only the lookups one waited on the typed text.
+	- Actual fix [Bug]: A shared test screen that starts once and keeps draws and reads apart. No app code changed.
+	- Branch: round1024
+	- Test case: The TUI package's simulation-screen tests under `-race`, such as `TestViewOpensAndLoadsOnSimulationScreen` and `TestLookupsShowInTUI`.
+	- Closed: 20261024-084419
+
+- govulncheck lists 2 `golang.org/x/text` advisories in a required module.
+	- ID: 2026102407094415
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-070944
+	- Opened by: JC
+	- Related IDs: 2026102407051369
+	- Incorrect behavior [Bug]: `govulncheck -show verbose` lists GO-2026-6629 and GO-2026-5970 against `golang.org/x/text@v0.21.0`. It says the code doesn't call them, so the gate still passes.
+	- Expected behavior [Bug]: No known advisories in required modules.
+	- Reproduced [Bug]: 20261024, on `round1024` at 91739b7, under `go1.26.10`.
+	- Possible cause [Bug]: `x/text` is behind. The fixes are in v0.39.0 and v0.41.0. Bumping it means a vendor refresh, then the vendor re-scrub.
+	- Actual cause [Bug]:
+		- `x/text` came in at v0.21.0 through tcell and tview, and was never bumped.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: Bumped `x/text` to v0.41.0, the newest that still says `go 1.25.0`. v0.42.0 and up want `go 1.26.0`, which would raise our `go` line. The vendored `x/text` files came out byte-identical, so only `go.mod`, `go.sum` and `modules.txt` changed.
+		- 20261024: The refresh put back the old copyright line in vendored `shcl.go`, which b977f98 had edited by hand, so that file was kept as committed. The vendor scrub ran after.
+		- 20261024: Enterprise also requires `x/text v0.21.0`, and builds floss through a `replace`, so after the merge its `go.mod` needs the same bump and a vendor refresh. Vendor doesn't use `x/text`.
+	- Actual fix [Bug]: `golang.org/x/text` v0.21.0 -> v0.41.0, with a vendor refresh.
+		- Swept: every `go.mod` in floss (just the one), and `x/text` mentions outside `vendor/`. Enterprise and vendor `go.mod` checked, not changed.
+	- Branch: round1024
+	- Test case: The govulncheck gate. It listed both advisories at v0.21.0 and lists none at v0.41.0.
+	- Closed: 20261024-071232
+
+- Encrypt the schema, query, and script sidecar files.
+	- ID: 2026102408284572
+	- Type: Feature
+	- Status: Deferred
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-082845
+	- Opened by: JC
+	- Requirements [Feature]:
+		- Phase two of the old-format "Optional encrypted data in the transaction log" item, which closed with phase one.
+		- Also encrypt the DDL, `.queries.shcl` and `.lua` files, with flags to decrypt and re-encrypt them for editing.
+		- The `ddl:`, `named_queries:` and `config:` file-level encryption labels that design.md lists as deferred.
+	- Progress log:
+		- 20261024: Filed from the old item, which marked this part deferred.
+
+- More encryption key options.
+	- ID: 2026102408284578
+	- Type: Feature
+	- Status: Deferred
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-082845
+	- Opened by: JC
+	- Related IDs: 2026102408284572
+	- Requirements [Feature]:
+		- From the old-format "Optional encrypted data in the transaction log" item, which marked these as future.
+		- Multiple keys by role or team.
+		- Public and private keys for read-only roles.
+		- Keys made from a passphrase.
+		- Re-encrypt existing data under a new key.
+	- Progress log:
+		- 20261024: Filed from the old item. Today there's one key per database.
+
 ## Old format
 
 ### Bugs
 
 ### Features and enhancements
 
-- 🛠️ Figure a clean and consistent way to hide list columns (or fields in general).
-	- Design settled: `visible_form`/`visible_list` per field (spec in example.shcl, decisions in design.md UI section). The syntax migration it was waiting on is done; the display work itself is still to do.
-
 - 🛠️ Figure a clean and consistent way to show emojis or other short symbolic text in TUI, for lookup items, rather than description.
 	- Design settled: built-in `lookups`/`lookup_values` tables with a `symbol` column, `lookup_in_lists`/`lookup_in_forms: symbol|title|both` display enums, int `idx` reference keys, seed rows in the schema. Spec in example.shcl, decisions in design.md Lookups section. The syntax migration it was waiting on is done; idx assignment, the seed engine and the display enums are still to do.
-
-- 🛠️ Need to research, decide, and document how to separate different concerns in the enterprise repo (and identify what the concerns even are), e.g.:
-	- Customer-facing enterprise product
-	- Our owned side used to (possibly) generate license keys, process payment, check subscription status, etc. This would basically be a completely separate company presence, ecommerce, and validation system.
-		- Basic requirements:
-			- 🔘 Minimal web dependencies. (To minimize constant cascading updates pulling in potentially hundreds of unknown/untrusted dependencies, near-constant churn with breaking and deprecating third-party updates; and also the growing threat of "supply-chain attack" risk.)
-	- Decisions captured in the enterprise repo (`research-enterprise-concerns.md`); implementation is phased (see the folder-hierarchy item below).
-
-- 🛠️ Optional encrypted data in the transaction log. The local SQLite copy is always decrypted.
-	- Reason: keep the log unreadable to the git host, or to anyone who gets the repo.
-	- Note: some columns stay clear so git can still merge and replay (table and field names, row id, user, host, counts). Only the field values are private.
-	- Done: phase one encrypts field values. A field with no key reads back empty and warns, so ciphertext never reaches the view. Full design is in design.md.
-	- ✅ Key lives outside the repo, one per database. Users share it out of band.
-	- ✅ `--init --encrypt=on` sets up the key and turns encryption on. It can be toggled per host afterward.
-	- ✅ With encrypted data present but no key, the user is warned and can still read and write the clear fields.
-	- ✅ DDL `encryption: always|never|auto` at the database, table, and field level. `always` and `never` lock the levels below; `auto` defers to the local preference.
-	- 🔘 Deferred (phase two): also encrypt the DDL, query, and script sidecar files, with flags to decrypt and re-encrypt them for editing.
-	- 🔘 Future: multiple keys by role or team; public and private keys for read-only roles; passphrase-generated keys; re-encrypting existing data with a new key.
+	- 20261024: Split into 2026102407295324 (tables and idx), 2026102407295329 (seed), 2026102407295335 (display) and 2026102407295340 (picker and write check). This item closes with the last of them.
 
 ### Done
 
@@ -174,6 +599,38 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Item 12: for a database kept in the same folder as its schema, sync committed and pushed the derived SQLite file, and would have pushed an encryption key placed beside it. Both are now ignored in the log directory.
 
 #### Done - Features and enhancements
+
+- ✅ Need to research, decide, and document how to separate different concerns in the enterprise repo (and identify what the concerns even are), e.g.:
+	- Customer-facing enterprise product
+	- Our owned side used to (possibly) generate license keys, process payment, check subscription status, etc. This would basically be a completely separate company presence, ecommerce, and validation system.
+		- Basic requirements:
+			- ✅ Minimal web dependencies. (To minimize constant cascading updates pulling in potentially hundreds of unknown/untrusted dependencies, near-constant churn with breaking and deprecating third-party updates; and also the growing threat of "supply-chain attack" risk.)
+	- Decisions captured in the enterprise repo (`research-enterprise-concerns.md`); implementation is phased (see the folder-hierarchy item below).
+	- 20261024: Closed. Every decision in `research-enterprise-concerns.md` is answered, and the vendor repo's design.md has the rule under "Dependencies". The vendor module requires nothing outside the standard library so far.
+	- 20261024: What's left is the vendor repo's live wiring, the Postgres handle and the payment account, which its design.md defers until the endpoint is hosted.
+
+- ✅ Optional encrypted data in the transaction log. The local SQLite copy is always decrypted.
+	- Reason: keep the log unreadable to the git host, or to anyone who gets the repo.
+	- Note: some columns stay clear so git can still merge and replay (table and field names, row id, user, host, counts). Only the field values are private.
+	- Done: phase one encrypts field values. A field with no key reads back empty and warns, so ciphertext never reaches the view. Full design is in design.md.
+	- ✅ Key lives outside the repo, one per database. Users share it out of band.
+	- ✅ `--init --encrypt=on` sets up the key and turns encryption on. It can be toggled per host afterward.
+	- ✅ With encrypted data present but no key, the user is warned and can still read and write the clear fields.
+	- ✅ DDL `encryption: always|never|auto` at the database, table, and field level. `always` and `never` lock the levels below; `auto` defers to the local preference.
+	- ✋ Deferred (phase two): also encrypt the DDL, query, and script sidecar files, with flags to decrypt and re-encrypt them for editing. Moved to 2026102408284572.
+	- ✋ Future: multiple keys by role or team; public and private keys for read-only roles; passphrase-generated keys; re-encrypting existing data with a new key. Moved to 2026102408284578.
+	- 20261024: Closed with phase one done. The 2 open parts are their own Deferred items now.
+
+- ✅ Figure a clean and consistent way to hide list columns (or fields in general).
+	- Design settled: `visible_form`/`visible_list` per field (spec in example.shcl, decisions in design.md UI section). The syntax migration it was waiting on is done; the display work itself is still to do.
+	- Status: Done
+	- Done: `visible_list: no` keeps a field out of table grids and view list blocks, and `visible_form: no` keeps it out of edit forms and form blocks, in both the TUI and the web UI. Saving a form leaves a field it didn't show alone. Hidden is presentation only, so the CLI, queries and a posted value still reach it.
+	- Done: `id` can be hidden from lists, and `is_active` and `date_created` can be shown in them with `visible_list: yes`. A list left with no columns still shows `id`. Documented in syntax.md and design.md.
+	- Showing system fields on forms is split out to 2026102407263968, since it needs `readonly` first.
+	- Swept: every list and form call site in the TUI and web, table pages and view blocks both. The web save filter stays on the full field list on purpose. The CLI is left alone by design. Enterprise and vendor have no callers.
+	- Branch: round1024
+	- Test case: `TestFieldVisibility` (schema), `TestHiddenFieldsStayPut` (web) and `TestHiddenFieldsInGridAndForm` (tui). Each failed against the old column and form lists and passes now.
+	- Closed: 20261024-072639
 
 - ✅ Code Review 20260805 item 21: replay prepared a fresh SQL statement for every log entry.
 	- Done: a pass reuses its statements, which are one shape per table and one per field however long the log is. Rebuilding a 5000-entry log went from about 240ms to about 97ms, on the path every open and every sync that brings changes takes.

@@ -58,7 +58,8 @@ func TestBuiltinsParseClean(t *testing.T) {
 		byName[tb.Name] = tb
 	}
 	for _, want := range []string{"users", "groups", "many2many", "comments",
-		"audit_trail", "access_rows", "attachments_uri", "attachments_copy"} {
+		"audit_trail", "access_rows", "attachments_uri", "attachments_copy",
+		"lookups", "lookup_values"} {
 		if _, ok := byName[want]; !ok {
 			t.Errorf("builtins DDL missing table %q", want)
 		}

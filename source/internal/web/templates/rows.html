@@ -9,7 +9,7 @@
 	{{range .Rows}}
 	{{$r := .}}
 	<tr>
-		{{range $.Cols}}<td>{{if eq . "id"}}{{short (index $r .)}}{{else}}{{index $r .}}{{end}}</td>{{end}}
+		{{range $.Cols}}<td>{{if eq . "id"}}{{short (index $r .)}}{{else}}{{$.Show.List . (index $r .)}}{{end}}</td>{{end}}
 		<td>
 			<button hx-get="/t/{{$t}}/{{index $r "id"}}/edit" hx-target="#main">edit</button>
 			<button hx-post="/t/{{$t}}/{{index $r "id"}}/delete" hx-target="#main" hx-confirm="Soft-delete this row?">del</button>
