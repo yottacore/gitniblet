@@ -33,7 +33,7 @@ tables:
 
 // runLookups opens the tasks table on a simulation screen with the given
 // charset and returns the screen once the first row shows.
-func runLookups(t *testing.T, charset string) (tcell.SimulationScreen, *App, func(string), chan error) {
+func runLookups(t *testing.T, charset string) (*simScreen, *App, func(string), chan error) {
 	t.Helper()
 	api, sch, bs := ddlSetup(t, lookupDDL)
 	for _, row := range []map[string]string{{"idx": "1", "title": "Status"}, {"idx": "2", "title": "Size"}} {
@@ -56,11 +56,7 @@ func runLookups(t *testing.T, charset string) (tcell.SimulationScreen, *App, fun
 	if err != nil {
 		t.Fatal(err)
 	}
-	screen := tcell.NewSimulationScreen(charset)
-	if err := screen.Init(); err != nil {
-		t.Fatal(err)
-	}
-	screen.SetSize(120, 32)
+	screen := newSimScreen(t, charset, 120, 32)
 	done := make(chan error, 1)
 	go func() { done <- a.RunWith(screen) }()
 	waitFor := func(sub string) {
@@ -81,7 +77,7 @@ func runLookups(t *testing.T, charset string) (tcell.SimulationScreen, *App, fun
 	return screen, a, waitFor, done
 }
 
-func quitLookups(t *testing.T, screen tcell.SimulationScreen, a *App, done chan error) {
+func quitLookups(t *testing.T, screen *simScreen, a *App, done chan error) {
 	t.Helper()
 	screen.InjectKey(tcell.KeyEscape, 0, tcell.ModNone)
 	screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
@@ -97,7 +93,7 @@ func quitLookups(t *testing.T, screen tcell.SimulationScreen, a *App, done chan 
 }
 
 // lineWith is the screen line holding sub, as runes, one per cell.
-func lineWith(screen tcell.SimulationScreen, sub string) []rune {
+func lineWith(screen *simScreen, sub string) []rune {
 	for _, line := range strings.Split(screenText(screen), "\n") {
 		if strings.Contains(line, sub) {
 			return []rune(line)
@@ -134,6 +130,14 @@ func TestLookupsShowInTUI(t *testing.T) {
 		screen.InjectKey(tcell.KeyTab, 0, tcell.ModNone)
 	}
 	screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone) // Save
+	// The input shows t1x before the save runs, so wait for the form to go.
+	for deadline := time.Now().Add(3 * time.Second); strings.Contains(screenText(screen), "status (🔘"); {
+		if time.Now().After(deadline) {
+			a.Stop()
+			t.Fatalf("edit form never closed:\n%s", screenText(screen))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	waitFor("t1x")
 	rows, err := a.api.Query(`SELECT name, status, size FROM tasks`)
 	if err != nil || len(rows) != 1 || rows[0]["name"] != "t1x" || rows[0]["status"] != "1" || rows[0]["size"] != "2" {

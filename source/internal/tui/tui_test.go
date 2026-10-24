@@ -6,6 +6,7 @@ package tui
 import (
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -139,11 +140,7 @@ func TestAppBootsOnSimulationScreen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	screen := tcell.NewSimulationScreen("UTF-8")
-	if err := screen.Init(); err != nil {
-		t.Fatal(err)
-	}
-	screen.SetSize(100, 30)
+	screen := newSimScreen(t, "UTF-8", 100, 30)
 	done := make(chan error, 1)
 	go func() { done <- a.RunWith(screen) }()
 
@@ -175,7 +172,54 @@ func TestAppBootsOnSimulationScreen(t *testing.T) {
 	}
 }
 
-func screenText(s tcell.SimulationScreen) string {
+// simScreen is a started simulation screen the test goroutine can read while
+// the app draws. tcell's GetContents hands back the live cells, and Fini
+// writes them unlocked, so every writer holds mu. tview's SetScreen would
+// also Init it again from the app goroutine, dropping the size set here.
+type simScreen struct {
+	tcell.SimulationScreen
+	mu sync.Mutex
+}
+
+func newSimScreen(t *testing.T, charset string, w, h int) *simScreen {
+	t.Helper()
+	s := tcell.NewSimulationScreen(charset)
+	if err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
+	s.SetSize(w, h)
+	return &simScreen{SimulationScreen: s}
+}
+
+func (s *simScreen) Init() error { return nil }
+
+func (s *simScreen) Show() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.SimulationScreen.Show()
+}
+
+func (s *simScreen) Sync() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.SimulationScreen.Sync()
+}
+
+func (s *simScreen) SetSize(w, h int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.SimulationScreen.SetSize(w, h)
+}
+
+func (s *simScreen) Fini() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.SimulationScreen.Fini()
+}
+
+func screenText(s *simScreen) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	cells, w, _ := s.GetContents()
 	var b strings.Builder
 	for i, c := range cells {

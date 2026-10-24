@@ -323,22 +323,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Progress log:
 		- 20261013: Go builds for plain x86-64 by default (`GOAMD64=v1`), and nothing here sets it, so this may already hold. Pin `GOAMD64=v1` in the release build so a stray environment can't raise it. The standard library already picks faster code at run time.
 
-- The TUI's simulation-screen tests fail under `-race`.
-	- ID: 2026102408252318
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261024-082523
-	- Opened by: JC
-	- Related IDs: 2026102407295335
-	- Steps to reproduce [Bug]:
-		- From `source/`, `go test -mod=vendor -race -run TestViewOpensAndLoadsOnSimulationScreen ./internal/tui`.
-	- Incorrect behavior [Bug]: 12 data race reports, and the test fails.
-	- Expected behavior [Bug]: It passes under `-race`, as the other packages' tests do.
-	- Reproduced [Bug]: 20261024, on `round1024`, while working 2026102407295335. Its own simulation-screen tests race the same way.
-	- Possible cause [Bug]: The test reads the screen's cells from its own goroutine while the app goroutine runs `Init` and draws. tcell's simulation screen doesn't lock `GetContents`. The app code isn't involved.
-	- Estimated effort: Low
-
 - Show system fields on forms when their `ui:` opts them in.
 	- ID: 2026102407263968
 	- Type: Enhancement
@@ -351,6 +335,35 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- `id` and `date_created` show read-only and are never written from a form. That likely means honoring `ui: readonly` first.
 	- Progress log:
 		- 20261024: Lists already honor `visible_list` on system fields. The example DDL's built-in `lookups` and `lookup_values` tables ask for `id` on forms, read-only.
+
+- The TUI's simulation-screen tests fail under `-race`.
+	- ID: 2026102408252318
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-082523
+	- Opened by: JC
+	- Related IDs: 2026102407295335
+	- Steps to reproduce [Bug]:
+		- From `source/`, `go test -mod=vendor -race -run TestViewOpensAndLoadsOnSimulationScreen ./internal/tui`.
+	- Incorrect behavior [Bug]: 12 data race reports, and the test fails.
+	- Expected behavior [Bug]: It passes under `-race`, as the other packages' tests do.
+	- Reproduced [Bug]: 20261024, on `round1024`, while working 2026102407295335. Its own simulation-screen tests race the same way.
+	- Possible cause [Bug]: The test reads the screen's cells from its own goroutine while the app goroutine runs `Init` and draws. tcell's simulation screen doesn't lock `GetContents`. The app code isn't involved.
+	- Actual cause [Bug]:
+		- Both races are in the tests. tview's `SetScreen` runs `Init` again on the screen the test already started, from the app goroutine, while the test reads it. That second `Init` also resets the screen to 80x25, so the tests never got the size they set.
+		- `GetContents` does lock, but it returns the live cells, which the next draw writes. `Fini` writes them with no lock.
+		- `TestLookupsShowInTUI` also waited for `t1x`, which the edit form's input shows before Save runs. Under `-race` its DB check ran before the save.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: The tests share one screen type, `simScreen` in `tui_test.go`. It's started once, skips tview's `Init`, and draws and reads under one lock. All 7 places that built a simulation screen use it. `TestLookupsShowInTUI` now waits for the edit form to close before it checks the DB.
+		- Verified: before the fix, the package under `-race` gave 74 race reports and 11 failing tests. With the screen type alone, only `TestLookupsShowInTUI` failed, 5 runs of 5. With both changes, the package passes under `-race` 3 runs in a row, and that test 10. `test.bash`, the wide gofmt, the CLI smoke and staticcheck pass.
+		- Swept: every simulation screen and `screenText` caller in the TUI tests (tui, views, lookups, gate, picker), and every test that types into a form and then checks the DB. Only the lookups one waited on the typed text.
+	- Actual fix [Bug]: A shared test screen that starts once and keeps draws and reads apart. No app code changed.
+	- Branch: round1024
+	- Test case: The TUI package's simulation-screen tests under `-race`, such as `TestViewOpensAndLoadsOnSimulationScreen` and `TestLookupsShowInTUI`.
+	- Closed: 20261024-084419
 
 - Seed rows from the schema's `seed:` section.
 	- ID: 2026102407295329

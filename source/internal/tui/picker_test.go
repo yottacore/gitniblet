@@ -38,13 +38,9 @@ func writeValidDDL(t *testing.T) string {
 
 // runPicker drives pickDatabase on a simulation screen and returns a waitFor
 // helper plus the result channel.
-func runPicker(t *testing.T) (tcell.SimulationScreen, chan *pickResult, func(string)) {
+func runPicker(t *testing.T) (*simScreen, chan *pickResult, func(string)) {
 	t.Helper()
-	screen := tcell.NewSimulationScreen("UTF-8")
-	if err := screen.Init(); err != nil {
-		t.Fatal(err)
-	}
-	screen.SetSize(100, 30)
+	screen := newSimScreen(t, "UTF-8", 100, 30)
 	out := make(chan *pickResult, 1)
 	go func() {
 		r, err := pickDatabase(screen)

@@ -114,11 +114,7 @@ func TestViewOpensAndLoadsOnSimulationScreen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	screen := tcell.NewSimulationScreen("UTF-8")
-	if err := screen.Init(); err != nil {
-		t.Fatal(err)
-	}
-	screen.SetSize(120, 32)
+	screen := newSimScreen(t, "UTF-8", 120, 32)
 	done := make(chan error, 1)
 	go func() { done <- a.RunWith(screen) }()
 
@@ -182,11 +178,7 @@ func TestStartupQueryAndPicker(t *testing.T) {
 		{Name: "Everyone", Active: true, // no view = offered everywhere
 			SQL: `SELECT "name" FROM "employees" WHERE "is_deleted"=0`},
 	}
-	screen := tcell.NewSimulationScreen("UTF-8")
-	if err := screen.Init(); err != nil {
-		t.Fatal(err)
-	}
-	screen.SetSize(120, 32)
+	screen := newSimScreen(t, "UTF-8", 120, 32)
 	done := make(chan error, 1)
 	go func() { done <- a.RunWith(screen) }()
 
@@ -264,11 +256,7 @@ func TestCommentsPaneLinksAndAdds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	screen := tcell.NewSimulationScreen("UTF-8")
-	if err := screen.Init(); err != nil {
-		t.Fatal(err)
-	}
-	screen.SetSize(120, 40)
+	screen := newSimScreen(t, "UTF-8", 120, 40)
 	done := make(chan error, 1)
 	go func() { done <- a.RunWith(screen) }()
 

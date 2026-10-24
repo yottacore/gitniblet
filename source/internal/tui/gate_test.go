@@ -25,13 +25,9 @@ func TestDecideGateFullAndNag(t *testing.T) {
 
 // blockingScreen runs a Blocking gate on a simulation screen and returns the
 // screen, a decision channel, and a waitFor helper.
-func blockingScreen(t *testing.T, st gate.Status, now func() time.Time) (tcell.SimulationScreen, chan gateDecision, func(string)) {
+func blockingScreen(t *testing.T, st gate.Status, now func() time.Time) (*simScreen, chan gateDecision, func(string)) {
 	t.Helper()
-	screen := tcell.NewSimulationScreen("UTF-8")
-	if err := screen.Init(); err != nil {
-		t.Fatal(err)
-	}
-	screen.SetSize(100, 30)
+	screen := newSimScreen(t, "UTF-8", 100, 30)
 	out := make(chan gateDecision, 1)
 	go func() { out <- runBlockingGate(st, screen, now) }()
 	waitFor := func(sub string) {
