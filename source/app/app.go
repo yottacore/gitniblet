@@ -10,6 +10,7 @@ package app
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jim-collier/nano-git-db/donate"
 	"github.com/jim-collier/nano-git-db/enc"
@@ -27,17 +28,30 @@ var Version = "1.0.0-beta.2"
 // via -ldflags -X; empty for a plain `go build`, so a release binary reads clean.
 var Build = ""
 
+// BuildTime is the UTC build time (RFC 3339), stamped by cicd/build.bash only.
+// Release builds leave it empty, so only non-release builds show a date.
+var BuildTime = ""
+
+// VersionLine is what --version prints. The build date is shown in the
+// viewer's local time zone, not the build machine's.
+func VersionLine() string {
+	line := "ngdb " + Version
+	if Build != "" {
+		line += " (" + Build + ")"
+	}
+	if t, err := time.Parse(time.RFC3339, BuildTime); err == nil {
+		line += " (" + t.Local().Format("2006-01-02") + ")"
+	}
+	return line
+}
+
 // Run dispatches the given args (os.Args[1:]) to a front-end and returns its
 // error, if any.
 func Run(args []string) error {
 	// --version: print the build version and stop. A concise line the CI/CD
 	// pipeline can run to confirm the binary executes, without opening the TUI.
 	if len(args) > 0 && (args[0] == "--version" || args[0] == "-v") {
-		line := "ngdb " + Version
-		if Build != "" {
-			line += " (" + Build + ")"
-		}
-		fmt.Println(line)
+		fmt.Println(VersionLine())
 		return nil
 	}
 	// --help: the usage block on stdout, exit 0. Anything unrecognized still
