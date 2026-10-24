@@ -119,6 +119,16 @@ Each `field:` has a name and, at minimum, a `type:`. Other per-field keys the cu
 						lookup_in_lists: both
 	```
 
+- `ui:` -> `list_type: literal` or `list_type: sql` - an edit form picks the field's value from a list. For `literal`, `list_source:` is a comma list of values, quoted where one holds a comma. For `sql`, it's a backtick query run each time the form opens: the first column is the value stored, and the second, if there is one, is what the list shows. Lists show the stored value. Nothing checks it on write.
+
+	```shcl
+				field: kind
+					type: string
+					ui:
+						list_type: literal
+						list_source: "Bug", "Task", "Chore"
+	```
+
 Additional keys appear in `project/example.shcl` (the rest of `ui:`, `validation:`, `special:`, `defaultval:`, widgets, formats). These parse but their runtime behavior is still being built out; treat them as forward-looking until a release note says otherwise.
 
 ### Field types

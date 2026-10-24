@@ -359,7 +359,12 @@ func (a *App) editFormThen(table string, row map[string]string, back tview.Primi
 	}
 	form := tview.NewForm()
 	fields := a.cat.FormFields(table)
-	show := a.lookups(table)
+	show, err := a.cat.FormChoices(a.api, table)
+	if err != nil {
+		a.setStatus("error: " + err.Error())
+		return
+	}
+	show.SymbolOK = a.symbolOK
 	picks := map[int][]schema.LookupChoice{} // form item -> its picker's values
 	for i, field := range fields {
 		choices := show.Choices(field, row[field])

@@ -186,3 +186,57 @@ func TestLookupsFallBackToTitleInTUI(t *testing.T) {
 	}
 	quitLookups(t, screen, a, done)
 }
+
+// A literal field picks from its list_source.
+func TestLiteralPickerInTUI(t *testing.T) {
+	api, sch, bs := ddlSetup(t, `
+tables:
+	table: tasks
+		fields:
+			field: name
+				type: string
+			field: kind
+				type: string
+				ui:
+					list_type: literal
+					list_source: "Bug", "Task"
+`)
+	if _, err := api.Create("tasks", map[string]string{"name": "t1", "kind": "Bug"}); err != nil {
+		t.Fatal(err)
+	}
+	a, err := NewApp(api, sch, bs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	screen := newSimScreen(t, "UTF-8", 120, 32)
+	done := make(chan error, 1)
+	go func() { done <- a.RunWith(screen) }()
+	waitFor := func(sub string) {
+		t.Helper()
+		for deadline := time.Now().Add(3 * time.Second); !strings.Contains(screenText(screen), sub); {
+			if time.Now().After(deadline) {
+				a.Stop()
+				t.Fatalf("%q never appeared on screen:\n%s", sub, screenText(screen))
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	waitFor("tasks")
+	screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone) // first table
+	waitFor("t1")
+	screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone) // edit t1
+	waitFor(" edit tasks")
+	screen.InjectKey(tcell.KeyTab, 0, tcell.ModNone)   // kind
+	screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone) // open the picker
+	waitFor("Task")
+	screen.InjectKey(tcell.KeyDown, 0, tcell.ModNone)
+	screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone)
+	screen.InjectKey(tcell.KeyTab, 0, tcell.ModNone)
+	screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone) // Save
+	waitFormGone(t, screen, a)
+	rows, err := a.api.Query(`SELECT name, kind FROM tasks`)
+	if err != nil || len(rows) != 1 || rows[0]["kind"] != "Task" {
+		t.Fatalf("after picking Task: %v %v", rows, err)
+	}
+	quitLookups(t, screen, a, done)
+}

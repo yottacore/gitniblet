@@ -258,7 +258,7 @@ func (s *server) form(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	show, err := s.cat.Lookups(s.api, table)
+	show, err := s.cat.FormChoices(s.api, table)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

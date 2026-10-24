@@ -125,3 +125,34 @@ func TestLookupPickerInWeb(t *testing.T) {
 		t.Errorf("picking the inactive value back: code %d, status %q", w.Code, status())
 	}
 }
+
+// literal and sql fields get a picker too, the built-in lookups_idx among them.
+func TestListPickersInWeb(t *testing.T) {
+	s, api := newTestServerFor(t, `
+tables:
+	table: tasks
+		fields:
+			field: kind
+				type: string
+				ui:
+					list_type: literal
+					list_source: "Bug", "Task"
+`)
+	h := s.routes()
+	if _, err := api.Create("lookups", map[string]string{"idx": "4", "title": "Status"}); err != nil {
+		t.Fatal(err)
+	}
+	if body := do(t, h, "GET", "/t/tasks/new", nil).Body.String(); !strings.Contains(body, `<select name="kind"><option value="" selected></option><option value="Bug">Bug</option><option value="Task">Task</option></select>`) {
+		t.Errorf("literal picker:\n%s", body)
+	}
+	if body := do(t, h, "GET", "/t/lookup_values/new", nil).Body.String(); !strings.Contains(body, `<option value="4">Status</option>`) {
+		t.Errorf("lookups_idx should pick its group:\n%s", body)
+	}
+	if w := do(t, h, "POST", "/t/tasks", url.Values{"kind": {"Task"}}); w.Code != 200 {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	}
+	rows, err := api.Query(`SELECT kind FROM tasks`)
+	if err != nil || len(rows) != 1 || rows[0]["kind"] != "Task" {
+		t.Errorf("saved: %v %v", rows, err)
+	}
+}

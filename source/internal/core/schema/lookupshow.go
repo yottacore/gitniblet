@@ -35,6 +35,8 @@ type LookupShow struct {
 	labels map[string]map[string]lookupLabel // group idx -> value idx -> label
 	picks  map[string][]string               // group idx -> active value idxs, in sort order
 
+	options map[string][]LookupChoice // literal and sql fields' picks, once FormChoices loads them
+
 	// SymbolOK, when set, says whether a symbol can be drawn at all. The TUI
 	// sets it for glyphs the terminal can't show, which then fall back to the
 	// title. Nil takes every symbol.
@@ -45,9 +47,13 @@ type LookupShow struct {
 // whose list_source isn't a group idx.
 func (c *Catalog) resolveLookups() {
 	c.lookups = make(map[string]map[string]lookupSpec, len(c.Tables))
+	c.pickers = map[string]map[string]pickSpec{}
 	for _, table := range c.Tables {
 		if specs := c.findLookups(table); specs != nil {
 			c.lookups[table] = specs
+		}
+		if specs := c.findPickers(table); specs != nil {
+			c.pickers[table] = specs
 		}
 	}
 }
@@ -180,25 +186,55 @@ type LookupChoice struct {
 	Selected     bool
 }
 
-// Choices is what a form offers for a lookup field: none, then the group's
-// active values in sort order, labeled as Form shows them. A value the row
-// already holds that isn't among them is kept, second, so a save that leaves
-// the field alone doesn't drop it. Nil for anything that isn't a lookup field.
+// Choices is what a form offers for a picker field: none, then the options -
+// for a lookup, the group's active values in sort order, labeled as Form
+// shows them. A value the row already holds that isn't among them is kept,
+// second, so a save that leaves the field alone doesn't drop it. Nil for a
+// field with no picker.
 func (l *LookupShow) Choices(field, current string) []LookupChoice {
+	if l == nil {
+		return nil
+	}
+	if opts, ok := l.options[field]; ok {
+		return withHeld(opts, current, current)
+	}
 	if !l.IsLookup(field) {
 		return nil
 	}
-	spec := l.specs[field]
-	picks := l.picks[spec.group]
-	held := strings.TrimSpace(current)
-	choices := make([]LookupChoice, 0, len(picks)+2)
-	choices = append(choices, LookupChoice{Selected: held == ""})
-	if held != "" && !slices.Contains(picks, held) {
-		choices = append(choices, LookupChoice{Value: current, Label: l.Form(field, current), Selected: true})
-		held = ""
+	picks := l.picks[l.specs[field].group]
+	opts := make([]LookupChoice, len(picks))
+	for i, idx := range picks {
+		opts[i] = LookupChoice{Value: idx, Label: l.Form(field, idx)}
 	}
-	for _, idx := range picks {
-		choices = append(choices, LookupChoice{Value: idx, Label: l.Form(field, idx), Selected: idx == held && held != ""})
+	return withHeld(opts, current, l.Form(field, current))
+}
+
+// HasPicker reports whether a form picks the field from a list.
+func (l *LookupShow) HasPicker(field string) bool {
+	if l == nil {
+		return false
+	}
+	_, ok := l.options[field]
+	return ok || l.IsLookup(field)
+}
+
+func withHeld(opts []LookupChoice, current, heldLabel string) []LookupChoice {
+	held := strings.TrimSpace(current)
+	choices := make([]LookupChoice, 0, len(opts)+2)
+	choices = append(choices, LookupChoice{Selected: held == ""})
+	at := -1
+	for i, opt := range opts {
+		if held != "" && strings.TrimSpace(opt.Value) == held {
+			at = i
+			break
+		}
+	}
+	if held != "" && at < 0 {
+		choices = append(choices, LookupChoice{Value: current, Label: heldLabel, Selected: true})
+	}
+	for i, opt := range opts {
+		opt.Selected = i == at
+		choices = append(choices, opt)
 	}
 	return choices
 }

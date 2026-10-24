@@ -305,6 +305,33 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: round1024
 	- Test case: `TestLookupChoices` in `source/internal/core/schema/lookupshow_test.go`, `TestLookupPickerInTUI` and the updated `TestLookupsShowInTUI` in `source/internal/tui/lookups_test.go`, and `TestLookupPickerInWeb` and the updated `TestLookupsShowInWeb` in `source/internal/web/lookups_test.go`.
 
+- Pickers for `list_type: literal` and `list_type: sql` fields.
+	- ID: 2026102408470118
+	- Type: Enhancement
+	- Status: Waiting on UAT
+	- Needs hand testing: A look at the `lookup_values` form's group picker in both UIs.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-084701
+	- Opened by: JC
+	- Parent ID: 2026102407295340
+	- Prereq IDs: 2026102408470113
+	- Requirements [Feature]:
+		- Same picker as for lookups, fed from the literal list or the query in `list_source`. The built-in `lookup_values.lookups_idx` is one.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: Edit forms in both UIs pick a `literal` or `sql` field from its `list_source`, with none first and a held value that isn't listed kept second, as for lookups.
+		- A literal list splits on commas outside quotes. A query gives the value in its first column and the label in its second, or the value again. It runs when a form opens, never for a list.
+		- A query that fails stops the form with an error naming the field. A `list_type` with no `list_source` warns at open.
+		- syntax.md has a line for both, with an example.
+		- Verified: the new tests fail with the pickers turned off and pass with them, 3 runs under `-race` too. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass.
+		- Swept: the same edit forms as 2026102408470113. No demo schema uses `list_type`.
+	- Decisions:
+		- Lists still show a `literal` or `sql` field as stored, not the query's label.
+		- A write isn't checked against the list, unlike a lookup. The requirement didn't ask for it, and a query's rows can change under a held value.
+	- Branch: round1024
+	- Test case: `TestPickerChoices` in `source/internal/core/schema/picker_test.go`, `TestLiteralPickerInTUI` in `source/internal/tui/lookups_test.go`, and `TestListPickersInWeb` in `source/internal/web/lookups_test.go`.
+
 - Refuse a create whose unique value is already taken in the view, before it's logged.
 	- ID: 2026102408084809
 	- Type: Enhancement
@@ -334,19 +361,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Estimated effort: Avg
 	- Progress log:
 		- 20261024: Split into 2026102408470107 (write check), 2026102408470113 (lookup picker) and 2026102408470118 (`literal` and `sql` pickers). This item closes with the last of them.
-
-- Pickers for `list_type: literal` and `list_type: sql` fields.
-	- ID: 2026102408470118
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261024-084701
-	- Opened by: JC
-	- Parent ID: 2026102407295340
-	- Prereq IDs: 2026102408470113
-	- Requirements [Feature]:
-		- Same picker as for lookups, fed from the literal list or the query in `list_source`. The built-in `lookup_values.lookups_idx` is one.
-	- Estimated effort: Avg
+		- 20261024: All 3 are in. The write check is Done, and the 2 pickers wait on a look by eye.
 
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161870

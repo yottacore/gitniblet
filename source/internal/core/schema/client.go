@@ -163,6 +163,7 @@ type Catalog struct {
 	fieldUI map[string]map[string]ddl.FieldUI // per table, DDL fields and system-field ui: entries
 	sysCols map[string]map[string]bool        // opt-in system columns the table really has
 	lookups map[string]map[string]lookupSpec  // per table, its list_type: lookup fields
+	pickers map[string]map[string]pickSpec    // per table, its list_type: literal and sql fields
 }
 
 // QueriesFor lists the active queries offered on a view, dropdown order.
