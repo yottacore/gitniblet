@@ -2,7 +2,7 @@
 <form hx-post="/t/{{.Table}}{{if .ID}}/{{.ID}}{{end}}" hx-target="#main">
 	{{$r := .Row}}
 	{{range .Fields}}
-	<label>{{.}}<br><input name="{{.}}" value="{{index $r .}}"></label><br>
+	<label>{{.}}<br><input name="{{.}}" value="{{index $r .}}">{{if and ($.Show.IsLookup .) (index $r .)}} <span>{{$.Show.Form . (index $r .)}}</span>{{end}}</label><br>
 	{{end}}
 	<button type="submit">Save</button>
 	<button type="button" hx-get="/t/{{.Table}}" hx-target="#main">Cancel</button>

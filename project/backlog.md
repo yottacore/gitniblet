@@ -243,6 +243,40 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: round1024
 	- Test case: `TestReplayDropsCreateTwin` in `source/internal/core/txlog/replay_test.go`, `TestSeedRowsTwoClients` in `source/internal/core/schema/seed_test.go`, and the updated `TestCreateReportsAFieldTheViewRefused` in `source/internal/core/crud/write_test.go`.
 
+- Show lookup values per `lookup_in_lists` and `lookup_in_forms`.
+	- ID: 2026102407295335
+	- Type: Enhancement
+	- Status: Waiting on UAT
+		- For a look at the Decisions: an edit form keeps the idx in its input, with the value shown beside it.
+	- Needs hand testing: A look at both UIs with a few emoji symbols, in the usual terminal and font.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-072953
+	- Opened by: JC
+	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
+	- Prereq IDs: 2026102407295324
+	- Requirements [Feature]:
+		- A `list_type: lookup` field shows its stored idx as symbol, title or both, in the TUI and web.
+		- Lists default to symbol, falling back to title. Forms default to both, symbol first.
+		- The TUI handles double-width and unrenderable symbols, falling back to title.
+		- Inactive values still render on existing rows.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261024: Table lists, view grids and tree grids show a lookup field per `lookup_in_lists`, and view form blocks per `lookup_in_forms`, in both UIs. Edit forms show the value beside the idx.
+		- A value with no symbol shows its title. A value from another group, or one that isn't there, shows the stored idx.
+		- The TUI shows the title for a symbol that's bad UTF-8, zero width, or has a control char, or a glyph the terminal's charset can't draw. A double-width symbol keeps the next column in line.
+		- A `list_source` that isn't a group idx warns at open, and the field shows as stored.
+		- syntax.md's Fields section has the new keys.
+		- Verified: the new tests fail with the display turned off and pass with it, and the charset test fails without the screen check. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass. The real TUI under a pty shows the symbol with a UTF-8 locale, and the title with `C`.
+		- Swept: every place the TUI and web render a table row (table grid, view grid, tree grid, form block, edit form). Named query results are left as the SQL returns them, since their columns aren't tied to a field.
+	- Decisions:
+		- An edit form keeps the idx editable, since the picker is 2026102407295340. The value shows beside it, from the stored idx, so it doesn't follow typing.
+		- Soft-deleted values still show, like inactive ones. An idx is never handed out twice, so the label can't be wrong.
+		- Only values in the field's own group show. Another group's value shows as the stored idx, rather than a title that looks right.
+		- The TUI now starts its own terminal screen before handing it to tview, so the charset check works before the first draw.
+	- Branch: round1024
+	- Test case: `TestLookupShow` in `source/internal/core/schema/lookupshow_test.go`, `TestLookupsShowInTUI` and `TestLookupsFallBackToTitleInTUI` in `source/internal/tui/lookups_test.go`, and `TestLookupsShowInWeb` in `source/internal/web/lookups_test.go`.
+
 - Refuse a create whose unique value is already taken in the view, before it's logged.
 	- ID: 2026102408084809
 	- Type: Enhancement
@@ -255,22 +289,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Today the create is logged, the view drops the row, and the caller gets the id with a refusal. The log then holds a row no view will show.
 		- Check the unique groups in crud, under the commit lock, and refuse with a plain message instead. Replay keeps settling clashes between clients.
 	- Estimated effort: Low
-
-- Show lookup values per `lookup_in_lists` and `lookup_in_forms`.
-	- ID: 2026102407295335
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-072953
-	- Opened by: JC
-	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
-	- Prereq IDs: 2026102407295324
-	- Requirements [Feature]:
-		- A `list_type: lookup` field shows its stored idx as symbol, title or both, in the TUI and web.
-		- Lists default to symbol, falling back to title. Forms default to both, symbol first.
-		- The TUI handles double-width and unrenderable symbols, falling back to title.
-		- Inactive values still render on existing rows.
-	- Estimated effort: Avg
 
 - Lookup picker and write-time value check.
 	- ID: 2026102407295340
@@ -304,6 +322,22 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Tests run the release build on an emulated Penryn and Phenom II, through Intel SDE or QEMU's `-cpu Penryn` and `-cpu phenom`.
 	- Progress log:
 		- 20261013: Go builds for plain x86-64 by default (`GOAMD64=v1`), and nothing here sets it, so this may already hold. Pin `GOAMD64=v1` in the release build so a stray environment can't raise it. The standard library already picks faster code at run time.
+
+- The TUI's simulation-screen tests fail under `-race`.
+	- ID: 2026102408252318
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-082523
+	- Opened by: JC
+	- Related IDs: 2026102407295335
+	- Steps to reproduce [Bug]:
+		- From `source/`, `go test -mod=vendor -race -run TestViewOpensAndLoadsOnSimulationScreen ./internal/tui`.
+	- Incorrect behavior [Bug]: 12 data race reports, and the test fails.
+	- Expected behavior [Bug]: It passes under `-race`, as the other packages' tests do.
+	- Reproduced [Bug]: 20261024, on `round1024`, while working 2026102407295335. Its own simulation-screen tests race the same way.
+	- Possible cause [Bug]: The test reads the screen's cells from its own goroutine while the app goroutine runs `Init` and draws. tcell's simulation screen doesn't lock `GetContents`. The app code isn't involved.
+	- Estimated effort: Low
 
 - Show system fields on forms when their `ui:` opts them in.
 	- ID: 2026102407263968

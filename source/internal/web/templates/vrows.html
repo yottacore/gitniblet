@@ -9,7 +9,7 @@
 	{{range .Rows}}
 	{{$r := .}}
 	<tr>
-		{{range $i, $c := $b.Cols}}<td{{if eq $i 0}} style="padding-left:{{$r.Depth}}em"{{end}}>{{if eq $c "id"}}{{short (index $r.Row $c)}}{{else}}{{index $r.Row $c}}{{end}}</td>{{end}}
+		{{range $i, $c := $b.Cols}}<td{{if eq $i 0}} style="padding-left:{{$r.Depth}}em"{{end}}>{{if eq $c "id"}}{{short (index $r.Row $c)}}{{else}}{{$b.Show.List $c (index $r.Row $c)}}{{end}}</td>{{end}}
 		{{if not $b.Readonly}}<td><button hx-get="/t/{{$b.Table}}/{{index $r.Row "id"}}/edit" hx-target="#main">edit</button></td>{{end}}
 		{{if ge $b.CommentsTarget 0}}<td><button hx-get="/v/{{$b.View}}/b/{{$b.CommentsTarget}}/comments?id={{index $r.Row "id" | urlquery}}" hx-target="#vb-{{$b.CommentsTarget}}">comments</button></td>{{end}}
 	</tr>

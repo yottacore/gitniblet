@@ -162,6 +162,7 @@ type Catalog struct {
 
 	fieldUI map[string]map[string]ddl.FieldUI // per table, DDL fields and system-field ui: entries
 	sysCols map[string]map[string]bool        // opt-in system columns the table really has
+	lookups map[string]map[string]lookupSpec  // per table, its list_type: lookup fields
 }
 
 // QueriesFor lists the active queries offered on a view, dropdown order.
@@ -274,6 +275,7 @@ func NewCatalog(api *crud.API, schemas ...*ddl.Schema) (*Catalog, error) {
 		}
 	}
 	c.resolveViews(schemas...) // after Fields: tree_grid parent_field checks need them
+	c.resolveLookups()
 	c.applyAccess(api, tableAccess, fieldAccess)
 	c.resolveDefaultView(schemas...) // after access: the default must be openable
 	return c, nil

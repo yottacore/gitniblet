@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -114,6 +116,8 @@ type App struct {
 	rows     []map[string]string // rows behind the grid, index = grid row-1
 	themeIdx int
 	banner   string // startup-notice banner shown atop the UI, empty = none
+
+	canDisplay func(r rune) bool // the screen's glyph check; nil until RunWith
 }
 
 // NewApp builds the UI over an API. Schemas supply table order and editable
@@ -140,15 +144,58 @@ func (a *App) Run() error { return a.RunWith(nil) }
 // RunWith starts the event loop on a given screen (tests pass a simulation
 // screen; nil means the real terminal).
 func (a *App) RunWith(screen tcell.Screen) error {
-	if screen != nil {
-		a.app.SetScreen(screen)
+	if screen == nil {
+		// Started here rather than by tview, so lookup symbols can ask it what
+		// renders before the first draw.
+		real, err := tcell.NewScreen()
+		if err != nil {
+			return err
+		}
+		if err := real.Init(); err != nil {
+			return err
+		}
+		screen = startedScreen{real}
 	}
+	a.app.SetScreen(screen)
+	a.canDisplay = func(r rune) bool { return screen.CanDisplay(r, false) }
 	// The default view opens on start (here, not buildUI, so the caller can
 	// hand the catalog its named queries first); Esc drops back to the list.
 	if v := a.cat.View(a.cat.DefaultView); v != nil {
 		a.openView(v)
 	}
 	return a.app.SetRoot(a.pages, true).EnableMouse(true).Run()
+}
+
+// startedScreen is a screen already Init-ed, so SetScreen's own Init is a no-op.
+type startedScreen struct{ tcell.Screen }
+
+func (startedScreen) Init() error { return nil }
+
+// lookups loads a table's lookup labels for one render, with symbols the
+// screen can't draw falling back to their title. An error only costs the
+// labels, so the grid still shows the stored values.
+func (a *App) lookups(table string) *schema.LookupShow {
+	show, err := a.cat.Lookups(a.api, table)
+	if err != nil {
+		a.setStatus("error: " + err.Error())
+		return nil
+	}
+	show.SymbolOK = a.symbolOK
+	return show
+}
+
+// symbolOK turns down a symbol that would draw as nothing or as junk: bad
+// UTF-8, a control char, zero width, or a glyph the terminal's charset lacks.
+func (a *App) symbolOK(symbol string) bool {
+	if !utf8.ValidString(symbol) || tview.TaggedStringWidth(symbol) == 0 {
+		return false
+	}
+	for _, r := range symbol {
+		if unicode.IsControl(r) || (a.canDisplay != nil && !a.canDisplay(r)) {
+			return false
+		}
+	}
+	return true
 }
 
 // Stop ends the event loop (tests).
@@ -279,6 +326,7 @@ func (a *App) openTable(table string) {
 	a.curView = nil
 	a.rows = rows
 	cols := a.cat.ColumnsFor(table)
+	show := a.lookups(table)
 
 	a.grid.Clear()
 	a.grid.SetTitle(fmt.Sprintf(" %s (%d) ", table, len(rows)))
@@ -288,11 +336,7 @@ func (a *App) openTable(table string) {
 	}
 	for r, row := range rows {
 		for c, name := range cols {
-			val := row[name]
-			if name == "id" && len(val) > 8 {
-				val = val[:8]
-			}
-			a.grid.SetCell(r+1, c, tview.NewTableCell(val))
+			a.grid.SetCell(r+1, c, tview.NewTableCell(show.List(name, cellValue(row, name))))
 		}
 	}
 	if len(rows) > 0 {
@@ -315,8 +359,15 @@ func (a *App) editFormThen(table string, row map[string]string, back tview.Primi
 	}
 	form := tview.NewForm()
 	fields := a.cat.FormFields(table)
+	show := a.lookups(table)
 	for _, field := range fields {
-		form.AddInputField(field, row[field], 0, nil, nil)
+		label := field
+		if show.IsLookup(field) && row[field] != "" {
+			// The stored idx stays editable until the picker comes; the label
+			// says what it stands for.
+			label += " (" + show.Form(field, row[field]) + ")"
+		}
+		form.AddInputField(label, row[field], 0, nil, nil)
 	}
 	title := " new " + table + " "
 	if row != nil {
@@ -324,8 +375,8 @@ func (a *App) editFormThen(table string, row map[string]string, back tview.Primi
 	}
 	form.AddButton("Save", func() {
 		vals := map[string]string{}
-		for _, field := range fields {
-			val := form.GetFormItemByLabel(field).(*tview.InputField).GetText()
+		for i, field := range fields {
+			val := form.GetFormItem(i).(*tview.InputField).GetText()
 			if row == nil || row[field] != val {
 				vals[field] = val
 			}

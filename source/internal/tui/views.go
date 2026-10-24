@@ -234,9 +234,10 @@ func (a *App) loadBlock(panel *blockPanel) {
 		if len(rows) > 0 {
 			row = rows[0]
 		}
+		show := a.lookups(panel.b.Table)
 		for i, field := range a.cat.FormFields(panel.b.Table) {
 			panel.tbl.SetCell(i, 0, tview.NewTableCell(field).SetAttributes(tcell.AttrBold))
-			panel.tbl.SetCell(i, 1, tview.NewTableCell(row[field]))
+			panel.tbl.SetCell(i, 1, tview.NewTableCell(show.Form(field, row[field])))
 		}
 	case "tree_grid":
 		tree, err := a.cat.TreeRows(a.api, panel.b.Table, panel.b.ParentField)
@@ -246,10 +247,11 @@ func (a *App) loadBlock(panel *blockPanel) {
 		}
 		panel.tree = tree
 		cols := a.cat.ColumnsFor(panel.b.Table)
+		show := a.lookups(panel.b.Table)
 		a.blockHeader(panel, cols, len(tree))
 		for r, treeRow := range tree {
 			for c, name := range cols {
-				val := cellValue(treeRow.Row, name)
+				val := show.List(name, cellValue(treeRow.Row, name))
 				if c == 0 {
 					val = strings.Repeat("  ", treeRow.Depth) + val
 				}
@@ -264,10 +266,11 @@ func (a *App) loadBlock(panel *blockPanel) {
 		}
 		panel.rows = rows
 		cols := a.cat.ColumnsFor(panel.b.Table)
+		show := a.lookups(panel.b.Table)
 		a.blockHeader(panel, cols, len(rows))
 		for r, row := range rows {
 			for c, name := range cols {
-				panel.tbl.SetCell(r+1, c, tview.NewTableCell(cellValue(row, name)))
+				panel.tbl.SetCell(r+1, c, tview.NewTableCell(show.List(name, cellValue(row, name))))
 			}
 		}
 	}
