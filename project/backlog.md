@@ -125,6 +125,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Swept: every crud write path (Create, Update, SetField, SetFieldNull). The TUI, web, CLI and scripts all write through those. Replay doesn't check, by design.
 	- Decisions:
 		- Departs from the wording: `title` and `lookups_idx` aren't NOT NULL yet, unlike example.shcl, since bug 2026102407331876 makes such a table drop every row. They stay `required: y`.
+		- 20261024: That bug is fixed in d459e1f, and `title` and `lookups_idx` are `null_ok: n` again.
 		- A user schema that restates either table, as example.shcl does, keeps its own shape and warns, as for any built-in name. The idx rules apply either way.
 	- Branch: round1024
 	- Test case: `TestLookupsIdx` and `TestLookupsIdxConcurrent` in `source/internal/core/schema/lookups_test.go`.
