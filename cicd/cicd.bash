@@ -408,11 +408,11 @@ fMain(){
 		fEcho_Clean "Demo mp4 + gif regenerated"
 	fi
 
-	## Optional local pre-publish hooks (not committed, kept under ../private). Each
+	## Optional local pre-publish hooks (not committed, kept in ../../private/cicd-hooks). Each
 	## *.bash there runs here before publish so anything a hook regenerates gets
 	## committed in the same run. No-op when the folder is absent. A hook gets the
 	## repo base path as $1; a failing hook warns but does not abort the run.
-	declare hooksDir="${dirPath_Base}/../private/cicd-hooks"
+	declare hooksDir="${dirPath_Base}/../../private/cicd-hooks"
 	if ((! doHooks)); then
 		fEcho_Section "Local hooks (skipped: --no-hooks)"
 	elif [[ -d "${hooksDir}" ]]; then
@@ -706,3 +706,4 @@ fMain  "${@}"
 ##		- 20260711 JC: Full cross-platform packaging via goreleaser (binaries for linux/darwin/windows/freebsd amd64+arm64, .deb/.rpm, archives, checksums) plus a Windows .exe installer; split native debug (test/profile) from release (dogfood/package) builds; added --no-arm.
 ##		- 20260804 JC: Publish step skips its second y/n via the doPromptToContinue setting; the --no-prompt switch no longer exists in that script.
 ##		- 20261024 JC: Added --no-install, --no-hooks, --no-publish, --no-demo and --no-format, so a full run can leave the box and the tracked tree alone.
+##		- 20261024 JC: Local hooks dir is two levels up, since the repo moved into nano-git-db-floss/repo.
