@@ -208,7 +208,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - Two clients that create the same unique value before syncing both keep it in the view, one with that field empty.
 	- ID: 2026102407584270
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on UAT
+		- For a look at the Decisions: a create whose unique value is already taken now leaves no row in the view at all.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-075842
 	- Opened by: JC
@@ -220,7 +221,40 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Reproduced [Bug]: 20261024, on `round1024`, by replaying two clients' merged logs into a fresh view. The default groups' `name` updates warn the same way at that replay, so they likely get twins too.
 	- Possible cause [Bug]: Replay applies a create as an id-only insert, then one update per field. The unique clash refuses only the update, so the row stays.
 		- Two fixes to weigh: derive a seed row's id from its table and idx, so both clients log the same row, or have replay drop a create when one of its own field updates hits a unique clash. The second also covers runtime idx minting and the default groups.
+	- Actual cause [Bug]:
+		- As guessed. The log had no way to tell a row's starting values from later edits, so replay could only skip the field.
+		- Same shape: a view kept from an earlier pass kept its own client's row, so 2 clients could each keep a different one.
 	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261024: crud logs a create's starting values as `create` entries, not `update`. Replay already read that form, so older builds apply it the same way.
+		- On a unique clash with a starting value, replay drops the row created later in log order, whole, with a warning. Its later edits are skipped too, so it can't come back as a stub.
+		- When the view already holds the later row from an earlier pass, that row is the one dropped. So every client keeps the same row as a fresh rebuild.
+		- design.md's Transaction log section says how creates are logged and settled.
+		- Verified: the new tests fail before the fix and pass after. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass, and the new tests pass under `-race`. Taking out the earlier-pass check makes the "view held B" case fail.
+		- Swept: every path that logs a new row (`Create`, which seeding and the default groups go through, and the audit records, which have no unique field). Every replay caller (`OpenClientWith`, CLI `replay`, autosync, the live write) goes through `txlog.Apply`.
+	- Decisions:
+		- Replay drops the clashing create, rather than seed rows getting an id from their table and idx. That also covers runtime idx minting and the default groups.
+		- 20261024: `TestCreateReportsAFieldTheViewRefused` in `crud/write_test.go` asserted the second row stays with an empty `name`. It now asserts the row isn't in the view. The id and the refusal still come back.
+		- Logs written before this keep starting values as updates, so their clashes still skip only the field. Twins those logs already made stay.
+		- For a unique group over several fields, the earlier-pass check only spots a later row that sets the clashing field itself at create.
+		- Refusing a clashing create up front, before it's logged, is filed as 2026102408084809.
+	- Actual fix [Bug]: A create's values are logged as create entries, and replay drops the later of 2 rows that clash on one.
+	- Branch: round1024
+	- Test case: `TestReplayDropsCreateTwin` in `source/internal/core/txlog/replay_test.go`, `TestSeedRowsTwoClients` in `source/internal/core/schema/seed_test.go`, and the updated `TestCreateReportsAFieldTheViewRefused` in `source/internal/core/crud/write_test.go`.
+
+- Refuse a create whose unique value is already taken in the view, before it's logged.
+	- ID: 2026102408084809
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-080848
+	- Opened by: JC
+	- Related IDs: 2026102407584270
+	- Requirements [Feature]:
+		- Today the create is logged, the view drops the row, and the caller gets the id with a refusal. The log then holds a row no view will show.
+		- Check the unique groups in crud, under the commit lock, and refuse with a plain message instead. Replay keeps settling clashes between clients.
+	- Estimated effort: Low
 
 - Show lookup values per `lookup_in_lists` and `lookup_in_forms`.
 	- ID: 2026102407295335

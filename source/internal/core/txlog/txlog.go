@@ -326,6 +326,7 @@ func entryFrom(rec []string, cols map[string]int) Entry {
 // to rebuild a view. Entries that cannot apply (schema drift, unique collisions
 // from merged concurrent writes) are skipped and reported as warnings, never
 // fatal; every client skips the same losers because the order is total. A
+// unique clash on a value a create set drops that whole row (settleCreate). A
 // hard-deleted row stays dead: later update/mark_delete entries for it are
 // skipped rather than resurrecting a ghost via the upsert path (only a later
 // create revives the row id).
@@ -348,9 +349,13 @@ func Apply(st *store.Store, entries []Entry) ([]string, error) {
 	defer cache.close() // before the rollback above: defers unwind in reverse
 
 	var warns []string
-	dead := map[string]bool{} // (table, row) pairs hard-deleted so far
-	for _, entry := range ordered {
+	dead := map[string]bool{}    // (table, row) pairs hard-deleted so far
+	dropped := map[string]bool{} // rows that lost a unique clash while being created
+	for i, entry := range ordered {
 		key := entry.Table + "\x00" + entry.RowID
+		if dropped[key] {
+			continue
+		}
 		switch entry.Op {
 		case "create":
 			delete(dead, key)
@@ -361,7 +366,14 @@ func Apply(st *store.Store, entries []Entry) ([]string, error) {
 				continue
 			}
 		}
-		if err := applyOne(cache, st, entry); err != nil {
+		err := applyOne(cache, st, entry)
+		if err != nil && entry.Op == "create" && entry.Field != "" && isUniqueClash(err) {
+			if warn, ok := settleCreate(cache, st, entry, ordered[i+1:], dropped, err); ok {
+				warns = append(warns, warn)
+				continue
+			}
+		}
+		if err != nil {
 			if skippable(err) {
 				warns = append(warns, fmt.Sprintf("tx %s (%s/%s) skipped: %v", entry.TxID, entry.Table, entry.Op, err))
 				continue
@@ -391,8 +403,156 @@ func skippable(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "no such table") ||
 		strings.Contains(msg, "no such column") ||
-		strings.Contains(msg, "UNIQUE constraint failed") ||
+		isUniqueClash(err) ||
 		strings.Contains(msg, "NOT NULL constraint failed")
+}
+
+func isUniqueClash(err error) bool {
+	return strings.Contains(err.Error(), "UNIQUE constraint failed")
+}
+
+// settleCreate handles a unique clash on a field a create set. Skipping just the
+// field would leave a twin row with it empty, so one of the two rows goes
+// (backlog 2026102407584270). The one created later in log order loses. A view
+// kept from an earlier pass can already hold that later row, so it may be the
+// other one that goes, which keeps every view the same as a fresh rebuild.
+//
+// ok is false when the clash can't be settled this way, and the caller then
+// skips the field as before.
+func settleCreate(cache *stmts, st *store.Store, entry Entry, rest []Entry, dropped map[string]bool, clash error) (warn string, ok bool) {
+	id, err := guid.Decode(entry.RowID)
+	if err != nil {
+		return "", false
+	}
+	tbl := quoteIdent(entry.Table)
+	isRef := st.IsRef(entry.Table, entry.Field)
+	val, err := fieldValue(entry, isRef)
+	if err != nil {
+		return "", false
+	}
+	var gone []string
+	for {
+		other, err := clashingRow(cache, entry.Table, entry.Field, val, id)
+		if err != nil || other == nil || !createdIn(rest, entry.Table, guid.Encode(other), entry.Field) {
+			break
+		}
+		if err := cache.exec(`DELETE FROM `+tbl+` WHERE "id"=?`, other); err != nil {
+			break
+		}
+		otherID := guid.Encode(other)
+		dropped[entry.Table+"\x00"+otherID] = true
+		gone = append(gone, otherID)
+		err = setField(cache, tbl, entry, id, isRef)
+		if err == nil {
+			return fmt.Sprintf("tx %s (%s/create): row %s dropped, it was created later with the same %s",
+				entry.TxID, entry.Table, strings.Join(gone, ", "), entry.Field), true
+		}
+		if !isUniqueClash(err) {
+			return "", false
+		}
+		clash = err
+	}
+	if err := cache.exec(`DELETE FROM `+tbl+` WHERE "id"=?`, id); err != nil {
+		return "", false
+	}
+	dropped[entry.Table+"\x00"+entry.RowID] = true
+	return fmt.Sprintf("tx %s (%s/create) skipped, row %s dropped: %v", entry.TxID, entry.Table, entry.RowID, clash), true
+}
+
+// clashingRow finds the live row that holds val in a unique index over field,
+// alongside the values row id has in the index's other columns. The indexes
+// are read from the view itself rather than the schema, so it can't disagree
+// with what refused the write.
+func clashingRow(cache *stmts, table, field string, val any, id []byte) ([]byte, error) {
+	tbl := quoteIdent(table)
+	rows, err := cache.tx.Query(`SELECT "name", "partial" FROM pragma_index_list(?) WHERE "unique"=1`, table)
+	if err != nil {
+		return nil, err
+	}
+	type index struct {
+		name    string
+		partial bool
+	}
+	var indexes []index
+	for rows.Next() {
+		var ix index
+		if err := rows.Scan(&ix.name, &ix.partial); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		indexes = append(indexes, ix)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, ix := range indexes {
+		cols, err := indexCols(cache, ix.name)
+		if err != nil {
+			return nil, err
+		}
+		if !contains(cols, field) {
+			continue
+		}
+		where := []string{`"id"<>?`, quoteIdent(field) + `=?`}
+		args := []any{id, val}
+		for _, col := range cols {
+			if col != field {
+				where = append(where, quoteIdent(col)+` IS (SELECT `+quoteIdent(col)+` FROM `+tbl+` WHERE "id"=?)`)
+				args = append(args, id)
+			}
+		}
+		if ix.partial {
+			where = append(where, `"is_deleted"=0`)
+		}
+		var other []byte
+		err = cache.tx.QueryRow(`SELECT "id" FROM `+tbl+` WHERE `+strings.Join(where, " AND ")+` LIMIT 1`, args...).Scan(&other)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		return other, nil
+	}
+	return nil, nil
+}
+
+func indexCols(cache *stmts, index string) ([]string, error) {
+	rows, err := cache.tx.Query(`SELECT "name" FROM pragma_index_info(?) ORDER BY "seqno"`, index)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var cols []string
+	for rows.Next() {
+		var col sql.NullString // an expression column has no name
+		if err := rows.Scan(&col); err != nil {
+			return nil, err
+		}
+		cols = append(cols, col.String)
+	}
+	return cols, rows.Err()
+}
+
+func contains(list []string, s string) bool {
+	for _, item := range list {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}
+
+// createdIn reports whether rest holds a create that sets field on the row,
+// which is where a fresh rebuild would drop it.
+func createdIn(rest []Entry, table, rowID, field string) bool {
+	for _, entry := range rest {
+		if entry.Op == "create" && entry.RowID == rowID && entry.Field == field && entry.Table == table {
+			return true
+		}
+	}
+	return false
 }
 
 // stmts holds the statements one Apply pass reuses, keyed by their own SQL.
@@ -471,18 +631,25 @@ func applyOne(cache *stmts, st *store.Store, entry Entry) error {
 // must never hold ciphertext. A ref column binds the raw id bytes instead, so a
 // reference is stored the same way the row's own primary key is.
 func setField(cache *stmts, quotedTable string, entry Entry, id []byte, isRef bool) error {
-	var val any = entry.NewValue
+	val, err := fieldValue(entry, isRef)
+	if err != nil {
+		return err
+	}
+	return cache.exec(`UPDATE `+quotedTable+` SET `+quoteIdent(entry.Field)+`=? WHERE "id"=?`, val, id)
+}
+
+func fieldValue(entry Entry, isRef bool) (any, error) {
 	switch {
 	case entry.IsNull || entry.Enc:
-		val = nil
+		return nil, nil
 	case isRef && entry.NewValue != "":
 		raw, err := guid.Decode(entry.NewValue)
 		if err != nil {
-			return fmt.Errorf("%w: %s: %v", errBadEntry, entry.Field, err)
+			return nil, fmt.Errorf("%w: %s: %v", errBadEntry, entry.Field, err)
 		}
-		val = raw
+		return raw, nil
 	}
-	return cache.exec(`UPDATE `+quotedTable+` SET `+quoteIdent(entry.Field)+`=? WHERE "id"=?`, val, id)
+	return entry.NewValue, nil
 }
 
 func quoteIdent(s string) string {

@@ -154,3 +154,63 @@ func findExampleDDL(t *testing.T) string {
 	}
 	return p
 }
+
+// Two clients that seed before their first sync each log the same rows. After
+// the logs merge, every view holds one copy of each, the same one everywhere
+// (backlog 2026102407584270). The default groups go the same way.
+func TestSeedRowsTwoClients(t *testing.T) {
+	a, b := newSeedRig(t), newSeedRig(t)
+	a.open().Close()
+	b.open().Close()
+	logA, err := os.ReadFile(filepath.Join(a.log, "txlog.csv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	logB, err := os.ReadFile(filepath.Join(b.log, "txlog.csv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged := append(append([]byte{}, logA...), logB...)
+	fresh := newSeedRig(t)
+	for _, r := range []*seedRig{a, b, fresh} {
+		if err := os.MkdirAll(r.log, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(r.log, "txlog.csv"), merged, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var firstIDs map[string]string
+	for _, r := range []*seedRig{a, b, fresh} {
+		c := r.open()
+		if got := allRows(t, c, "lookup_values"); len(got) != 2 || got["1"] != "Open" || got["2"] != "Closed" {
+			t.Fatalf("lookup_values = %v", got)
+		}
+		if got := allRows(t, c, "lookups"); len(got) != 1 {
+			t.Fatalf("lookups = %v", got)
+		}
+		groups, err := c.API.Query(`SELECT "name", count(*) AS n FROM "groups" GROUP BY "name" HAVING n > 1 OR "name" IS NULL OR "name" = ''`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(groups) != 0 {
+			t.Errorf("groups with twins or no name: %v", groups)
+		}
+		ids := map[string]string{
+			"lookups 1":       idOfIdx(t, c, "lookups", "1"),
+			"lookup_values 1": idOfIdx(t, c, "lookup_values", "1"),
+			"lookup_values 2": idOfIdx(t, c, "lookup_values", "2"),
+		}
+		if firstIDs == nil {
+			firstIDs = ids
+		} else {
+			for k, v := range ids {
+				if firstIDs[k] != v {
+					t.Errorf("%s is row %s here and %s in the first view", k, v, firstIDs[k])
+				}
+			}
+		}
+		c.Close()
+	}
+}

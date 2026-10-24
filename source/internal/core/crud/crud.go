@@ -173,7 +173,9 @@ func (a *API) Create(table string, fields map[string]string) (string, error) {
 		if field == "id" {
 			continue
 		}
-		entries = append(entries, a.entry(table, id, field, "update", fields[field]))
+		// create, not update, so replay can tell a row's own values from later
+		// edits, and drops the row on a unique clash (backlog 2026102407584270)
+		entries = append(entries, a.entry(table, id, field, "create", fields[field]))
 	}
 	entries = append(entries, a.audit(table, id, "create", nil)...)
 	err = a.commit(entries)
