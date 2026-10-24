@@ -78,6 +78,33 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Test case: `TestVersionLine` in `source/app/app_test.go`, and the date check in `smoke-cli.bash`.
 	- Branch: macci
 
+- govulncheck flags the pinned Go toolchain.
+	- ID: 2026102407051369
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-070513
+	- Opened by: JC
+	- Incorrect behavior [Bug]: govulncheck reports 5 standard library advisories against the `go1.26.5` toolchain pin, so the security gate fails on `dev`.
+	- Expected behavior [Bug]: govulncheck passes under the pinned toolchain.
+	- Reproduced [Bug]: 20261024, on `dev` at ce5dfa0.
+	- Possible cause [Bug]: The advisories are fixed in go1.26.10. Enterprise and vendor may pin the same toolchain.
+	- Estimated effort: Low
+
+- Off flags for the cicd.bash stages that install, publish, or rewrite tracked files.
+	- ID: 2026102407051370
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-070513
+	- Opened by: JC
+	- Requirements [Feature]:
+		- A full run can turn off, by its own flag, each stage that installs, commits, pushes, or rewrites a tracked file. Lint and test stages need none.
+		- Stages with no off flag now: dogfood install, local hooks, and backup and publish.
+		- The demo stage rewrites `assets/demo.gif`, and only `--quick` turns it off, along with every other slow stage. It gets its own flag.
+		- The lint stage's `gofmt -w` rewrites unformatted Go files.
+	- Estimated effort: Avg
+
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161870
 	- Type: Enhancement
