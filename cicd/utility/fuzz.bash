@@ -27,7 +27,8 @@ while (($#)); do case "$1" in
 	*) echo "fuzz.bash: unknown option: $1" >&2; exit 2 ;;
 esac; done
 
-source "$(dirname "$0")/include/cpu-limit.bash"   ## NGDB_JOBS + GOMAXPROCS (<=half cores; caps fuzz workers)
+source "$(dirname "$0")/include/cpu-limit.bash"   ## NGDB_JOBS + GOMAXPROCS (caps fuzz workers)
+fCpuLimit heavy  ## a quarter of the cores, busy or not
 source "$(dirname "$0")/include/temp-run.bash"    ## fTempDir_Make + fSafeRm
 cd "$(dirname "$0")/../../source"   ## module root (go.mod)
 
@@ -53,7 +54,7 @@ tmp="$(fTempDir_Make fuzz)"; trap 'fSafeRm "${tmp}" > /dev/null' EXIT
 out="${tmp}/out"
 
 fRunTarget() {   ## $1 = import path, $2 = target name
-	go test -mod=vendor -p "${NGDB_JOBS}" -run '^$' -fuzz="^${2}\$" -fuzztime="${fuzzTime}" "$1" >"${out}" 2>&1
+	go test -mod=vendor -p "${NGDB_JOBS}" -parallel "${NGDB_JOBS}" -run '^$' -fuzz="^${2}\$" -fuzztime="${fuzzTime}" "$1" >"${out}" 2>&1
 }
 
 ## go1.26's fuzzing coordinator can report the -fuzztime deadline itself as the
@@ -93,3 +94,4 @@ echo "fuzz.bash: all targets clean"
 ##		- 20260709: Created.
 ##		- 20260804: Rerun a target once when the fuzz budget expires as a failure.
 ##		- 20261025: Output goes in the run folder, not a fixed /tmp file.
+##		- 20261025: A quarter of the cores, and the worker count passed explicitly.

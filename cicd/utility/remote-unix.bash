@@ -45,11 +45,15 @@ if awk -v l="${load:-0}" -v c="${cores}" 'BEGIN { exit !(l > c / 2) }'; then job
 export GOMAXPROCS="${jobs}"
 echo "$(uname -sm) on $(hostname): ${cores} cores, load ${load:-?}, ${jobs} jobs"
 
+## Low priority for everything below. FreeBSD and macOS have no ionice.
+renice -n 19 -p $$ > /dev/null 2>&1 || true
+if command -v ionice > /dev/null 2>&1; then ionice -c 3 -p $$ > /dev/null 2>&1 || true; fi
+
 failed=0
 while read -r name dir; do
 	[[ -n "${name}" ]] || continue
 	start="$(date +%s)"
-	if (cd "${work}/${dir}" && nice -n 19 "${work}/tests/${name}.test" -test.timeout 15m > "${work}/logs/${name}.log" 2>&1); then
+	if (cd "${work}/${dir}" && nice -n 19 "${work}/tests/${name}.test" -test.timeout 15m -test.parallel "${jobs}" > "${work}/logs/${name}.log" 2>&1); then
 		echo "PASS ${name} ($(($(date +%s) - start))s)"
 	else
 		echo "FAIL ${name} ($(($(date +%s) - start))s)"
@@ -71,3 +75,4 @@ fi
 
 ##	History:
 ##		- 20261025 JC: Created.
+##		- 20261025 JC: Idle I/O where there's ionice, and -test.parallel passed.

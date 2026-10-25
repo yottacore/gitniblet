@@ -56,7 +56,7 @@ try {
 		$watch = [Diagnostics.Stopwatch]::StartNew()
 		Push-Location -LiteralPath "$Work\$dir"
 		## Quoted, since PowerShell splits -test.timeout at the dot.
-		& "$Work\tests\$name.test.exe" '-test.timeout=15m' *> $log
+		& "$Work\tests\$name.test.exe" '-test.timeout=15m' "-test.parallel=$jobs" *> $log
 		$rc = $LASTEXITCODE
 		Pop-Location
 		if ($rc -eq 0) { "PASS $name ($([int]$watch.Elapsed.TotalSeconds)s)" }
@@ -84,3 +84,4 @@ exit [int]($failed -ne 0)
 
 ##	History:
 ##		- 20261025 JC: Created.
+##		- 20261025 JC: -test.parallel passed.

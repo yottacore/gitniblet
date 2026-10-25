@@ -43,7 +43,7 @@ fCase(){  ## id, name, expected line, timeout or 0 to run to the end, docker sta
 	local id="$1" name="$2" want="$3" secs="$4" out rc
 	if ((secs)); then out="$(NGDB_DOCKER="$5" timeout "${secs}" nice -n 19 bash "${repoRoot}/cicd/cicd.bash" "${flags[@]}" 2>&1)"; rc=$?
 	else              out="$(NGDB_DOCKER="$5"                   nice -n 19 bash "${repoRoot}/cicd/cicd.bash" "${flags[@]}" 2>&1)"; rc=$?; fi
-	if grep -qF -- "${want}" <<< "${out}" && grep -qF '[ Build (native debug) ]' <<< "${out}" && ! grep -qF '[ Container (' <<< "${out}" \
+	if grep -qF -- "${want}" <<< "${out}" && grep -qF 'Starting Build (native debug) ]' <<< "${out}" && ! grep -qF 'Container: running ' <<< "${out}" \
 		&& { ((secs)) || { ((rc == 0)) && grep -qF 'CI/CD: done' <<< "${out}"; }; }
 	then echo "PASS ${id} ${name}"
 	else echo "FAIL ${id} ${name} (exit ${rc})"; tail -20 <<< "${out}"; fails+=1; fi
@@ -56,7 +56,7 @@ cp -p "${recipe}" "${runDir}/Dockerfile.orig"
 sed -i 's/^ARG GO_VER=.*/ARG GO_VER=1.0.0/' "${recipe}"
 out="$(NGDB_DOCKER="${runDir}/nobuild" timeout 30 bash "${repoRoot}/cicd/cicd.bash" "${flags[@]}" 2>&1)"; rc=$?
 cp -p "${runDir}/Dockerfile.orig" "${recipe}"
-if ((rc != 0)) && grep -qF "GO_VER in cicd/container/Dockerfile is '1.0.0'" <<< "${out}" && ! grep -qF '[ Build (native debug) ]' <<< "${out}"
+if ((rc != 0)) && grep -qF "GO_VER in cicd/container/Dockerfile is '1.0.0'" <<< "${out}" && ! grep -qF 'Starting Build (native debug) ]' <<< "${out}"
 	then echo "PASS dedme stale GO_VER fails the run"
 	else echo "FAIL dedme stale GO_VER fails the run (exit ${rc})"; tail -20 <<< "${out}"; fails+=1; fi
 
@@ -66,3 +66,4 @@ exit $((fails > 0))
 ##	History:
 ##		- 20261025 JC: Created.
 ##		- 20261025 JC: The shared run folder and guard from include/temp-run.bash.
+##		- 20261025 JC: Matches the step lines.

@@ -395,10 +395,12 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - CICD reset: CPU and priority.
 	- ID: 2026102416210003
 	- Type: Task
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: The full-run line, in the container and with the remote boxes, for fuzz at a quarter inside the container, goreleaser's and gosec's counts, and idle I/O and `-test.parallel` on the boxes.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-162100
 	- Opened by: JC
+	- Related IDs: 2026102416210005
 	- Requirements [Feature]:
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
 		- Per the shared CICD rules, Machine use.
@@ -409,6 +411,22 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Pass the count to every tool that runs in parallel, goreleaser's `--parallelism` included.
 		- The same rules apply on the test boxes, with each box's own CPU count and load.
 	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: The job count is worked out again before each step from the 1-minute load: half the CPUs, or a quarter when the load is over half the CPU count. Fuzz takes a quarter either way. Each step prints its count and the load.
+		- The run drops itself to nice 19 and the idle I/O class at the start, so every step inherits both. The helper scripts do the same when run alone.
+		- The container gets `--cpus` at half the CPUs, `--cpu-shares 256`, and `nice` inside. The run inside checks the load before each of its steps, and never goes past the container's `--cpus`.
+		- The count now also goes to goreleaser's `--parallelism`, to gosec's `-concurrency`, which went by the core count before, and to `go test -parallel`. The boxes get idle I/O where they have `ionice`, and `-test.parallel`.
+		- design.md's CI/CD pipeline section and `--help` say so.
+		- Verified: `steps-test.bash` dedq2, dedq3 and dedq9 pass, and fail on the old include and `cicd.bash`. `cleanup-test.bash`, `container-fallback-test.bash`, `remote-skip-test.bash`, a short fuzz run, `test.bash`, the wide gofmt, and the CLI smoke pass. A quick run through the container passed, with 8 jobs per step at load 38 to 70 on 32 CPUs.
+		- Swept: every `go build`, `go test`, `go vet` and `go run` tool in `cicd/`, goreleaser, gosec, staticcheck and govulncheck (which follow `GOMAXPROCS`), the container run, and the box side on Unix and Windows.
+	- Decisions:
+		- The container's `--cpus` is half the CPUs, the most any step gets, rather than the count when it starts. So a step inside can still take half once the load drops.
+		- Nothing in the pipeline runs `-race` or a leak check yet, so fuzz is the only heavy step.
+		- `docker build` runs in the daemon, so `nice` on it reaches only the client. The image is rebuilt only when its recipe changes.
+		- The Windows box keeps its CPU percent as its load, since it has no load average. It already ran at `BelowNormal`.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/steps-test.bash`, dedq2, dedq3 and dedq9.
 
 - CICD reset: standard flags.
 	- ID: 2026102416210004
@@ -434,10 +452,12 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - CICD reset: step output.
 	- ID: 2026102416210005
 	- Type: Task
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: The full-run line, for the step lines through the container, with goreleaser, fuzz, the remote boxes and the profiler on.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-162100
 	- Opened by: JC
+	- Related IDs: 2026102416210003
 	- Requirements [Feature]:
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
 		- Per the shared CICD rules, the step lines in the CICD style guide.
@@ -446,6 +466,21 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- A step that's turned off isn't counted, and the first section lists those with the flag or reason for each.
 		- One blank line between sections, and one at the end.
 	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: Every step is planned before the first one runs. The first section gives the count, lists each step that's off with its flag or reason, and says whether build and test run in the container. Each step then opens under a 79-character rule with `[ <time>: Step N of M; Starting <name> ]` in local time, and closes with `PASS` or `FAIL`.
+		- A step that fails, or is stopped with Ctrl+C, closes with `FAIL` from the exit trap.
+		- The run in the container takes the outer run's list, so its steps carry on the same numbers. It gets the host's time zone, since its clock read UTC.
+		- The last section says `done; PASS` with the count, and holds the remote tests' summary.
+		- Verified: `steps-test.bash` dedq4 to dedq8 pass, and dedq4, dedq7 and dedq8 fail on the old `cicd.bash`. Without the `FAIL` line in the exit trap, dedq8 fails. A quick run through the container numbered all 5 steps across it.
+		- Swept: every section title in `cicd.bash`. Only the first and last sections are left. The helper scripts print plain lines inside a step, so their output stays.
+	- Decisions:
+		- Building the container image is part of the first section, not a step, since it doesn't change the count. If it fails, the same steps run on this host.
+		- 20261025: `container-fallback-test.bash` matched the old section titles. dedmb to dedme now look for `Starting Build (native debug) ]` in place of `[ Build (native debug) ]`, and `Container: running ` in place of `[ Container (`. What they check is the same.
+		- Ctrl+C while the container runs is expected to leave the step inside without a `FAIL` line, since the container is removed first. Not checked.
+		- The summary shown before the commit message prompt still lists what's skipped, as before.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/steps-test.bash`, dedq4 to dedq8.
 
 - Regression tests for all completed features and bug reports.
 	- ID: 2026101915305767
