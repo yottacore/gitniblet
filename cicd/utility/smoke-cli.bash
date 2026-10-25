@@ -2,8 +2,9 @@
 
 ##	Purpose:
 ##		Smoke-test a built ngdb binary end to end: version, usage, register the
-##		issue-tracker demo, write a few rows, read them back, and rebuild the view
-##		from the log. Runs on stock macOS bash 3.2 too, for the macOS CI runner.
+##		small issue-tracker schema in smoke/, write a few rows, read them back, and
+##		rebuild the view from the log. Runs on stock macOS bash 3.2 too, for the
+##		macOS CI runner.
 ##	Syntax:
 ##		smoke-cli.bash [path to ngdb]     ## default: bin/ngdb
 ##	Notes:
@@ -58,7 +59,7 @@ fi
 grep -q 'usage: ngdb' "${work}/help.txt" || fail "--help printed no usage"
 if "${exe}" no-such-verb > /dev/null 2>&1; then fail "unknown verb exited 0"; fi
 
-cp "${dirPath_Base}/demos/t7em6_issue-tracker/issues.shcl" "${work}/"
+cp "${dirPath_Base}/cicd/utility/smoke/issues.shcl" "${work}/"
 cd "${work}"
 ngdb --init . > /dev/null || fail "--init"
 
