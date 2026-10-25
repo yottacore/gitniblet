@@ -644,7 +644,9 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - CICD reset: version line.
 	- ID: 2026102416210007
 	- Type: Task
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: The full-run line, for the smoke on the remote boxes, which now bundle `build-number.bash`, and goreleaser's packaging.
+	- Needs external testing: `ci.yml` on `cicd1025`, for the smoke on Linux and arm64 macOS. Then `release.yml` at the next release cut, for the notes' first line.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-162100
 	- Opened by: JC
@@ -658,6 +660,24 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Release builds from goreleaser stamp the build number too, and leave the date off.
 		- Overrides the `ngdb <version> (<commit>) (<date>)` form in 2026102318473518, and the commit stamp in the private notes, under cicd-branch-model.
 	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: `--version` prints `ngdb v1.0.0-beta.2 build dedrq (2026-10-25)`, then `Copyright © 2025-26 Jim Collier.` A release build leaves the date off.
+		- `app.Build` is gone. Builds stamp `app.CommitTime`, the commit's unix time, and `app.BuildNumber` turns it into the number. `build.bash` takes it from `git log`, goreleaser from `.CommitTimestamp`. A plain `go build` shows no build number.
+		- The release notes start with the same line, through goreleaser's `release.header`. `release.yml` works the number out with `cicd/utility/include/build-number.bash`.
+		- The smoke checks the new form, the copyright line, and that the number is HEAD's. It also checks `install.bash` still reads the installed version. Both installers read only the first line now and drop the `v`, so old binaries still parse.
+		- 20261025: `TestVersionLine` (debg5) changed for the new form. Old: `ngdb 1.0.0-beta.2 (abc1234) (2026-10-24)`. New: `ngdb v1.0.0-beta.2 build decp8 (2026-10-24)`. The date and time zone cases are as they were.
+		- Verified: `TestBuildNumber` (dedrs) and `TestVersionLine` pass, and fail to build on the old `app.go`. The smoke passes, and fails on a binary with no commit time, one with the wrong commit time, the installed b23 build, and the old `install.bash`. The new installer code reads both forms, in bash and pwsh. A goreleaser release run without publish stamped the same number as `build-number.bash`. `test.bash`, the wide gofmt, staticcheck, `remote-skip-test.bash` and goreleaser's check pass.
+		- Not verified: the notes header, since goreleaser renders it only when it publishes.
+		- `--about` isn't in the FLOSS build yet. 2026101915293585 adds it, and can print `app.VersionLine` and `app.Copyright`.
+		- Swept: every `--version` reader in the repo (both installers, the smoke, `cicd.bash`, `remote-unix.bash`, `remote-windows.ps1`), every `app.Build` stamp (`build.bash`, goreleaser), and the docs.
+	- Decisions:
+		- The binary works the number out from the stamped commit time, so goreleaser needs no help for it. Only the notes use the bash copy, and the smoke checks the two agree.
+		- The dirty flag is dropped with the short commit, per the requirements.
+		- The notes' header has the version line only, not the copyright line.
+	- Branch: cicd1025
+	- Commit: e37fe11
+	- Test case: `TestBuildNumber` (dedrs) and `TestVersionLine` (debg5) in `source/app/app_test.go`, and the version checks in `smoke-cli.bash`.
 
 - CICD reset: CICD process gaps.
 	- ID: 2026102416210008
