@@ -75,6 +75,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Show the date in the local time zone of whoever views the version.
 	- Progress log:
 		- 20261023: `cicd/build.bash` stamps the UTC build time, and `--version` shows it as a local date, as in `ngdb 1.0.0-beta.2 (c6cc12b) (2026-10-23)`. Release builds from goreleaser don't stamp it, so they show no date. The enterprise build doesn't stamp it yet.
+		- 20261024: The version line's form here is superseded by 2026102416210007.
 	- Test case: `TestVersionLine` in `source/app/app_test.go`, and the date check in `smoke-cli.bash`.
 	- Branch: macci
 
@@ -289,6 +290,144 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Progress log:
 		- 20261024: Held for the uncommitted enterprise edits from 2026-10-19, in `go.mod`, `ci.yml` and `release.yml`, to be committed. Enterprise isn't in floss rounds.
 
+- Build and test in a pinned container.
+	- ID: 2026101303344552
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261013-033445
+	- Opened by: JC
+	- Target OS: Linux
+	- Requirements [Feature]:
+		- `cicd.bash --container` runs the build and test stages in an image built from a pinned recipe in `cicd/container/`. Toolchains come from pinned downloads with checksums.
+		- Toolchains on the build box clash between projects, such as 2 Zig versions on one link. A container keeps this project's pins apart.
+		- Other test boxes stay native, since their OS is what's being tested.
+		- zuid's `--container` stage is the model. gitsby and convert-base-v2 have one too.
+		- 20261024: CICD reset, raised to high. A container is the default, not opt-in. `--no-container` runs on the host on purpose, and a missing docker or an image that won't build falls back to the host with one line, never failing the run. A test whose point is the real OS stays on the host or a test box.
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Overrides the opt-in `--container` flag above.
+
+- CICD reset: other hosts and VMs.
+	- ID: 2026102416210001
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Target OS: Windows, macOS, FreeBSD, and Linux on arm64
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, Other hosts and VMs.
+		- The default run tests the builds made for other platforms on the test boxes: Windows on b29w, Intel macOS on vmKt6m or b26, FreeBSD on vmFreeBSD, and Linux arm64 on vmDebARM64. Today they're only cross-built, and only arm64 macOS gets tested, in hosted CI.
+		- Windows testing uses `b29w`, never `b29w-wif`. Nothing here needs vm925w's GPU.
+		- Each box is held through the shared host lock for the whole time it's used, in its `wrap` form, so a crash can't leave it held.
+		- A VM is put back the way it was found, through the VM state helper: resumed or started at the start, and paused or powered off again at the end.
+		- A box that doesn't answer is skipped with a warning and a `SKIP` line, in any mode, and the run goes on. `--no-remote` skips them all.
+		- Each box gets a work folder of this project's own, under its temp root.
+		- Overrides the line in the private round settings that leaves the Intel Mac checks as a by-hand option.
+	- Estimated effort: High
+
+- CICD reset: container cleanup.
+	- ID: 2026102416210002
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Prereq IDs: 2026101303344552
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, the container bullets of Cleanup after a run.
+		- Every container, image, and volume the pipeline makes gets `dev.project` and `dev.run` labels. Containers are named `<project>-<run folder>-<step>`, and run with `--rm` unless `--keep-temp` is given.
+		- At the end of a run, on failure and Ctrl+C too, remove the run's containers by label. Then remove this project's dangling images, and its older tags once a newer one has passed, keeping the current tag and the one before.
+		- Then `docker builder prune -f --filter until=168h`. Never `docker rmi -f` or `docker system prune`, and never anything without this project's label.
+		- One line at the end says what was removed and about what it freed, from `docker system df` before and after.
+	- Estimated effort: Avg
+
+- CICD reset: CPU and priority.
+	- ID: 2026102416210003
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, Machine use.
+		- Every step is already capped at half the logical CPUs from one include. What's left is below.
+		- Check the 1-minute load at the start and again before each step, and drop to a quarter when it's over half the CPU count.
+		- Fuzz, `-race`, and the leak checks use a quarter, busy or not.
+		- Every step runs under `nice -n 19` and `ionice -c 3`. A container gets `--cpus` and `--cpu-shares 256`, plus `nice` inside it.
+		- Pass the count to every tool that runs in parallel, goreleaser's `--parallelism` included.
+		- The same rules apply on the test boxes, with each box's own CPU count and load.
+	- Estimated effort: Low
+
+- CICD reset: standard flags.
+	- ID: 2026102416210004
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, the flags in the CICD style guide, and Merge gate.
+		- Add the flags every project takes: `--long` with `--slow` as another name, `--leakcheck`, `--no-leakcheck`, `--backlog-run-quick [<area>...]`, `--backlog-run-full`, `--merge-gate`, `--no-container`, `--no-remote`, `--no-sync`, `--keep-temp`, and `--list`. `--gate` and `--ci` are other names for `--backlog-run-quick` and `--merge-gate`, and say so in one line. The existing `--no-<stage>` flags stay.
+		- The default run takes about an hour at most, and `--quick` about 10 minutes. `--quick` still copies the release build to dogfood.
+		- `--backlog-run-quick` takes about 4 minutes, and `--help` lists its areas.
+		- `--backlog-run-quick`, `--backlog-run-full`, and `--merge-gate` never dogfood, publish, commit, push, install, sync, or rewrite a tracked file, and never prompt.
+		- A pre-push hook runs `--merge-gate` on a push to main only, and skips it when the commits change only docs and project files, from one path list the hook reads. A push to dev is never gated.
+		- `ci.yml` runs `--merge-gate` as far as the runner can, in place of its own list of steps.
+		- Once it's in, these flags replace the gate commands and the full-run line in the private round settings.
+	- Estimated effort: Avg
+
+- CICD reset: step output.
+	- ID: 2026102416210005
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, the step lines in the CICD style guide.
+		- Each step opens under a 79-character rule with `[ <time>: Step N of M; Starting <name> ]`, and closes with the same line saying `PASS` or `FAIL`. The time is local, as `YYYYmmDD-HHMMSS.NN`.
+		- Today a section prints a 74-character rule and a bare title, with no count, time, or result.
+		- A step that's turned off isn't counted, and the first section lists those with the flag or reason for each.
+		- One blank line between sections, and one at the end.
+	- Estimated effort: Low
+
+- Regression tests for all completed features and bug reports.
+	- ID: 2026101915305767
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261019-153057
+	- Opened by: JC
+	- Version and build: Pre-next-cut
+	- Requirements [Feature]:
+		- Make sure all completed features and bug reports on all subproject backlogs have a corresponding regression test in CI. At least, missing a test that could exist and would make sense to exist.
+		- Where missing such tests, create them. (In addition to what's already been done for bug-report-only regression tests.)
+		- For each issue, note its test case, or why it doesn't have one.
+		- 20261024: CICD reset, raised to high. Each Done item names its test's ID, in the new ID scheme from 2026101915293586, or says in a few words why it has none.
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+	- Related IDs: 2026101915293586
+
+- Give every CI test a unique ID.
+	- ID: 2026101915293586
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261019-152935
+	- Opened by: JC
+	- Version and build: Pre-next-cut
+	- Requirements [Feature]:
+		- Try to estimate the time the test was created, directly or indirectly.
+		- Test ID format: Take that time, convert it to milliseconds since 2000-01-01 00:00, then base 62 of that number.
+		- 20261024: CICD reset, raised to high. The ID is whole minutes since 2000-01-01 00:00 UTC in lowercase Crockford base 32, such as `decp8` for 2026-10-24 22:00 UTC. A clash takes the next free minute, and an ID never changes once given. The run prints one `PASS`, `FAIL`, or `SKIP` line per regression and fuzz test, with its ID.
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Overrides the base 62 milliseconds format above.
+
 - Lookup picker and write-time value check.
 	- ID: 2026102407295340
 	- Type: Enhancement
@@ -344,31 +483,62 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Requirements [Feature]:
 		- FLOSS version: Support `--help`|`--about`|`--donate`, in a similar way as sister project shcl.
 
-- Give every CI test a unique ID.
-	- ID: 2026101915293586
+- CICD reset: temp files and safe removal.
+	- ID: 2026102416210006
 	- Type: Task
 	- Status: Queued
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261019-152935
+	- Opened: 20261024-162100
 	- Opened by: JC
-	- Version and build: Pre-next-cut
 	- Requirements [Feature]:
-		- Try to estimate the time the test was created, directly or indirectly.
-		- Test ID format: Take that time, convert it to milliseconds since 2000-01-01 00:00, then base 62 of that number.
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, Temp files and Safe removal.
+		- Each run makes its own folder, `${HOST_TEMP}/nano-git-db-floss/<YYYYmmDD-HHMMSS>_<NNN>/`, writes `run.pid` there, and points `TMPDIR`, `TEMP`, and `TMP` at it. Today the fuzz, profile, smoke, and demo helpers each pick their own spot under `/tmp` or `TMPDIR`, and the demo and seed scripts use fixed `/tmp` paths.
+		- A trap removes the folder at the end, on failure and Ctrl+C too. `--keep-temp` keeps it and prints its path.
+		- Each run also removes this project's own stale run folders, older than 2 days with no live process from their `run.pid`.
+		- Every recursive removal goes through the repo's own copy of the safe removal guard. 9 are unguarded today, in 8 scripts, with the file list in the private notes.
+		- The demo recorder stops everything it starts. On 2026-10-24 it left 2 sets of `dbus-daemon`, `gvfsd`, and at-spi processes running on display `:97`, with HOME in its temp folder.
+		- Check it the way a gate is checked: run the pipeline twice, kill one run partway, and see that nothing new piles up.
+	- Estimated effort: Avg
 
-- Regression tests for all completed features and bug reports.
-	- ID: 2026101915305767
+- CICD reset: version line.
+	- ID: 2026102416210007
 	- Type: Task
 	- Status: Queued
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261019-153057
+	- Opened: 20261024-162100
 	- Opened by: JC
-	- Version and build: Pre-next-cut
+	- Related IDs: 2026102318473518, 2026101915293585
 	- Requirements [Feature]:
-		- Make sure all completed features and bug reports on all subproject backlogs have a corresponding regression test in CI. At least, missing a test that could exist and would make sense to exist.
-		- Where missing such tests, create them. (In addition to what's already been done for bug-report-only regression tests.)
-		- For each issue, note its test case, or why it doesn't have one.
-	- Related IDs: 2026101915293586
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, the build number in Branches and releases.
+		- The date on non-release builds is already in. What's left is below.
+		- `--version` prints `ngdb v<version> build <build>`, then the copyright line, and `--about` and the release notes show the same.
+		- The build number is the commit's time in minutes since 2000, in lowercase Crockford base 32. It comes from the commit, not the wall clock. Today that spot shows the short commit and a dirty flag.
+		- Release builds from goreleaser stamp the build number too, and leave the date off.
+		- Overrides the `ngdb <version> (<commit>) (<date>)` form in 2026102318473518, and the commit stamp in the private notes, under cicd-branch-model.
+	- Estimated effort: Low
+
+- CICD reset: CICD process gaps.
+	- ID: 2026102416210008
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- What else the shared CICD rules ask for that the other reset items don't cover.
+		- Go leak checks: `goleak.VerifyTestMain` in every package's tests, the whole suite under `-race` in every full run, a soak test on heap in use and goroutine count, and CodeQL from a pinned CLI over the vendored tree. Each new gate is watched to fail first.
+		- Remote sync first: fetch and fast-forward before building, and stop early when diverged.
+		- The CLI smoke test runs in `cicd.bash` too, not only in hosted CI.
+		- Dogfood goes to `~/synced/0-0/common/exec/app/linux/` and its Windows and macOS siblings, and skips the copy when the binary is in use.
+		- A `dogfood_ngdb.ps1` script with its launchers, per Dogfood script.
+		- Release archives are reproducible: goreleaser sets `mod_timestamp` from the commit.
+		- A FreeBSD `.pkg`.
+		- The hosted workflows read the Go and tool pins from the same place `cicd.bash` does. Today they pin Go on their own, and the release takes any goreleaser v2.
+		- Overrides the FreeBSD `.pkg` deferral in the private notes, under cicd-packaging.
+	- Estimated effort: Avg
 
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161870
@@ -629,20 +799,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Re-encrypt existing data under a new key.
 	- Progress log:
 		- 20261024: Filed from the old item. Today there's one key per database.
-
-- Build and test in a pinned container.
-	- ID: 2026101303344552
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261013-033445
-	- Opened by: JC
-	- Target OS: Linux
-	- Requirements [Feature]:
-		- `cicd.bash --container` runs the build and test stages in an image built from a pinned recipe in `cicd/container/`. Toolchains come from pinned downloads with checksums.
-		- Toolchains on the build box clash between projects, such as 2 Zig versions on one link. A container keeps this project's pins apart.
-		- Other test boxes stay native, since their OS is what's being tested.
-		- zuid's `--container` stage is the model. gitsby and convert-base-v2 have one too.
 
 ## Old format
 
