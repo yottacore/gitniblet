@@ -137,7 +137,7 @@ A database is just a few files. You register it once with `ngdb --init`, then re
 
 ## Example use cases
 
-- A team issue tracker, one per git repo, shared through the same repo the code lives in. Automate it from the command line, or let each person use the TUI (even over SSH), a shared web UI, or their own local-only web UI. A ready-to-run issue-tracker schema is included in [`demos/`](demos/).
+- A team issue tracker, one per git repo, shared through the same repo the code lives in. Automate it from the command line, or let each person use the TUI (even over SSH), a shared web UI, or their own local-only web UI. A full one, built on ngdb, is [ngdb-issue-tracker](https://github.com/jim-collier/ngdb-issue-tracker).
 - Any small shared database a GitHub project wants its contributors to keep - they install one small binary to take part, and it rides along in the repo.
 
 ## Installation

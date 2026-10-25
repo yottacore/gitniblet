@@ -666,6 +666,17 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Progress log:
 		- 20261024: Lists already honor `visible_list` on system fields. The example DDL's built-in `lookups` and `lookup_values` tables ask for `id` on forms, read-only.
 
+- Remove the issue-tracker demo. ngdb-issue-tracker takes its place, in its own repo.
+	- ID: 2026102513390812
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-133908
+	- Opened by: JC
+	- Progress log:
+		- 20261025: `demos/` is gone, walkthrough and `seed.bash` included. The CLI smoke still needs a schema, so `issues.shcl` moved to `cicd/utility/smoke/`, and the remote test bundle takes that folder. The README points at ngdb-issue-tracker.
+		- Verified: the CLI smoke passes on the new path.
+
 - CICD reset: container cleanup.
 	- ID: 2026102416210002
 	- Type: Task

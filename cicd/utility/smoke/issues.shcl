@@ -1,4 +1,4 @@
-## Nano Git DB demo - a small issue tracker.
+## A small issue tracker, for smoke-cli.bash.
 ## Every table also gets id / is_active / date_created / is_deleted for free.
 
 database:
