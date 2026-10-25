@@ -104,6 +104,7 @@ func choiceText(choices []LookupChoice) string {
 
 // literal and sql fields pick from their list_source, and keep a value the
 // row holds that the list doesn't.
+// ID: decb3
 func TestPickerChoices(t *testing.T) {
 	api, cat := pickerSetup(t)
 	show, err := cat.FormChoices(api, "tasks")

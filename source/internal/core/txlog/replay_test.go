@@ -40,6 +40,7 @@ const uniqueDDL = "tables:\n" +
 
 // Two soft-deletes of the same natural key used to collide on the unique index
 // and abort the entire replay; partial indexes must make this a non-event.
+// ID: d9e12
 func TestReplaySurvivesRepeatedSoftDelete(t *testing.T) {
 	st := newView(t, uniqueDDL)
 	row1, row2, row3 := testID("01"), testID("02"), testID("03")
@@ -69,6 +70,7 @@ func TestReplaySurvivesRepeatedSoftDelete(t *testing.T) {
 
 // Entries against tables or columns the local schema doesn't know are skipped
 // with a warning, never fatal - the log may be newer than the DDL.
+// ID: d9e13
 func TestReplaySkipsSchemaDrift(t *testing.T) {
 	st := newView(t, uniqueDDL)
 	row1, row2 := testID("01"), testID("02")
@@ -97,6 +99,7 @@ func TestReplaySkipsSchemaDrift(t *testing.T) {
 
 // Concurrent creates of the same natural key merge deterministically: the
 // later one is skipped everywhere, not fatal anywhere.
+// ID: d9e14
 func TestReplaySkipsUniqueLoser(t *testing.T) {
 	st := newView(t, uniqueDDL)
 	row1, row2 := testID("01"), testID("02")
@@ -116,6 +119,7 @@ func TestReplaySkipsUniqueLoser(t *testing.T) {
 // Entry-local data errors - a mangled row id, an operation this build does
 // not know (possibly a newer client's) - skip with a warning like schema
 // drift; they must never abort the whole replay.
+// ID: d9e15
 func TestReplaySkipsBadEntries(t *testing.T) {
 	st := newView(t, uniqueDDL)
 	row1 := testID("01")
@@ -144,6 +148,7 @@ func TestReplaySkipsBadEntries(t *testing.T) {
 
 // A hard-deleted row must stay dead: later update entries (e.g. surviving a
 // future GC of the delete's own creates) must not resurrect a one-field ghost.
+// ID: d9e16
 func TestReplayDeleteWinsOverLaterUpdates(t *testing.T) {
 	st := newView(t, uniqueDDL)
 	row1 := testID("01")
@@ -180,6 +185,7 @@ func TestReplayDeleteWinsOverLaterUpdates(t *testing.T) {
 
 // A ref column holds the same raw bytes as a row's own primary key, so a
 // reference joins straight against the id it points at.
+// ID: dabe6
 func TestApplyStoresRefAsRawBytes(t *testing.T) {
 	st := newView(t, "tables:\n"+
 		"\ttable: task\n"+
@@ -220,6 +226,7 @@ func TestApplyStoresRefAsRawBytes(t *testing.T) {
 
 // A ref value that is not an id skips with a warning rather than landing a
 // string in a column everything else treats as bytes.
+// ID: dabe7
 func TestApplySkipsMalformedRef(t *testing.T) {
 	st := newView(t, "tables:\n"+
 		"\ttable: task\n"+
@@ -240,6 +247,7 @@ func TestApplySkipsMalformedRef(t *testing.T) {
 
 // A create the view can't take must warn, not vanish. OR IGNORE on the bare-id
 // insert hid a NOT NULL failure and dropped the row (backlog 2026102407331876).
+// ID: dec8y
 func TestReplayWarnsOnRefusedCreate(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "v.sqlite"))
 	if err != nil {
@@ -266,6 +274,7 @@ func TestReplayWarnsOnRefusedCreate(t *testing.T) {
 // keep the row, the later one with that field empty (backlog 2026102407584270).
 // The later row goes whole, and a view that already held either side from an
 // earlier pass ends up the same as a fresh one.
+// ID: dec9e
 func TestReplayDropsCreateTwin(t *testing.T) {
 	const twinDDL = uniqueDDL + "\t\tfields:\n" +
 		"\t\t\tfield: note\n" +

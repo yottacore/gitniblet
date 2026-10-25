@@ -117,6 +117,7 @@ func addUser(t *testing.T, api *crud.API, name string, groups ...string) {
 	}
 }
 
+// ID: d9e08
 func TestCatalogHidesDeniedReads(t *testing.T) {
 	api, build := aclSetup(t)
 	addUser(t, api, "carol") // no memberships
@@ -154,6 +155,7 @@ func TestCatalogHidesDeniedReads(t *testing.T) {
 	}
 }
 
+// ID: d9e09
 func TestLiveRowsHidesUngrantedRows(t *testing.T) {
 	api, build := aclSetup(t)
 	addUser(t, api, "carol", "staff")

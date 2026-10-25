@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+// ID: debg5
 func TestVersionLine(t *testing.T) {
 	oldBuild, oldTime, oldLocal := Build, BuildTime, time.Local
 	t.Cleanup(func() { Build, BuildTime, time.Local = oldBuild, oldTime, oldLocal })

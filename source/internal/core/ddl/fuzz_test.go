@@ -31,6 +31,7 @@ func seedDDL(f *testing.F) {
 	}
 }
 
+// ID: d9nwj
 func FuzzParse(f *testing.F) {
 	seedDDL(f)
 	f.Fuzz(func(t *testing.T, src []byte) {
@@ -38,6 +39,7 @@ func FuzzParse(f *testing.F) {
 	})
 }
 
+// ID: d9nwk
 func FuzzParseQueries(f *testing.F) {
 	for _, s := range []string{
 		"",

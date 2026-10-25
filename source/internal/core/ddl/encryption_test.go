@@ -29,6 +29,7 @@ const encDDL = "" +
 	"\t\t\t\t\ttype: string\n" +
 	"\t\t\t\t\tencryption: never\n"
 
+// ID: d9e01
 func TestEncryptionParseAndResolve(t *testing.T) {
 	s, err := Parse([]byte(encDDL))
 	if err != nil {
@@ -53,6 +54,7 @@ func TestEncryptionParseAndResolve(t *testing.T) {
 	}
 }
 
+// ID: d9e02
 func TestEncryptionUnknownValueWarns(t *testing.T) {
 	s, err := Parse([]byte("database:\n\ttables:\n\t\ttable: t\n\t\t\tencryption: sometimes\n\t\t\tfields:\n\t\t\t\tfield: f\n\t\t\t\t\ttype: string\n"))
 	if err != nil {

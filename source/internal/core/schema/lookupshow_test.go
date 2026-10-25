@@ -97,6 +97,7 @@ func lookupShowSetup(t *testing.T) (*crud.API, *Catalog, map[string]string) {
 	return api, cat, ids
 }
 
+// ID: dec9y
 func TestLookupShow(t *testing.T) {
 	api, cat, ids := lookupShowSetup(t)
 	if err := api.MarkDelete("lookup_values", ids["Later"]); err != nil {
@@ -156,6 +157,7 @@ func TestLookupShow(t *testing.T) {
 
 // A form picks from the group's active values in sort order, and keeps a
 // retired value the row already holds.
+// ID: decaz
 func TestLookupChoices(t *testing.T) {
 	api, cat, ids := lookupShowSetup(t)
 	if _, err := api.Create("lookup_values", map[string]string{"idx": "5", "lookups_idx": "1", "title": "First", "sort": "1"}); err != nil {

@@ -482,6 +482,39 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: cicd1025
 	- Test case: `cicd/utility/steps-test.bash`, dedq4 to dedq8.
 
+- Give every CI test a unique ID.
+	- ID: 2026101915293586
+	- Type: Task
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: The full-run line, for `test.bash` and `fuzz.bash` in the container.
+	- Needs external testing: `ci.yml` on `cicd1025`, for the test step on Linux and arm64 macOS.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261019-152935
+	- Opened by: JC
+	- Related IDs: 2026102508574387
+	- Version and build: Pre-next-cut
+	- Requirements [Feature]:
+		- Try to estimate the time the test was created, directly or indirectly.
+		- Test ID format: Take that time, convert it to milliseconds since 2000-01-01 00:00, then base 62 of that number.
+		- 20261024: CICD reset, raised to high. The ID is whole minutes since 2000-01-01 00:00 UTC in lowercase Crockford base 32, such as `decp8` for 2026-10-24 22:00 UTC. A clash takes the next free minute, and an ID never changes once given. The run prints one `PASS`, `FAIL`, or `SKIP` line per regression and fuzz test, with its ID.
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Overrides the base 62 milliseconds format above.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: All 245 Go tests and fuzz targets got an ID from the commit that first added them, as a `// ID: xxxxx` line right above the func. A clash took the next free minute, and the bash tests' dedmb to dedq9 were kept and skipped over.
+		- `cicd/utility/testid`, a small Go module of its own, checks that every Go test has an ID and that no ID is used twice across Go and bash, and names the next free ID for one that's missing. `testid next` gives a free ID.
+		- `test.bash` runs the check, then `go test -json` through `testid report`: one `PASS`, `FAIL` or `SKIP` line per test with its ID, a skip's reason, a failed test's output, and a count at the end. `fuzz.bash` prints `PASS` or `FAIL` per target with its ID. `ci.yml` does the same as `test.bash` in both jobs.
+		- design.md's Tests bullet says so.
+		- Verified: `test.bash` printed 249 `PASS` lines and passed. A missing ID, an ID shared with `steps-test.bash`, a failing test and a skipped one each gave the right line, and the first 3 failed the run. `testid`'s own tests dedqq to dedqt, a short fuzz run, the wide gofmt, the build, the CLI smoke and `steps-test.bash` pass.
+		- Swept: every `go test` in `cicd/` and `.github/`. The remote boxes still print one line per box, which is 2026102508574387.
+	- Decisions:
+		- The ID sits in the test file, so it moves with a rename or a move.
+		- The bash tests' IDs are found as the first argument of `fCheck` or `fCase`, or in their own `PASS xxxxx` line.
+		- A package that fails outside any test, such as a build error, prints `FAIL -----` with its output.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/testid`, dedqq to dedqt, plus the check itself on every `test.bash` and CI run.
+
 - Regression tests for all completed features and bug reports.
 	- ID: 2026101915305767
 	- Type: Task
@@ -500,20 +533,17 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
 	- Related IDs: 2026101915293586
 
-- Give every CI test a unique ID.
-	- ID: 2026101915293586
+- Remote boxes: one line per test with its ID.
+	- ID: 2026102508574387
 	- Type: Task
 	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261019-152935
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-085743
 	- Opened by: JC
-	- Version and build: Pre-next-cut
+	- Related IDs: 2026101915293586
 	- Requirements [Feature]:
-		- Try to estimate the time the test was created, directly or indirectly.
-		- Test ID format: Take that time, convert it to milliseconds since 2000-01-01 00:00, then base 62 of that number.
-		- 20261024: CICD reset, raised to high. The ID is whole minutes since 2000-01-01 00:00 UTC in lowercase Crockford base 32, such as `decp8` for 2026-10-24 22:00 UTC. A clash takes the next free minute, and an ID never changes once given. The run prints one `PASS`, `FAIL`, or `SKIP` line per regression and fuzz test, with its ID.
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Overrides the base 62 milliseconds format above.
+		- `remote-test.bash` runs each package's test binary on the boxes and prints one line per box. Print one `PASS`, `FAIL` or `SKIP` line per test with its ID, as `test.bash` does.
+		- The boxes have no Go, so the binaries' `-test.v=test2json` output would go back to this host for `testid report`.
 
 - Lookup picker and write-time value check.
 	- ID: 2026102407295340

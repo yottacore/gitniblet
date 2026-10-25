@@ -85,6 +85,7 @@ func get(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
 	return rec
 }
 
+// ID: d9e1r
 func TestViewListedAndPageRenders(t *testing.T) {
 	s, _ := newViewServer(t)
 	h := s.routes()
@@ -123,6 +124,7 @@ func TestViewListedAndPageRenders(t *testing.T) {
 	}
 }
 
+// ID: d9e1s
 func TestViewBlockRows(t *testing.T) {
 	s, api := newViewServer(t)
 	h := s.routes()
@@ -158,6 +160,7 @@ func TestViewBlockRows(t *testing.T) {
 
 // Named queries: the view page offers the dropdown, /v/{view}/q runs one,
 // and a resolvable startup_named_query auto-loads on open.
+// ID: d9e1t
 func TestViewNamedQueries(t *testing.T) {
 	s, api := newViewServer(t)
 	if _, err := api.Create("employees", map[string]string{"name": "Ann"}); err != nil {
@@ -267,6 +270,7 @@ func newCommentsServer(t *testing.T) (*server, *crud.API) {
 	return s, api
 }
 
+// ID: da1a0
 func TestViewCommentsBlock(t *testing.T) {
 	s, api := newCommentsServer(t)
 	h := s.routes()

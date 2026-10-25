@@ -33,6 +33,7 @@ func gitrun(t *testing.T, dir string, args ...string) {
 
 // Auto-sync end to end: client A writes and syncs; client B's background
 // loop pulls the entry and full-replays it into B's view.
+// ID: d9e0a
 func TestAutoSyncPullsAndReplays(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
@@ -101,6 +102,7 @@ func TestAutoSyncPullsAndReplays(t *testing.T) {
 	t.Fatal("client B never saw client A's second row via auto-sync")
 }
 
+// ID: d9e0b
 func TestAutoSyncNoopOutsideRepo(t *testing.T) {
 	ddlPath := filepath.Join(t.TempDir(), "s.ddl")
 	if err := os.WriteFile(ddlPath, []byte(syncDDL), 0o644); err != nil {

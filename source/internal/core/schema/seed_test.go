@@ -79,6 +79,7 @@ func idOfIdx(t *testing.T, c *Client, table, idx string) string {
 }
 
 // Seed rows go in log-first when their idx is absent, and never overwrite.
+// ID: dec95
 func TestSeedRowsLogFirst(t *testing.T) {
 	r := newSeedRig(t)
 	c := r.open()
@@ -128,6 +129,7 @@ func TestSeedRowsLogFirst(t *testing.T) {
 }
 
 // The shipped example's seed rows all go in.
+// ID: dec96
 func TestSeedRowsExample(t *testing.T) {
 	ddlPath := findExampleDDL(t)
 	dir := t.TempDir()
@@ -158,6 +160,7 @@ func findExampleDDL(t *testing.T) string {
 // Two clients that seed before their first sync each log the same rows. After
 // the logs merge, every view holds one copy of each, the same one everywhere
 // (backlog 2026102407584270). The default groups go the same way.
+// ID: dec9d
 func TestSeedRowsTwoClients(t *testing.T) {
 	a, b := newSeedRig(t), newSeedRig(t)
 	a.open().Close()

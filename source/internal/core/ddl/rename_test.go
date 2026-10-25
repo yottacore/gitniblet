@@ -21,6 +21,7 @@ const renameDDL = "tables:\n" +
 	"\t\t\tfield: name\n" +
 	"\t\t\t\ttype: string\n"
 
+// ID: d9e06
 func TestRenameTable(t *testing.T) {
 	out, found := RenameTable([]byte(renameDDL), "person", "people")
 	if !found {
@@ -56,6 +57,7 @@ func TestRenameTable(t *testing.T) {
 	}
 }
 
+// ID: d9e07
 func TestRenameField(t *testing.T) {
 	// both tables have a "name" field; only person's may change
 	out, found := RenameField([]byte(renameDDL), "person", "name", "full_name")
@@ -84,6 +86,7 @@ func TestRenameField(t *testing.T) {
 // keeping the header is ordinary editing, and those comments have to come back
 // inside their section - dedented, they would read as belonging to whatever
 // follows.
+// ID: dav1c
 func TestRenameKeepsCommentedOutSectionIntact(t *testing.T) {
 	src := "tables:\n" +
 		"\ttable: person\n" +

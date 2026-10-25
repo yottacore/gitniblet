@@ -5,6 +5,7 @@ package config
 
 import "testing"
 
+// ID: d9dz2
 func TestNormEncrypt(t *testing.T) {
 	on := []string{"on", "yes", "true", "y", "t", "ENABLE", "Enabled"}
 	off := []string{"off", "no", "false", "n", "f", "disable", "DISABLED"}
@@ -31,6 +32,7 @@ func TestNormEncrypt(t *testing.T) {
 
 // The --encrypt override wins the preference; otherwise the record's value (or
 // auto for an ad-hoc open) is used.
+// ID: d9dz3
 func TestResolveEncryptionPrecedence(t *testing.T) {
 	SetEncryptPref("")
 	t.Cleanup(func() { SetEncryptPref("") })

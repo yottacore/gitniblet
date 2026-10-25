@@ -65,7 +65,7 @@ Manually kicked off via `cicd/cicd.bash`. Stages, in order (each fails early and
 
 - **Lint + format**: `gofmt -w` rewrites Go in place (never Bash), then `staticcheck` gates. `go vet` runs in test.bash.
 
-- **Tests**: full regression suite (`go test`), which also runs every fuzz target's seed corpus.
+- **Tests**: full regression suite (`go test`), which also runs every fuzz target's seed corpus. Every test has an ID, whole minutes since 2000-01-01 UTC in lowercase Crockford base 32, from when it was written. A Go test carries it in an `// ID:` line right above its func. The run prints one `PASS`, `FAIL` or `SKIP` line per test with its ID, fuzz included, and fails on a test with no ID or an ID used twice. `cicd/utility/testid` does the check and the lines, and `testid next` gives a free ID.
 
 - **Fuzz**: `cicd/utility/fuzz.bash` auto-discovers each `FuzzXxx` and runs it a short budget; a crash fails the run.
 

@@ -14,6 +14,7 @@ import (
 	"github.com/jim-collier/nano-git-db/gate"
 )
 
+// ID: d9hhm
 func TestDecideGateFullAndNag(t *testing.T) {
 	if d := decideGate(gate.Status{Posture: gate.Full}, nil, time.Now); !d.proceed || d.readOnly || d.banner != "" {
 		t.Fatalf("full = %+v", d)
@@ -44,6 +45,7 @@ func blockingScreen(t *testing.T, st gate.Status, now func() time.Time) (*simScr
 	return screen, out, waitFor
 }
 
+// ID: d9hhn
 func TestBlockingGateDismissReadOnly(t *testing.T) {
 	st := gate.Status{Posture: gate.Blocking, Message: "subscription lapsed", WaitSeconds: 60}
 	screen, out, waitFor := blockingScreen(t, st, func() time.Time { return time.Unix(1000, 0) })
@@ -56,6 +58,7 @@ func TestBlockingGateDismissReadOnly(t *testing.T) {
 	}
 }
 
+// ID: d9hhp
 func TestBlockingGateWaitThenEnter(t *testing.T) {
 	var mu sync.Mutex
 	cur := time.Unix(1000, 0)

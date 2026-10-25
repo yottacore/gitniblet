@@ -16,6 +16,7 @@ type fakeGate struct{ st gate.Status }
 
 func (f fakeGate) Status() gate.Status { return f.st }
 
+// ID: d9hhg
 func TestApplyGateBlockingGoesReadOnly(t *testing.T) {
 	gate.Register(fakeGate{gate.Status{Posture: gate.Blocking, Message: "lapsed"}})
 	defer gate.Register(nil)
@@ -32,6 +33,7 @@ func TestApplyGateBlockingGoesReadOnly(t *testing.T) {
 	}
 }
 
+// ID: d9hhh
 func TestApplyGateNagStaysWritable(t *testing.T) {
 	gate.Register(fakeGate{gate.Status{Posture: gate.Nag, Message: "renews soon"}})
 	defer gate.Register(nil)
@@ -48,6 +50,7 @@ func TestApplyGateNagStaysWritable(t *testing.T) {
 	}
 }
 
+// ID: d9hhj
 func TestApplyGateFullSilent(t *testing.T) {
 	api := crud.New(nil, nil) // no provider registered -> Full
 	var buf bytes.Buffer

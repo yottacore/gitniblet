@@ -36,6 +36,7 @@ func refStore(t *testing.T) (*Store, []byte) {
 }
 
 // The point of id(): a hand-written query matches a ref column by id text.
+// ID: dabez
 func TestIDFuncMatchesRefColumn(t *testing.T) {
 	st, raw := refStore(t)
 	var title string
@@ -50,6 +51,7 @@ func TestIDFuncMatchesRefColumn(t *testing.T) {
 
 // Without id() the same query matches nothing and reports no error - the
 // failure this function exists to prevent.
+// ID: dabf0
 func TestTextComparisonMatchesNothing(t *testing.T) {
 	st, raw := refStore(t)
 	var n int
@@ -62,6 +64,7 @@ func TestTextComparisonMatchesNothing(t *testing.T) {
 	}
 }
 
+// ID: dabf1
 func TestIDTextFuncRendersID(t *testing.T) {
 	st, raw := refStore(t)
 	var got string
@@ -74,6 +77,7 @@ func TestIDTextFuncRendersID(t *testing.T) {
 }
 
 // id() is idempotent, so wrapping an already-raw value is harmless.
+// ID: dabf2
 func TestIDFuncAcceptsRawAndNull(t *testing.T) {
 	st, raw := refStore(t)
 	var n int
@@ -94,6 +98,7 @@ func TestIDFuncAcceptsRawAndNull(t *testing.T) {
 }
 
 // A typo says so rather than quietly returning no rows.
+// ID: dabf3
 func TestIDFuncRejectsMalformed(t *testing.T) {
 	st, _ := refStore(t)
 	var n int

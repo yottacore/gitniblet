@@ -15,6 +15,7 @@ import (
 // frozen returns a clock stuck at t, so the gate's wait math is deterministic.
 func frozen(t time.Time) func() time.Time { return func() time.Time { return t } }
 
+// ID: d9hhq
 func TestGateBlocksThenWaitClears(t *testing.T) {
 	srv, api := newTestServer(t)
 	base := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)
@@ -50,6 +51,7 @@ func TestGateBlocksThenWaitClears(t *testing.T) {
 	}
 }
 
+// ID: d9hhr
 func TestGateDismissGoesReadOnly(t *testing.T) {
 	srv, api := newTestServer(t)
 	srv.now = frozen(time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC))
@@ -69,6 +71,7 @@ func TestGateDismissGoesReadOnly(t *testing.T) {
 	}
 }
 
+// ID: d9hhs
 func TestGateNagBannerNoBlock(t *testing.T) {
 	srv, api := newTestServer(t)
 	srv.applyGate(gate.Status{Posture: gate.Nag, Message: "renews soon"})

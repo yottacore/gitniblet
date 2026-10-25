@@ -90,6 +90,7 @@ func catalogFor(t *testing.T, src string) *Catalog {
 
 // visible_list and visible_form trim lists and forms only. Fields, which
 // gates what a save may write, keeps every editable field.
+// ID: dec83
 func TestFieldVisibility(t *testing.T) {
 	cat := catalogFor(t, visibleDDL)
 

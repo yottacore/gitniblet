@@ -23,6 +23,7 @@ func keyGroupDDL(sections string) string {
 
 // A misspelled field name used to be kept and handed to SQLite, so a database
 // the picker listed as fine failed to open with a raw SQL error.
+// ID: davcj
 func TestUniqueOnAnUnknownFieldIsAnError(t *testing.T) {
 	schema, err := Parse([]byte(keyGroupDDL("\t\tuniques:\n\t\t\tunique: name, emial\n")))
 	if err != nil {
@@ -41,6 +42,7 @@ func TestUniqueOnAnUnknownFieldIsAnError(t *testing.T) {
 
 // The whole group goes, not just the bad name: pruning `unique: name, emial`
 // down to `unique: name` would enforce a stricter rule than was written.
+// ID: davck
 func TestABadNameDropsTheWholeUniqueGroup(t *testing.T) {
 	schema, err := Parse([]byte(keyGroupDDL(
 		"\t\tuniques:\n\t\t\tunique: name, emial\n\t\t\tunique: email\n")))
@@ -56,6 +58,7 @@ func TestABadNameDropsTheWholeUniqueGroup(t *testing.T) {
 	}
 }
 
+// ID: davcm
 func TestIndexOnAnUnknownFieldIsAnError(t *testing.T) {
 	schema, err := Parse([]byte(keyGroupDDL("\t\tindexes:\n\t\t\tindex: nmae\n")))
 	if err != nil {
@@ -70,6 +73,7 @@ func TestIndexOnAnUnknownFieldIsAnError(t *testing.T) {
 }
 
 // The control: sound groups survive untouched and raise nothing.
+// ID: davcn
 func TestSoundKeyGroupsSurvive(t *testing.T) {
 	schema, err := Parse([]byte(keyGroupDDL(
 		"\t\tuniques:\n\t\t\tunique: name, email\n\t\tindexes:\n\t\t\tindex: email\n")))
@@ -88,6 +92,7 @@ func TestSoundKeyGroupsSurvive(t *testing.T) {
 }
 
 // A system column is a real column, so naming one is not a typo.
+// ID: davcp
 func TestKeyGroupsMayNameASystemField(t *testing.T) {
 	schema, err := Parse([]byte(keyGroupDDL("\t\tindexes:\n\t\t\tindex: date_created\n")))
 	if err != nil {

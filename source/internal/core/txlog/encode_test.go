@@ -14,6 +14,7 @@ import (
 	"github.com/jim-collier/nano-git-db/internal/core/store"
 )
 
+// ID: d9e0r
 func TestEncodeDecodeRoundTrip(t *testing.T) {
 	cases := []string{
 		"",
@@ -36,12 +37,14 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 	}
 }
 
+// ID: d9e0s
 func TestEncodeScrubsControlChars(t *testing.T) {
 	if got := decodeSym(encodeSym("a\x07b\x00c\x7Fd\te")); got != "abcd\te" {
 		t.Fatalf("scrub: %q", got)
 	}
 }
 
+// ID: d9e0t
 func TestDecodeLeavesLegacyAndUnknownAlone(t *testing.T) {
 	for _, s := range []string{"plain", "\U0001F5E6BOGUS\U0001F5E7", "\U0001F5E6 unterminated"} {
 		if got := decodeSym(s); got != s {
@@ -51,6 +54,7 @@ func TestDecodeLeavesLegacyAndUnknownAlone(t *testing.T) {
 }
 
 // One entry must always be one physical line, or merge=union can tear records.
+// ID: d9e0v
 func TestAppendIsOneLinePerEntry(t *testing.T) {
 	lg, err := Open(t.TempDir())
 	if err != nil {
@@ -89,6 +93,7 @@ func TestAppendIsOneLinePerEntry(t *testing.T) {
 }
 
 // A user literal that spells the NULL sentinel must stay a string.
+// ID: d9e0w
 func TestNullSentinelCannotBeSpoofed(t *testing.T) {
 	lg, err := Open(t.TempDir())
 	if err != nil {
@@ -107,6 +112,7 @@ func TestNullSentinelCannotBeSpoofed(t *testing.T) {
 	}
 }
 
+// ID: d9e0x
 func TestApplyNullSetsSQLNull(t *testing.T) {
 	schema, err := ddl.Parse([]byte(personDDL))
 	if err != nil {
@@ -140,6 +146,7 @@ func TestApplyNullSetsSQLNull(t *testing.T) {
 
 // A torn or garbage line (e.g. a badly-merged fragment) must not make the rest
 // of the log unreadable.
+// ID: d9e0y
 func TestReadAllSkipsMangledLines(t *testing.T) {
 	lg, err := Open(t.TempDir())
 	if err != nil {

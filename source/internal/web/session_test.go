@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+// ID: d9hsy
 func TestSessionLifecycle(t *testing.T) {
 	base := time.Unix(1_700_000_000, 0)
 	clock := base

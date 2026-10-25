@@ -8,6 +8,7 @@ import (
 	"testing"
 )
 
+// ID: d9e03
 func TestParseQueries(t *testing.T) {
 	src := "## comment\n" +
 		"query_name: \"Second\"\n" +
@@ -48,6 +49,7 @@ func TestParseQueries(t *testing.T) {
 	}
 }
 
+// ID: d9e04
 func TestParseQueriesSoftErrors(t *testing.T) {
 	src := "query_name:\n" +
 		"\tSQL: `SELECT 1`\n" +
@@ -78,6 +80,7 @@ func TestParseQueriesSoftErrors(t *testing.T) {
 	}
 }
 
+// ID: d9e05
 func TestQueriesPathAndMissingFile(t *testing.T) {
 	if got := QueriesPath("/a/b/example.shcl"); got != "/a/b/example.queries.shcl" {
 		t.Fatalf("QueriesPath = %q", got)

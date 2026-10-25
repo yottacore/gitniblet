@@ -25,6 +25,7 @@ const personDDL = "tables:\n" +
 	"\t\tindexes:\n" +
 	"\t\t\tindex: age\n"
 
+// ID: d9e0m
 func TestBuildSchema(t *testing.T) {
 	schema, err := ddl.Parse([]byte(personDDL))
 	if err != nil {
@@ -55,6 +56,7 @@ func TestBuildSchema(t *testing.T) {
 }
 
 // A field added to the DDL must reach an existing database via ALTER TABLE.
+// ID: d9e0n
 func TestBuildMigratesNewFields(t *testing.T) {
 	schema, err := ddl.Parse([]byte(personDDL))
 	if err != nil {
@@ -104,6 +106,7 @@ func TestBuildMigratesNewFields(t *testing.T) {
 
 // Soft-deleted rows must not consume the unique key: many deleted rows may
 // share a name, and a new live row may reuse it.
+// ID: d9e0p
 func TestUniqueIsPartial(t *testing.T) {
 	schema, err := ddl.Parse([]byte(personDDL))
 	if err != nil {
@@ -125,6 +128,7 @@ func TestUniqueIsPartial(t *testing.T) {
 	}
 }
 
+// ID: d9e0q
 func TestSystemColumnsAndDefaults(t *testing.T) {
 	schema, err := ddl.Parse([]byte(personDDL))
 	if err != nil {
@@ -202,6 +206,7 @@ func indexExists(t *testing.T, st *Store, name string) bool {
 
 // A ref column is declared BLOB so a reference is stored the same way the row
 // id it points at is, and IsRef marks it for replay's value conversion.
+// ID: dabe5
 func TestRefColumnIsBlob(t *testing.T) {
 	schema, err := ddl.Parse([]byte("tables:\n" +
 		"\ttable: task\n" +
@@ -252,6 +257,7 @@ func TestRefColumnIsBlob(t *testing.T) {
 // A view an older build made with NOT NULL on a null_ok: no field loses that
 // constraint on the next Build, with its rows, extra columns and indexes intact
 // (backlog 2026102407331876).
+// ID: dec8x
 func TestBuildRelaxesOldNotNull(t *testing.T) {
 	schema, err := ddl.Parse([]byte(personDDL))
 	if err != nil {

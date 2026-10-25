@@ -26,6 +26,7 @@ func proxiedServer(t *testing.T) *server {
 	return s
 }
 
+// ID: d9hsr
 func TestLocalRefusesProxyHeader(t *testing.T) {
 	s, _ := newTestServer(t)
 	s.auth = &authState{proxied: false, localUser: "someone"}
@@ -39,6 +40,7 @@ func TestLocalRefusesProxyHeader(t *testing.T) {
 	}
 }
 
+// ID: d9hss
 func TestLocalServesWithoutProxyHeader(t *testing.T) {
 	s, _ := newTestServer(t)
 	s.auth = &authState{proxied: false, localUser: "someone"}
@@ -48,6 +50,7 @@ func TestLocalServesWithoutProxyHeader(t *testing.T) {
 	}
 }
 
+// ID: d9hst
 func TestProxiedRedirectsWhenNoSession(t *testing.T) {
 	s := proxiedServer(t)
 	w := do(t, s.routes(), "GET", "/", nil)
@@ -56,6 +59,7 @@ func TestProxiedRedirectsWhenNoSession(t *testing.T) {
 	}
 }
 
+// ID: d9hsv
 func TestLoginPageAndAssetsPublic(t *testing.T) {
 	s := proxiedServer(t)
 	if w := do(t, s.routes(), "GET", "/login", nil); w.Code != http.StatusOK {
@@ -66,6 +70,7 @@ func TestLoginPageAndAssetsPublic(t *testing.T) {
 	}
 }
 
+// ID: d9hsw
 func TestProxiedBadLogin(t *testing.T) {
 	s := proxiedServer(t)
 	w := do(t, s.routes(), "POST", "/login", url.Values{"username": {"alice"}, "password": {"wrong"}})
@@ -77,6 +82,7 @@ func TestProxiedBadLogin(t *testing.T) {
 	}
 }
 
+// ID: d9hsx
 func TestProxiedLoginThenReachAsUser(t *testing.T) {
 	s, api := newTestServer(t)
 	creds := &config.WebCreds{Users: map[string]string{}}

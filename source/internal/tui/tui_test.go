@@ -68,6 +68,7 @@ func setupFor(t *testing.T, src string) (*crud.API, *ddl.Schema, *ddl.Schema) {
 	return api, sch, bs
 }
 
+// ID: d9e1j
 func TestAppTableOrderAndFields(t *testing.T) {
 	api, sch, bs := setup(t)
 	a, err := NewApp(api, sch, bs)
@@ -97,6 +98,7 @@ func TestAppTableOrderAndFields(t *testing.T) {
 	}
 }
 
+// ID: d9e1k
 func TestLiveRowsHidesSoftDeleted(t *testing.T) {
 	api, sch, bs := setup(t)
 	id1, err := api.Create("person", map[string]string{"name": "Ann"})
@@ -131,6 +133,7 @@ func TestLiveRowsHidesSoftDeleted(t *testing.T) {
 
 // TestAppBootsOnSimulationScreen drives the real event loop on a simulated
 // terminal: boot, check the table list drew, open a table, quit with q.
+// ID: d9e1m
 func TestAppBootsOnSimulationScreen(t *testing.T) {
 	api, sch, bs := setup(t)
 	if _, err := api.Create("person", map[string]string{"name": "Ann"}); err != nil {
@@ -237,6 +240,7 @@ func screenText(s *simScreen) string {
 
 // Hidden fields drop out of the grid and the edit form, and saving the form
 // leaves a field it never showed alone.
+// ID: dec84
 func TestHiddenFieldsInGridAndForm(t *testing.T) {
 	api, sch, bs := setupFor(t, `
 tables:

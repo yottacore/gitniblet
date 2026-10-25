@@ -10,6 +10,7 @@ import (
 	"testing"
 )
 
+// ID: dabev
 func TestRoundTrip(t *testing.T) {
 	raw := []byte("0123456789abcdef")
 	text := Encode(raw)
@@ -26,6 +27,7 @@ func TestRoundTrip(t *testing.T) {
 }
 
 // An id pasted in the longer hex form still resolves.
+// ID: dabew
 func TestDecodeAcceptsHex(t *testing.T) {
 	raw := []byte("0123456789abcdef")
 	got, err := Decode(hex.EncodeToString(raw))
@@ -39,6 +41,7 @@ func TestDecodeAcceptsHex(t *testing.T) {
 
 // A malformed id is rejected rather than guessed at: replay skips the entry
 // with a warning, where a lucky decode would write a ghost row.
+// ID: dabex
 func TestDecodeRejectsMalformed(t *testing.T) {
 	bad := []string{
 		"", "01", "zz",
@@ -55,6 +58,7 @@ func TestDecodeRejectsMalformed(t *testing.T) {
 }
 
 // The log is CSV, so an id must never contain a character that needs quoting.
+// ID: dabey
 func TestEncodeNeedsNoCSVQuoting(t *testing.T) {
 	for b := 0; b < 256; b++ {
 		var raw [RawLen]byte

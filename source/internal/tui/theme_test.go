@@ -12,6 +12,7 @@ import (
 )
 
 // The default (index 0) must be a dark theme, per the requirement.
+// ID: d9e74
 func TestDefaultThemeIsDark(t *testing.T) {
 	if len(themes) == 0 || !themes[0].dark {
 		t.Fatalf("theme 0 must exist and be dark, got %+v", themes)
@@ -25,6 +26,7 @@ func TestDefaultThemeIsDark(t *testing.T) {
 }
 
 // setTheme swaps the live styles, persists the choice, and survives a rebuild.
+// ID: d9e75
 func TestSetThemePersistsAndApplies(t *testing.T) {
 	isolateConfig(t) // keep the settings write inside a temp dir
 	api, sch, bs := setup(t)
@@ -56,6 +58,7 @@ func TestSetThemePersistsAndApplies(t *testing.T) {
 }
 
 // The picker opens as its own page without disturbing the event loop.
+// ID: d9e76
 func TestThemePickerOpens(t *testing.T) {
 	isolateConfig(t)
 	api, sch, bs := setup(t)

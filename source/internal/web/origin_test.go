@@ -15,6 +15,7 @@ import (
 // so a write must prove it came from the UI itself, and a read must arrive under
 // the name the server was bound to.
 
+// ID: davab
 func TestCrossSiteWriteIsRefused(t *testing.T) {
 	srv, _ := newTestServer(t)
 	h := srv.routes()
@@ -49,6 +50,7 @@ func TestCrossSiteWriteIsRefused(t *testing.T) {
 	}
 }
 
+// ID: davac
 func TestSameOriginWriteIsAllowed(t *testing.T) {
 	srv, _ := newTestServer(t)
 	h := srv.routes()
@@ -70,6 +72,7 @@ func TestSameOriginWriteIsAllowed(t *testing.T) {
 
 // A page can point a name it owns at 127.0.0.1 and read the whole database over
 // it, so local mode only answers under the address it was bound to.
+// ID: davad
 func TestForeignHostIsRefusedWhenBound(t *testing.T) {
 	srv, _ := newTestServer(t)
 	srv.hostPin = "127.0.0.1:8765"
@@ -96,6 +99,7 @@ func TestForeignHostIsRefusedWhenBound(t *testing.T) {
 
 // Behind a reverse proxy the Host is legitimately rewritten, so the pin does not
 // apply there; the cross-site write check still does.
+// ID: davae
 func TestProxiedModeIgnoresTheHostPin(t *testing.T) {
 	srv, _ := newTestServer(t)
 	srv.hostPin = "127.0.0.1:8765"
@@ -113,6 +117,7 @@ func TestProxiedModeIgnoresTheHostPin(t *testing.T) {
 
 // The gate routes stay live after the notice clears, so an ungated server must
 // refuse them - otherwise any page could turn a running server read-only.
+// ID: davaf
 func TestGateRoutesRefusedWhenNotGated(t *testing.T) {
 	srv, api := newTestServer(t)
 	h := srv.routes()

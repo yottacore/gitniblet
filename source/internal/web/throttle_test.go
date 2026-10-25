@@ -32,6 +32,7 @@ func (c *fakeClock) advance(d time.Duration) {
 	c.at = c.at.Add(d)
 }
 
+// ID: davcq
 func TestThrottleRefusesAfterTooManyFailures(t *testing.T) {
 	clock := &fakeClock{at: time.Unix(1_700_000_000, 0)}
 	limit := newThrottle(clock.now)
@@ -53,6 +54,7 @@ func TestThrottleRefusesAfterTooManyFailures(t *testing.T) {
 	}
 }
 
+// ID: davcr
 func TestThrottleForgetsFailuresAfterTheWindow(t *testing.T) {
 	clock := &fakeClock{at: time.Unix(1_700_000_000, 0)}
 	limit := newThrottle(clock.now)
@@ -72,6 +74,7 @@ func TestThrottleForgetsFailuresAfterTheWindow(t *testing.T) {
 	}
 }
 
+// ID: davcs
 func TestThrottleClearsOnASuccessfulLogin(t *testing.T) {
 	clock := &fakeClock{at: time.Unix(1_700_000_000, 0)}
 	limit := newThrottle(clock.now)
@@ -87,6 +90,7 @@ func TestThrottleClearsOnASuccessfulLogin(t *testing.T) {
 
 // The address limit is what catches a flood spread over many usernames, which
 // the per-username count alone would let through.
+// ID: davct
 func TestThrottleRefusesAFloodAcrossUsernames(t *testing.T) {
 	clock := &fakeClock{at: time.Unix(1_700_000_000, 0)}
 	limit := newThrottle(clock.now)
@@ -102,6 +106,7 @@ func TestThrottleRefusesAFloodAcrossUsernames(t *testing.T) {
 // The counters bound the sustained rate but not a burst - simultaneous attempts
 // all pass the count before any has failed. This is the limit that stops a
 // burst from occupying every core.
+// ID: davcv
 func TestThrottleRationsConcurrentChecks(t *testing.T) {
 	limit := newThrottle(time.Now)
 
@@ -133,6 +138,7 @@ func TestThrottleRationsConcurrentChecks(t *testing.T) {
 
 // End to end through the handler: the run of wrong guesses is refused with 429
 // rather than being hashed, and a good password still gets in afterwards.
+// ID: davcw
 func TestLoginEndpointRefusesARunOfWrongGuesses(t *testing.T) {
 	srv := proxiedServer(t) // knows alice / s3cret
 

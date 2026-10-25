@@ -74,6 +74,7 @@ func logLen(t *testing.T, logDir string) int {
 
 // A null_ok: no field with no default made the view drop every row of its
 // table, with no error (backlog 2026102407331876).
+// ID: dec8s
 func TestNotNullRowReachesView(t *testing.T) {
 	a, logDir, sch := newNotNullAPI(t)
 
@@ -95,6 +96,7 @@ func TestNotNullRowReachesView(t *testing.T) {
 
 // Leaving a null_ok: no field null is refused before anything reaches the log.
 // A default covers an omitted field, as the view fills it.
+// ID: dec8t
 func TestNotNullRefusedUpFront(t *testing.T) {
 	a, logDir, _ := newNotNullAPI(t)
 
@@ -130,6 +132,7 @@ func TestNotNullRefusedUpFront(t *testing.T) {
 
 // A null already in the log, from an older client or an older schema, must not
 // stop the rebuild. It used to fail the whole replay with a NOT NULL error.
+// ID: dec8v
 func TestNotNullReplayKeepsLoggedNull(t *testing.T) {
 	a, logDir, sch := newNotNullAPI(t)
 

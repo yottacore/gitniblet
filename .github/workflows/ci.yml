@@ -32,7 +32,10 @@ jobs:
       - name: vet
         run: go vet -mod=vendor ./...
       - name: test
-        run: go test -mod=vendor ./...
+        run: |
+          set -o pipefail
+          go -C ../cicd/utility/testid run . check "$GITHUB_WORKSPACE"
+          { go test -mod=vendor -json ./...  &&  go -C ../cicd/utility/testid test -json .; } | go -C ../cicd/utility/testid run . report "$GITHUB_WORKSPACE"
       - name: build
         run: go build -mod=vendor ./...
       - name: smoke
@@ -56,7 +59,10 @@ jobs:
       - name: arch
         run: '[ "$(uname -m)" = arm64 ] || { echo "::error::expected arm64, got $(uname -m)"; exit 1; }'
       - name: test
-        run: go test -mod=vendor ./...
+        run: |
+          set -o pipefail
+          go -C ../cicd/utility/testid run . check "$GITHUB_WORKSPACE"
+          { go test -mod=vendor -json ./...  &&  go -C ../cicd/utility/testid test -json .; } | go -C ../cicd/utility/testid run . report "$GITHUB_WORKSPACE"
       - name: smoke
         working-directory: .
         run: |

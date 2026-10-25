@@ -30,7 +30,8 @@ esac; done
 source "$(dirname "$0")/include/cpu-limit.bash"   ## NGDB_JOBS + GOMAXPROCS (caps fuzz workers)
 fCpuLimit heavy  ## a quarter of the cores, busy or not
 source "$(dirname "$0")/include/temp-run.bash"    ## fTempDir_Make + fSafeRm
-cd "$(dirname "$0")/../../source"   ## module root (go.mod)
+repoRoot="$(realpath -e "$(dirname "$0")/../..")"
+cd "${repoRoot}/source"   ## module root (go.mod)
 
 ## Discover "<import-path> <FuzzName>" pairs. `go test -list` prints the matching
 ## function names for a package first, then that package's "ok <import-path>" line,
@@ -49,6 +50,9 @@ done < <(go test -mod=vendor -list '^Fuzz' ./... 2>/dev/null)
 if ((${#targets[@]} == 0)); then
 	echo "fuzz.bash: no fuzz targets found"; exit 0
 fi
+
+declare -A testID=()
+while read -r p n i; do testID["${p} ${n}"]="${i:------}"; done < <(GOFLAGS='' go -C "${repoRoot}/cicd/utility/testid" run . ids "${repoRoot}")
 
 tmp="$(fTempDir_Make fuzz)"; trap 'fSafeRm "${tmp}" > /dev/null' EXIT
 out="${tmp}/out"
@@ -70,18 +74,18 @@ fSpuriousDeadline() {
 fails=0
 for t in "${targets[@]}"; do
 	pkg="${t%% *}"; fn="${t##* }"
-	printf '  %-52s %-20s ' "${pkg#github.com/jim-collier/nano-git-db/}" "${fn} (${fuzzTime})"
 	note=""
 	rc=0; fRunTarget "${pkg}" "${fn}" || rc=$?
 	if ((rc != 0)) && fSpuriousDeadline; then
 		note=" (deadline flake, rerun)"
 		rc=0; fRunTarget "${pkg}" "${fn}" || rc=$?
 	fi
+	line="${testID["${t}"]:------} ${pkg#github.com/jim-collier/nano-git-db/} ${fn} (${fuzzTime})"
 	if ((rc == 0)); then
-		echo "ok${note}"
+		echo "PASS ${line}${note}"
 	else
-		echo "CRASH"
-		sed 's/^/      /' "${out}"
+		echo "FAIL ${line}"
+		sed 's/^/\t/' "${out}"
 		fails=$((fails + 1))
 	fi
 done
@@ -95,3 +99,4 @@ echo "fuzz.bash: all targets clean"
 ##		- 20260804: Rerun a target once when the fuzz budget expires as a failure.
 ##		- 20261025: Output goes in the run folder, not a fixed /tmp file.
 ##		- 20261025: A quarter of the cores, and the worker count passed explicitly.
+##		- 20261025: One PASS or FAIL line per target, with its test ID.

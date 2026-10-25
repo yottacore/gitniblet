@@ -27,6 +27,7 @@ const encInitDDL = `database:
 // (encryption is an enterprise feature) rather than pretending to set one up.
 // The positive path - minting, encrypting, reading back - is exercised by the
 // enterprise build's end-to-end test, which registers a real provider.
+// ID: d9dyp
 func TestOSSInitEncryptRefused(t *testing.T) {
 	base := t.TempDir()
 	config.SetBaseOverride(base)
@@ -53,6 +54,7 @@ func TestOSSInitEncryptRefused(t *testing.T) {
 // An `encryption: always` field cannot be written by the open-source build - it
 // has no cipher, so it must refuse rather than log the value in the clear.
 // Rows touching only non-always fields still write normally.
+// ID: d9dyq
 func TestOSSAlwaysFieldRefused(t *testing.T) {
 	base := t.TempDir()
 	config.SetBaseOverride(base)

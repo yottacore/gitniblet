@@ -13,6 +13,7 @@ import (
 	shcl "github.com/jim-collier/shcl/source/go"
 )
 
+// ID: d9dzp
 func TestValueScalars(t *testing.T) {
 	if !IsNull("NULL") || IsNull("null") {
 		t.Fatal("IsNull")
@@ -53,6 +54,7 @@ func TestValueScalars(t *testing.T) {
 	}
 }
 
+// ID: d9dzq
 func TestSplitListRespectsQuotesAndCommas(t *testing.T) {
 	got := SplitList(`table7, "old_table79", 'a, b'`)
 	want := []string{"table7", "old_table79", "a, b"}
@@ -66,6 +68,7 @@ func TestSplitListRespectsQuotesAndCommas(t *testing.T) {
 	}
 }
 
+// ID: dajgg
 func TestNestingAndKeyGroups(t *testing.T) {
 	src := "tables:\n\ttable: t1\n\t\tfields:\n\t\t\tfield: a\n\t\t\tfield: b\n\t\tuniques:\n\t\t\tunique: a, b\n"
 	s, err := Parse([]byte(src))
@@ -90,6 +93,7 @@ func TestNestingAndKeyGroups(t *testing.T) {
 // Mixed indentation used to fail the whole load. SHCL recovers instead: the
 // offending line is reported and skipped so the rest of the file still opens.
 // The report is what matters - a silently dropped line would be the bug.
+// ID: dajgh
 func TestInconsistentIndentIsReportedNotFatal(t *testing.T) {
 	src := "tables:\n\ttable: t\n        fields:\n" // tab, then spaces
 	s, err := Parse([]byte(src))
@@ -101,6 +105,7 @@ func TestInconsistentIndentIsReportedNotFatal(t *testing.T) {
 	}
 }
 
+// ID: d9dzr
 func TestCommentStrippingIgnoresQuotedHash(t *testing.T) {
 	src := "tables:\n\ttable: t\n\t\tfields:\n\t\t\tfield: a\n\t\t\t\tspecial: \"a#b\"  ## real comment\n"
 	s, err := Parse([]byte(src))
@@ -114,6 +119,7 @@ func TestCommentStrippingIgnoresQuotedHash(t *testing.T) {
 
 // Parses the real project/example.shcl to guard the full grammar. Path is found
 // by climbing so it survives directory moves.
+// ID: d9dzs
 func TestParseExampleDDL(t *testing.T) {
 	path := findExample(t)
 	s, err := ParseFile(path)
@@ -237,6 +243,7 @@ func findExample(t *testing.T) string {
 // The hierarchy does not have to be unique: duplicate wrappers merge into the
 // first occurrence, and "a/b:" is shorthand for nesting - so long DDLs can
 // restate a section instead of finding the right indent far above.
+// ID: d9dzt
 func TestHierarchyMergeAndShorthand(t *testing.T) {
 	src := "database:\n" +
 		"\ttables:\n" +
@@ -268,6 +275,7 @@ func TestHierarchyMergeAndShorthand(t *testing.T) {
 
 // Old flat DDLs (no database:/ui: wrappers, `methods:` not `code:`) must keep
 // parsing unchanged.
+// ID: d9dzv
 func TestFlatLayoutAndMethodsKeyStillParse(t *testing.T) {
 	src := "methods:\n" +
 		"\tbefore_open: fBoot()\n" +
@@ -297,6 +305,7 @@ func TestFlatLayoutAndMethodsKeyStillParse(t *testing.T) {
 	}
 }
 
+// ID: d9dzw
 func TestUIWrapperAndDefaultView(t *testing.T) {
 	src := "code:\n" +
 		"\tafter_open: fReady()\n" +
@@ -325,6 +334,7 @@ func TestUIWrapperAndDefaultView(t *testing.T) {
 
 // Parse-time diagnostics: this DDL targets users without SQL knowledge, so
 // mistakes must surface as warnings, not silence or opaque SQLite errors.
+// ID: d9dzx
 func TestParserWarnings(t *testing.T) {
 	src := "tables:\n" +
 		"\ttable: t\n" +
@@ -372,6 +382,7 @@ func TestParserWarnings(t *testing.T) {
 // fields join the first. That is the same rule that lets a long DDL add to a
 // table further down the file, and it is why there is no "already defined"
 // warning for a table - a repeat is indistinguishable from a deliberate addition.
+// ID: d9dzy
 func TestLoadValidationSoftFixes(t *testing.T) {
 	src := "tables:\n" +
 		"\ttable: t\n" +
@@ -411,6 +422,7 @@ func TestLoadValidationSoftFixes(t *testing.T) {
 	}
 }
 
+// ID: d9dzz
 func TestIrregularIndentWarns(t *testing.T) {
 	src := "tables:\n" +
 		"  table: t\n" +
@@ -431,6 +443,7 @@ func TestIrregularIndentWarns(t *testing.T) {
 	}
 }
 
+// ID: d9e00
 func TestTunables(t *testing.T) {
 	src := "tunables:\n" +
 		"\tgit_sync_frequency: 30\n" +
@@ -466,6 +479,7 @@ func TestTunables(t *testing.T) {
 // as a literal. @previous is the one that used to slip through: only @null was
 // recognized, so on any column SQLite accepts a string for, the column came out
 // with DEFAULT '@previous' baked in.
+// ID: dajgj
 func TestSentinelDefaults(t *testing.T) {
 	for _, sentinel := range []string{SentinelNull, SentinelPrevious} {
 		if !IsSentinel(sentinel) {
@@ -496,6 +510,7 @@ func TestSentinelDefaults(t *testing.T) {
 
 // The escape only works if a default reaches IsSentinel as its source text, so
 // this walks the real path: parse a DDL, and check what each spelling became.
+// ID: datq6
 func TestQuotedSentinelSurvivesParse(t *testing.T) {
 	src := "tables:\n\ttable: t\n\t\tfields:\n" +
 		"\t\t\tfield: bare\n\t\t\t\ttype: string\n\t\t\t\tdefaultval: @null\n" +
@@ -529,6 +544,7 @@ func TestQuotedSentinelSurvivesParse(t *testing.T) {
 // whose whole design is to recur, the schema declares a repeat bound and shcl's
 // own filter drops the hint - so a correct DDL stays quiet and the hint keeps
 // working where a repeat really is the mistake.
+// ID: datq7
 func TestDeclaredRepeatsStaySilent(t *testing.T) {
 	quiet := "tables:\n\ttable: t\n\t\tfields:\n\t\t\tfield: a\n\t\t\t\ttype: string\n" +
 		"\t\t\tfield: b\n\t\t\t\ttype: string\n" +
@@ -550,6 +566,7 @@ func TestDeclaredRepeatsStaySilent(t *testing.T) {
 // Restating a section combines it with the earlier one. That is legal and often
 // what was meant, but it is also how two tables of the same name silently become
 // one, so it has to be reported either way - the whole point of the hint.
+// ID: datq8
 func TestSectionMergeIsReported(t *testing.T) {
 	// Same table named twice under one section: the entity itself is named.
 	sameSection := "tables:\n\ttable: dup\n\t\tfields:\n\t\t\tfield: a\n\t\t\t\ttype: string\n" +
@@ -587,6 +604,7 @@ func TestSectionMergeIsReported(t *testing.T) {
 // vocabulary would look exactly like a clean one. Probing with a key no DDL
 // could ever have proves the sweep is live, which is only true when the
 // embedded schema itself parses clean.
+// ID: dav19
 func TestSchemaSelfCheck(t *testing.T) {
 	s, _ := Parse([]byte("no_such_top_level_key: 1\n"))
 	if !hasWarning(s, "no_such_top_level_key") {
@@ -598,6 +616,7 @@ func TestSchemaSelfCheck(t *testing.T) {
 // broken schema.shcl and a clean one produced identical silence. It no longer
 // does: the surviving constraints still check, and the fault is reported
 // against the vocabulary rather than dressed up as a line of the user's DDL.
+// ID: dav1a
 func TestSchemaFaultLeavesValidationOn(t *testing.T) {
 	broken := shcl.Parse("field: a\n\ttype: no_such_type\nfield: b\n\ttype: int\n")
 	doc := shcl.Parse("a: whatever\nb: not_a_number\n")
@@ -623,6 +642,7 @@ func TestSchemaFaultLeavesValidationOn(t *testing.T) {
 // Layout blocks nest by mounting their own shape, so there is no depth past
 // which keys quietly stop being checked. 40 is far beyond anything a real
 // layout reaches - the point is that nothing caps it.
+// ID: dav1b
 func TestLayoutNestsToAnyDepth(t *testing.T) {
 	build := func(depth int, deepKey string) []byte {
 		var b strings.Builder

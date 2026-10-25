@@ -35,6 +35,7 @@ views:
 
 // A lookup field shows its symbol in lists and "symbol title" in forms, and
 // the edit form picks it from the group.
+// ID: deca1
 func TestLookupsShowInWeb(t *testing.T) {
 	s, api := newTestServerFor(t, lookupDDL)
 	h := s.routes()
@@ -72,6 +73,7 @@ func TestLookupsShowInWeb(t *testing.T) {
 
 // The picker offers only active values, keeps a retired one the row holds
 // across a save, and a posted value outside the group is refused.
+// ID: decb1
 func TestLookupPickerInWeb(t *testing.T) {
 	s, api := newTestServerFor(t, lookupDDL)
 	h := s.routes()
@@ -127,6 +129,7 @@ func TestLookupPickerInWeb(t *testing.T) {
 }
 
 // literal and sql fields get a picker too, the built-in lookups_idx among them.
+// ID: decb5
 func TestListPickersInWeb(t *testing.T) {
 	s, api := newTestServerFor(t, `
 tables:

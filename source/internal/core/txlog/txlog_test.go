@@ -22,6 +22,7 @@ const personDDL = "tables:\n" +
 	"\t\t\tfield: age\n" +
 	"\t\t\t\ttype: int\n"
 
+// ID: d9e1a
 func TestAppendReadRoundTrip(t *testing.T) {
 	lg, err := Open(t.TempDir())
 	if err != nil {
@@ -59,6 +60,7 @@ func TestAppendReadRoundTrip(t *testing.T) {
 // Columns are mapped by header name, so a reordered header and an unknown extra
 // trailing column (as a newer client might write) both read correctly - field
 // order does not affect forward or backward compatibility.
+// ID: d9exe
 func TestReadMapsColumnsByName(t *testing.T) {
 	dir := t.TempDir()
 	content := "host_name,tx_id,date,table_name,row_id,field_name,operation,new_value,user_id,ok_to_garbage_collect,future_flag\n" +
@@ -88,6 +90,7 @@ func TestReadMapsColumnsByName(t *testing.T) {
 }
 
 // an empty host - the two widths coexist under a git union merge.
+// ID: d9e1b
 func TestHostNameRoundTripAndLegacy(t *testing.T) {
 	dir := t.TempDir()
 	lg, err := Open(dir)
@@ -129,6 +132,7 @@ func TestHostNameRoundTripAndLegacy(t *testing.T) {
 // An encrypted entry round-trips through the ENC marker, and a cleartext value
 // that literally equals the ENC marker text is escaped so it never reads back
 // as encrypted.
+// ID: d9e1c
 func TestEncryptedMarkerRoundTrip(t *testing.T) {
 	lg, err := Open(t.TempDir())
 	if err != nil {
@@ -155,6 +159,7 @@ func TestEncryptedMarkerRoundTrip(t *testing.T) {
 
 // Mangled lines skip WITH a warning; repeated header rows (union-merge
 // leftovers) skip silently - they are expected, not a defect.
+// ID: d9e1d
 func TestReadAllWarnsOnMangledLines(t *testing.T) {
 	lg, err := Open(t.TempDir())
 	if err != nil {
@@ -189,6 +194,7 @@ func TestReadAllWarnsOnMangledLines(t *testing.T) {
 	}
 }
 
+// ID: d9e1e
 func TestReadMissingLogIsEmpty(t *testing.T) {
 	lg, err := Open(t.TempDir())
 	if err != nil {
@@ -200,6 +206,7 @@ func TestReadMissingLogIsEmpty(t *testing.T) {
 	}
 }
 
+// ID: d9e1f
 func TestApplyReplaysToView(t *testing.T) {
 	schema, err := ddl.Parse([]byte(personDDL))
 	if err != nil {
