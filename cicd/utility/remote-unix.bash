@@ -4,6 +4,9 @@
 ##		The test box's side of remote-test.bash, on FreeBSD, macOS and Linux.
 ##		Runs each Go test binary from its package folder, then the CLI smoke on
 ##		the cross-built ngdb, and removes its work folder after.
+##		- Each binary's -test.v=test2json output goes to stdout between a begin
+##		  and an end line, for testid remote on the calling host, which prints
+##		  one line per test with its ID.
 ##	Syntax:
 ##		remote-unix.bash <work folder> <most jobs> <keep: 0|1>
 ##	Notes:
@@ -50,16 +53,13 @@ renice -n 19 -p $$ > /dev/null 2>&1 || true
 if command -v ionice > /dev/null 2>&1; then ionice -c 3 -p $$ > /dev/null 2>&1 || true; fi
 
 failed=0
-while read -r name dir; do
+while read -r name dir pkg; do
 	[[ -n "${name}" ]] || continue
-	start="$(date +%s)"
-	if (cd "${work}/${dir}" && nice -n 19 "${work}/tests/${name}.test" -test.timeout 15m -test.parallel "${jobs}" > "${work}/logs/${name}.log" 2>&1); then
-		echo "PASS ${name} ($(($(date +%s) - start))s)"
-	else
-		echo "FAIL ${name} ($(($(date +%s) - start))s)"
-		tail -n 40 "${work}/logs/${name}.log"
-		failed=$((failed + 1))
-	fi
+	echo "@@ngdb-test begin ${pkg}"
+	rc=0
+	(cd "${work}/${dir}" && nice -n 19 "${work}/tests/${name}.test" -test.v=test2json -test.timeout 15m -test.parallel "${jobs}" 2>&1) || rc=$?
+	echo "@@ngdb-test end ${rc}"
+	((rc == 0)) || failed=$((failed + 1))
 done < "${work}/tests/manifest"
 
 if NGDB_SMOKE_EXPECT_DATE=1 nice -n 19 bash "${work}/cicd/utility/smoke-cli.bash" "${work}/ngdb" > "${work}/logs/smoke.log" 2>&1; then
@@ -76,3 +76,4 @@ fi
 ##	History:
 ##		- 20261025 JC: Created.
 ##		- 20261025 JC: Idle I/O where there's ionice, and -test.parallel passed.
+##		- 20261025 JC: Raw test2json output per binary, for one line per test on the host.

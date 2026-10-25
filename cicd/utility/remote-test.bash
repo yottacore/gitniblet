@@ -9,6 +9,8 @@
 ##		platforms this box only cross-builds. Builds the test binaries and ngdb
 ##		per target here, then holds each box through the shared host lock's VM
 ##		wrap for the whole time it's used, which also puts a VM back as found.
+##		Each box's test output goes through testid remote here, since the boxes
+##		have no Go, for one PASS, FAIL or SKIP line per test with its ID.
 ##	Syntax:
 ##		remote-test.bash [--keep-temp] [--summary FILE] [target...]
 ##		Targets: windows freebsd linux-arm64 macos. Default: all of them.
@@ -65,8 +67,8 @@ fBuildBundle(){
 		export CGO_ENABLED=0 GOOS="${os}" GOARCH="${arch}" GOFLAGS=-mod=vendor
 		nice -n 19 go test -c -p "${NGDB_JOBS}" -ldflags='-s -w' -o "${stage}/tests/" ./... > "${runDir}/${tgt}/build.log" 2>&1 \
 			||  { grep -v 'no test files' "${runDir}/${tgt}/build.log" >&2; fDie "${tgt}: test build failed"; }
-		## Name -> folder, since a test binary runs from its own package folder.
-		go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.Name}} {{.Dir}}{{end}}' ./... | sed "s#${PWD}#source#" > "${stage}/tests/manifest"
+		## Name -> folder, since a test binary runs from its own package folder, and the import path its test IDs go by.
+		go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.Name}} {{.Dir}} {{.ImportPath}}{{end}}' ./... | sed "s#${PWD}#source#" > "${stage}/tests/manifest"
 	)
 	## build.bash stamps the commit and date, and names a cross build ngdb-<os>-<arch>.
 	GOOS="${os}" GOARCH="${arch}" nice -n 19 bash "${dirPath_Base}/cicd/build.bash" > /dev/null
@@ -117,7 +119,7 @@ fOnBox(){
 	if ((rc == 0)); then
 		timeout 2400 ssh "${sshOpts[@]}" "${dest}" \
 			"cd '${work}' && tar -xzf bundle.tgz && bash ./cicd/utility/remote-unix.bash '${work}' ${jobCap} ${keepTemp}" < /dev/null \
-			|| rc=$?
+			| "${runDir}/testid" remote "${dirPath_Base}"  ||  rc=$?
 	fi
 	if ((rc == 0)); then echo "pass" > "${statusFile}"; else echo "fail" > "${statusFile}"; fi
 	return "${rc}"
@@ -146,7 +148,7 @@ fOnBox_Windows(){
 	if ((rc == 0)); then
 		timeout 2400 ssh "${sshOpts[@]}" "${dest}" \
 			pwsh -NoProfile -ExecutionPolicy Bypass -File "${work}\\remote-windows.ps1" "${work}" "${jobCap}" "${keepTemp}" < /dev/null 2> >(grep -v '^\*\*' >&2) \
-			| sed -u 's/\r$//'  ||  rc=$?  ## -u, so lines show as they come
+			| "${runDir}/testid" remote "${dirPath_Base}"  ||  rc=$?  ## it drops the CRs too
 	fi
 	if ((rc == 0)); then echo "pass" > "${statusFile}"; else echo "fail" > "${statusFile}"; fi
 	return "${rc}"
@@ -196,7 +198,8 @@ fMain(){
 		trap 'fSafeRm "${runDir}" > /dev/null || true' EXIT
 	fi
 
-	## Build everything before holding any box.
+	## Build everything before holding any box. testid is its own module, outside vendor mode.
+	GOFLAGS='' nice -n 19 go -C "${dirPath_Base}/cicd/utility/testid" build -o "${runDir}/testid" .  ||  fDie "testid build failed"
 	for row in "${rows[@]}"; do
 		fParseRow "${row}"
 		fEcho "${target}: building ${goos}/${goarch}"
@@ -247,3 +250,4 @@ fMain "${@}"
 ##	History:
 ##		- 20261025 JC: Created. FreeBSD, Linux arm64 and Intel macOS.
 ##		- 20261025 JC: Run folders under nano-git-db-floss, here and on the boxes, through the shared guard.
+##		- 20261025 JC: One line per test with its ID, through testid remote.

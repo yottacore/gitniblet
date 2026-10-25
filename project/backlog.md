@@ -515,6 +515,33 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: cicd1025
 	- Test case: `cicd/utility/testid`, dedqq to dedqt, plus the check itself on every `test.bash` and CI run.
 
+- Remote boxes: one line per test with its ID.
+	- ID: 2026102508574387
+	- Type: Task
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: The full-run line, for the macOS box under its stock bash 3.2 and the linux-arm64 box. Each should print one line per test with its ID, then the per-box summary at the end.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-085743
+	- Opened by: JC
+	- Related IDs: 2026101915293586, 2026102416210001, 2026102509132812
+	- Requirements [Feature]:
+		- `remote-test.bash` runs each package's test binary on the boxes and prints one line per box. Print one `PASS`, `FAIL` or `SKIP` line per test with its ID, as `test.bash` does.
+		- The boxes have no Go, so the binaries' `-test.v=test2json` output would go back to this host for `testid report`.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: Each box runs every test binary with `-test.v=test2json`, between a begin line naming the package and an end line with its exit code. `testid remote` on this host turns each one into events through `go tool test2json`, then prints `testid report`'s lines: one `PASS`, `FAIL` or `SKIP` per test with its ID, a failed test's output, and a count per box.
+		- The exit code settles what the output can't. A test still running when its binary died fails, with its output, and so does its package. A box that drops mid-binary fails that package too.
+		- `remote-test.bash` builds testid before holding a box. The per-box summary at the end stays. design.md's Remote tests bullet says so.
+		- Verified: testid's `TestRemote` and `remote-skip-test.bash` pass, and dedr4 fails on the old `remote-test.bash`. A real run on b29w and vmFreeBSD printed 242 `PASS` and 3 `SKIP` lines on each, with IDs, and the smoke passed. vmFreeBSD went back to off. `remote-unix.bash` run here through `testid remote` gave the same lines. `test.bash`, the wide gofmt, the build and the CLI smoke pass.
+		- Swept: both box runners, both `fOnBox` paths, and every script that builds or runs a test binary. `test.bash`, `fuzz.bash` and `ci.yml` already print one line per test, and `profile.bash` runs only a benchmark.
+	- Decisions:
+		- The box sends the raw output and this host converts it, as asked, rather than a test2json build going to each box.
+		- The smoke keeps its `PASS smoke-cli` line with no ID, since it's one script, not a Go test.
+		- The 3 skips on every box come from the bundle leaving out `project/example.shcl`. That's 2026102509132812.
+	- Branch: cicd1025
+	- Test case: testid's `TestRemote` (dedr3), and `cicd/utility/remote-skip-test.bash` dedr4.
+
 - Regression tests for all completed features and bug reports.
 	- ID: 2026101915305767
 	- Type: Task
@@ -533,18 +560,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
 	- Related IDs: 2026101915293586
 
-- Remote boxes: one line per test with its ID.
-	- ID: 2026102508574387
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-085743
-	- Opened by: JC
-	- Related IDs: 2026101915293586
-	- Requirements [Feature]:
-		- `remote-test.bash` runs each package's test binary on the boxes and prints one line per box. Print one `PASS`, `FAIL` or `SKIP` line per test with its ID, as `test.bash` does.
-		- The boxes have no Go, so the binaries' `-test.v=test2json` output would go back to this host for `testid report`.
-
 - Lookup picker and write-time value check.
 	- ID: 2026102407295340
 	- Type: Enhancement
@@ -562,6 +577,21 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Progress log:
 		- 20261024: Split into 2026102408470107 (write check), 2026102408470113 (lookup picker) and 2026102408470118 (`literal` and `sql` pickers). This item closes with the last of them.
 		- 20261024: All 3 are in. The write check is Done, and the 2 pickers wait on a look by eye.
+
+- Remote boxes skip the 3 tests that parse `project/example.shcl`.
+	- ID: 2026102509132812
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261025-091328
+	- Opened by: JC
+	- Related IDs: 2026102508574387, 2026102416210001
+	- Steps to reproduce [Bug]:
+		- Run `cicd/utility/remote-test.bash windows` or `freebsd`.
+	- Incorrect behavior [Bug]: `TestParseExampleDDL` (d9dzs), `TestSeedParseExample` (dec94) and `TestSeedRowsExample` (dec96) skip on the box, with "project/example.shcl not found".
+	- Expected behavior [Bug]: They run on the boxes, as they do here.
+	- Reproduced [Bug]: 20261025, on b29w and vmFreeBSD, on `cicd1025`.
+	- Possible cause [Bug]: The bundle in `remote-test.bash` tars only `source` and `demos`, and the tests read `../../../../project/example.shcl` from their package folder. The ddl fuzz seed reads it too.
 
 - A user table that restates a built-in table merges into it, as a system field does.
 	- ID: 2026102409431186

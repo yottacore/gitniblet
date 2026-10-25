@@ -2,6 +2,9 @@
 ##		The Windows side of remote-test.bash. Unpacks the bundle, runs each Go
 ##		test binary from its package folder, then the CLI smoke through Git's
 ##		bash, and removes its work folder after.
+##		- Each binary's -test.v=test2json output goes to stdout between a begin
+##		  and an end line, for testid remote on the calling host, which prints
+##		  one line per test with its ID.
 ##	Syntax:
 ##		pwsh -NoProfile -File remote-windows.ps1 <work folder> <most jobs> <keep: 0|1>
 ##	History: At bottom of this file.
@@ -17,6 +20,8 @@ param(
 	[int]$Keep = 0
 )
 $ErrorActionPreference = 'Stop'
+## The test binaries write UTF-8. With no console this can throw, and the default then only garbles non-ASCII.
+try { [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false) } catch { }
 (Get-Process -Id $PID).PriorityClass = 'BelowNormal'
 
 ## Only the folder remote-test.bash made for this run, never a link.
@@ -50,17 +55,18 @@ try {
 	"Windows $([Environment]::OSVersion.Version) on $($env:COMPUTERNAME): $cores cores, load $load%, $jobs jobs"
 
 	foreach ($line in Get-Content "$Work\tests\manifest") {
-		$name, $dir = $line -split ' ', 2
+		$name, $dir, $pkg = $line -split ' ', 3
 		if (-not $name) { continue }
 		$log = "$Work\logs\$name.log"
-		$watch = [Diagnostics.Stopwatch]::StartNew()
+		"@@ngdb-test begin $pkg"
 		Push-Location -LiteralPath "$Work\$dir"
 		## Quoted, since PowerShell splits -test.timeout at the dot.
-		& "$Work\tests\$name.test.exe" '-test.timeout=15m' "-test.parallel=$jobs" *> $log
+		& "$Work\tests\$name.test.exe" '-test.v=test2json' '-test.timeout=15m' "-test.parallel=$jobs" *> $log
 		$rc = $LASTEXITCODE
 		Pop-Location
-		if ($rc -eq 0) { "PASS $name ($([int]$watch.Elapsed.TotalSeconds)s)" }
-		else { "FAIL $name ($([int]$watch.Elapsed.TotalSeconds)s)"; Get-Content $log -Tail 40; $failed++ }
+		Get-Content -LiteralPath $log
+		"@@ngdb-test end $rc"
+		if ($rc -ne 0) { $failed++ }
 	}
 
 	## The smoke script is bash. Git for Windows brings one; it isn't on PATH.
@@ -85,3 +91,4 @@ exit [int]($failed -ne 0)
 ##	History:
 ##		- 20261025 JC: Created.
 ##		- 20261025 JC: -test.parallel passed.
+##		- 20261025 JC: Raw test2json output per binary, for one line per test on the host.

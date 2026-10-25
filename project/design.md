@@ -71,7 +71,7 @@ Manually kicked off via `cicd/cicd.bash`. Stages, in order (each fails early and
 
 - **Security + supply-chain**: `go mod verify`, `govulncheck`, and `gosec` (with a documented exclude list justified for a local-first single-user git-synced tool).
 
-- **Remote tests**: the test binaries and the CLI smoke run natively on the test boxes, for Windows, FreeBSD, arm64 Linux and Intel macOS. Each box is held through the shared host lock for the whole time it is used, and a VM is put back the way it was found. A box that doesn't answer is a `SKIP`, never a failure. `--no-remote` and `--quick` skip the stage.
+- **Remote tests**: the test binaries and the CLI smoke run natively on the test boxes, for Windows, FreeBSD, arm64 Linux and Intel macOS. Each box is held through the shared host lock for the whole time it is used, and a VM is put back the way it was found. A box that doesn't answer is a `SKIP`, never a failure. The boxes have no Go, so each test binary's raw output comes back here, and `testid remote` prints the same one line per test with its ID. `--no-remote` and `--quick` skip the stage.
 
 - **Profiler** (non-gating artifact): samples the CPU-hot tx-log replay path, renders an inferno flamegraph into `cicd/artifacts/profiling/` (GFS-rotated), and prints a hotspot summary (`flame-report.py`). Tooling misses warn and skip.
 

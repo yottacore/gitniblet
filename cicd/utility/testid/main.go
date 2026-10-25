@@ -10,10 +10,12 @@
 //	testid next [n]        the next n free IDs from now
 //	testid ids <repo>      "<package> <test> <id>" for every Go test
 //	testid report <repo>   go test -json on stdin -> one PASS/FAIL/SKIP line per test
+//	testid remote <repo>   the same, from a test box's framed -test.v=test2json output
 package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"go/ast"
@@ -22,6 +24,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -31,7 +34,7 @@ import (
 	"unicode/utf8"
 )
 
-const usage = "usage: testid check <repo> | next [n] | ids <repo> | report <repo>"
+const usage = "usage: testid check <repo> | next [n] | ids <repo> | report <repo> | remote <repo>"
 
 const alphabet = "0123456789abcdefghjkmnpqrstvwxyz"
 
@@ -286,82 +289,237 @@ type tally struct{ pass, fail, skip int }
 
 var skipWhy = regexp.MustCompile(`^\s+\S+\.go:\d+: (.+)$`)
 
-// report reads go test -json and prints one line per top-level test. A failed
-// test's output follows its line, and a failed package's own output follows
-// it, so nothing go test would have shown is lost.
-func report(repo string, in io.Reader, out io.Writer) (bool, error) {
+// reporter prints one line per top-level test from go test -json events. A
+// failed test's output follows its line, and a failed package's own output
+// follows it, so nothing go test would have shown is lost.
+type reporter struct {
+	out       io.Writer
+	ids       map[string]string
+	mainMod   string
+	n         tally
+	pkgFailed bool
+	logs      map[string][]string
+}
+
+func newReporter(repo string, out io.Writer) (*reporter, error) {
 	tests, err := scanGo(repo)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	ids := make(map[string]string, len(tests))
 	for _, t := range tests {
 		ids[t.pkg+" "+t.name] = t.id
 	}
 	mainMod, _, _ := modulePath(filepath.Join(repo, "source"))
+	return &reporter{out: out, ids: ids, mainMod: mainMod, logs: map[string][]string{}}, nil
+}
 
-	var n tally
-	pkgFailed := false
-	logs := map[string][]string{}
-	sc := bufio.NewScanner(in)
-	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
-	for sc.Scan() {
-		var ev event
-		if json.Unmarshal(sc.Bytes(), &ev) != nil {
-			fmt.Fprintln(out, sc.Text())
-			continue
+// line takes one line of go test -json. One that isn't JSON is printed as is.
+func (r *reporter) line(b []byte) {
+	var ev event
+	if json.Unmarshal(b, &ev) != nil {
+		fmt.Fprintln(r.out, string(b))
+		return
+	}
+	r.event(ev)
+}
+
+func (r *reporter) event(ev event) {
+	out := r.out
+	top, _, _ := strings.Cut(ev.Test, "/")
+	key := ev.Package + " " + top
+	switch {
+	case ev.Action == "build-output":
+		fmt.Fprint(out, ev.Output)
+	case ev.Action == "output":
+		r.logs[key] = append(r.logs[key], ev.Output)
+	case ev.Test == "" && ev.Action == "fail":
+		r.pkgFailed = true
+		fmt.Fprintf(out, "FAIL ----- %s\n", shortPkg(ev.Package, r.mainMod))
+		for _, ln := range r.logs[key] {
+			fmt.Fprint(out, "\t", ln)
 		}
-		top, _, _ := strings.Cut(ev.Test, "/")
-		key := ev.Package + " " + top
-		switch {
-		case ev.Action == "build-output":
-			fmt.Fprint(out, ev.Output)
-		case ev.Action == "output":
-			logs[key] = append(logs[key], ev.Output)
-		case ev.Test == "" && ev.Action == "fail":
-			pkgFailed = true
-			fmt.Fprintf(out, "FAIL ----- %s\n", shortPkg(ev.Package, mainMod))
-			for _, ln := range logs[key] {
+		delete(r.logs, key)
+	case ev.Test == "" && (ev.Action == "pass" || ev.Action == "skip"):
+		delete(r.logs, key)
+	case ev.Test != top || (ev.Action != "pass" && ev.Action != "fail" && ev.Action != "skip"):
+	default:
+		id := r.ids[key]
+		if id == "" {
+			id = "-----"
+		}
+		name := shortPkg(ev.Package, r.mainMod) + " " + top
+		switch ev.Action {
+		case "pass":
+			r.n.pass++
+			fmt.Fprintf(out, "PASS %s %s\n", id, name)
+		case "skip":
+			r.n.skip++
+			why := ""
+			for _, ln := range r.logs[key] {
+				if m := skipWhy.FindStringSubmatch(strings.TrimRight(ln, "\n")); m != nil {
+					why = ", " + m[1]
+				}
+			}
+			fmt.Fprintf(out, "SKIP %s %s%s\n", id, name, why)
+		case "fail":
+			r.n.fail++
+			fmt.Fprintf(out, "FAIL %s %s\n", id, name)
+			for _, ln := range r.logs[key] {
 				fmt.Fprint(out, "\t", ln)
 			}
-			delete(logs, key)
-		case ev.Test == "" && (ev.Action == "pass" || ev.Action == "skip"):
-			delete(logs, key)
-		case ev.Test != top || (ev.Action != "pass" && ev.Action != "fail" && ev.Action != "skip"):
-		default:
-			id := ids[key]
-			if id == "" {
-				id = "-----"
-			}
-			name := shortPkg(ev.Package, mainMod) + " " + top
-			switch ev.Action {
-			case "pass":
-				n.pass++
-				fmt.Fprintf(out, "PASS %s %s\n", id, name)
-			case "skip":
-				n.skip++
-				why := ""
-				for _, ln := range logs[key] {
-					if m := skipWhy.FindStringSubmatch(strings.TrimRight(ln, "\n")); m != nil {
-						why = ", " + m[1]
-					}
-				}
-				fmt.Fprintf(out, "SKIP %s %s%s\n", id, name, why)
-			case "fail":
-				n.fail++
-				fmt.Fprintf(out, "FAIL %s %s\n", id, name)
-				for _, ln := range logs[key] {
-					fmt.Fprint(out, "\t", ln)
-				}
-			}
-			delete(logs, key)
 		}
+		delete(r.logs, key)
+	}
+}
+
+// done prints the count, and says whether everything passed.
+func (r *reporter) done() bool {
+	fmt.Fprintf(r.out, "%d passed, %d failed, %d skipped\n", r.n.pass, r.n.fail, r.n.skip)
+	return r.n.fail == 0 && !r.pkgFailed
+}
+
+func newScanner(in io.Reader) *bufio.Scanner {
+	sc := bufio.NewScanner(in)
+	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	return sc
+}
+
+// report reads go test -json.
+func report(repo string, in io.Reader, out io.Writer) (bool, error) {
+	r, err := newReporter(repo, out)
+	if err != nil {
+		return false, err
+	}
+	sc := newScanner(in)
+	for sc.Scan() {
+		r.line(sc.Bytes())
 	}
 	if err := sc.Err(); err != nil {
 		return false, err
 	}
-	fmt.Fprintf(out, "%d passed, %d failed, %d skipped\n", n.pass, n.fail, n.skip)
-	return n.fail == 0 && !pkgFailed, nil
+	return r.done(), nil
+}
+
+// A test box has no Go, so it runs each test binary with -test.v=test2json and
+// frames its output with these lines. The end line may follow output that had
+// no newline of its own.
+const (
+	beginMark = "@@ngdb-test begin " // + import path
+	endMark   = "@@ngdb-test end "   // + the binary's exit code
+)
+
+// test2json is go tool test2json -p pkg, over one binary's raw output.
+func test2json(pkg string, raw []byte) ([]byte, error) {
+	cmd := exec.Command("go", "tool", "test2json", "-p", pkg)
+	cmd.Stdin = bytes.NewReader(raw)
+	cmd.Stderr = os.Stderr
+	return cmd.Output()
+}
+
+// remote reads a test box's output: plain lines, printed as they are, and
+// each test binary's framed output, which becomes report's lines. The exit
+// code settles what the output can't: a test still running when the binary
+// died fails, and so does its package.
+func remote(repo string, in io.Reader, out io.Writer) (bool, error) {
+	r, err := newReporter(repo, out)
+	if err != nil {
+		return false, err
+	}
+	pkg, open := "", false
+	var raw bytes.Buffer
+	settle := func(rc string) error {
+		js, err := test2json(pkg, raw.Bytes())
+		if err != nil {
+			return fmt.Errorf("test2json for %s: %w", pkg, err)
+		}
+		running := map[string]bool{}
+		var order []string
+		pkgDone := false
+		sc := newScanner(bytes.NewReader(js))
+		for sc.Scan() {
+			var ev event
+			if json.Unmarshal(sc.Bytes(), &ev) != nil {
+				continue
+			}
+			switch {
+			case ev.Test == "" && (ev.Action == "pass" || ev.Action == "fail" || ev.Action == "skip"):
+				pkgDone = true
+			case ev.Test != "" && !strings.Contains(ev.Test, "/") && ev.Action == "run":
+				running[ev.Test] = true
+				order = append(order, ev.Test)
+			case ev.Test != "" && (ev.Action == "pass" || ev.Action == "fail" || ev.Action == "skip"):
+				delete(running, ev.Test)
+			}
+			if rc != "0" && ev.Test == "" && ev.Action == "pass" {
+				ev.Action = "fail"
+			}
+			r.event(ev)
+		}
+		if rc == "0" {
+			if !pkgDone {
+				r.event(event{Action: "pass", Package: pkg})
+			}
+			return sc.Err()
+		}
+		for _, name := range order {
+			if running[name] {
+				r.event(event{Action: "fail", Package: pkg, Test: name})
+			}
+		}
+		if !pkgDone {
+			if rc == "" {
+				r.event(event{Action: "output", Package: pkg, Output: "no end line from the box; its run stopped here\n"})
+			} else {
+				r.event(event{Action: "output", Package: pkg, Output: "exit code " + rc + "\n"})
+			}
+			r.event(event{Action: "fail", Package: pkg})
+		}
+		return sc.Err()
+	}
+	sc := newScanner(in)
+	for sc.Scan() {
+		ln := strings.TrimSuffix(sc.Text(), "\r")
+		if open {
+			if i := strings.Index(ln, endMark); i >= 0 {
+				if i > 0 {
+					raw.WriteString(ln[:i])
+					raw.WriteByte('\n')
+				}
+				open = false
+				if err := settle(strings.TrimSpace(ln[i+len(endMark):])); err != nil {
+					return false, err
+				}
+				continue
+			}
+			if p, ok := strings.CutPrefix(ln, beginMark); ok {
+				if err := settle(""); err != nil {
+					return false, err
+				}
+				pkg = strings.TrimSpace(p)
+				raw.Reset()
+				continue
+			}
+			raw.WriteString(ln)
+			raw.WriteByte('\n')
+			continue
+		}
+		if p, ok := strings.CutPrefix(ln, beginMark); ok {
+			pkg, open = strings.TrimSpace(p), true
+			raw.Reset()
+			continue
+		}
+		fmt.Fprintln(out, ln)
+	}
+	if err := sc.Err(); err != nil {
+		return false, err
+	}
+	if open {
+		if err := settle(""); err != nil {
+			return false, err
+		}
+	}
+	return r.done(), nil
 }
 
 func main() {
@@ -411,8 +569,12 @@ func main() {
 		for _, t := range tests {
 			fmt.Println(t.pkg, t.name, t.id)
 		}
-	case args[0] == "report" && len(args) == 2:
-		ok, err := report(args[1], os.Stdin, os.Stdout)
+	case (args[0] == "report" || args[0] == "remote") && len(args) == 2:
+		read := report
+		if args[0] == "remote" {
+			read = remote
+		}
+		ok, err := read(args[1], os.Stdin, os.Stdout)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "testid:", err)
 			os.Exit(1)

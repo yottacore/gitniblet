@@ -129,3 +129,62 @@ func TestReport(t *testing.T) {
 		t.Fatalf("an all-pass run failed: %v\n%s", err, out.String())
 	}
 }
+
+// ID: dedr3
+func TestRemote(t *testing.T) {
+	src := "package a\n\nimport \"testing\"\n\n// ID: decp8\nfunc TestOk(t *testing.T) {}\n\n// ID: decp9\nfunc TestBad(t *testing.T) {}\n\n// ID: decpa\nfunc TestSkip(t *testing.T) {}\n\n// ID: decpb\nfunc TestPanic(t *testing.T) {}\n"
+	repo := fakeRepo(t, src, "")
+	const v = "\x16"
+	run := func(name string, lines ...string) []string {
+		return append([]string{v + "=== RUN   " + name}, lines...)
+	}
+	var in []string
+	in = append(in, "FreeBSD amd64 on box: 4 cores, load 0.1, 2 jobs", beginMark+"example.com/m/a")
+	in = append(in, run("TestOk", v+"--- PASS: TestOk (0.00s)")...)
+	in = append(in, run("TestBad", "    a_test.go:9: boom", v+"--- FAIL: TestBad (0.00s)")...)
+	in = append(in, run("TestSkip", "    a_test.go:12: needs b29w", v+"--- SKIP: TestSkip (0.00s)")...)
+	in = append(in, v+"FAIL\r", endMark+"1")
+	// A panic leaves its test with no result, and the package with none.
+	in = append(in, beginMark+"example.com/m/a")
+	in = append(in, run("TestOk", v+"--- PASS: TestOk (0.00s)")...)
+	in = append(in, run("TestPanic", "panic: kaput")...)
+	in = append(in, "no newline here"+endMark+"2", "PASS smoke-cli")
+	in = append(in, beginMark+"example.com/m/a")
+	in = append(in, run("TestOk", v+"--- PASS: TestOk (0.00s)")...)
+	in = append(in, v+"PASS", endMark+"0")
+
+	var out strings.Builder
+	ok, err := remote(repo, strings.NewReader(strings.Join(in, "\n")+"\n"), &out)
+	if err != nil || ok {
+		t.Fatalf("ok %v, err %v\n%s", ok, err, out.String())
+	}
+	want := "FreeBSD amd64 on box: 4 cores, load 0.1, 2 jobs\n" +
+		"PASS decp8 a TestOk\nFAIL decp9 a TestBad\n\t=== RUN   TestBad\n\t    a_test.go:9: boom\n\t--- FAIL: TestBad (0.00s)\n" +
+		"SKIP decpa a TestSkip, needs b29w\nFAIL ----- a\n\tFAIL\n" +
+		"PASS decp8 a TestOk\nFAIL decpb a TestPanic\n\t=== RUN   TestPanic\n\tpanic: kaput\n\tno newline here\nFAIL ----- a\n\texit code 2\n" +
+		"PASS smoke-cli\n" +
+		"PASS decp8 a TestOk\n" +
+		"3 passed, 2 failed, 1 skipped\n"
+	if out.String() != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", out.String(), want)
+	}
+
+	// The box went away mid-binary: what came is kept, and the package fails.
+	out.Reset()
+	cut := strings.Join(append([]string{beginMark + "example.com/m/a"}, run("TestOk", v+"--- PASS: TestOk (0.00s)")...), "\n") + "\n" + v + "=== RUN   TestBad\n"
+	ok, err = remote(repo, strings.NewReader(cut), &out)
+	if err != nil || ok {
+		t.Fatalf("a cut-off run passed: %v\n%s", err, out.String())
+	}
+	for _, s := range []string{"PASS decp8 a TestOk", "FAIL decp9 a TestBad", "FAIL ----- a\n\tno end line from the box"} {
+		if !strings.Contains(out.String(), s) {
+			t.Errorf("no %q in:\n%s", s, out.String())
+		}
+	}
+
+	out.Reset()
+	allPass := strings.Join(append(append([]string{beginMark + "example.com/m/a"}, run("TestOk", v+"--- PASS: TestOk (0.00s)")...), v+"PASS", endMark+"0"), "\n")
+	if ok, err = remote(repo, strings.NewReader(allPass), &out); err != nil || !ok {
+		t.Fatalf("an all-pass run failed: %v\n%s", err, out.String())
+	}
+}
