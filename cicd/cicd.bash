@@ -52,6 +52,7 @@ if [[ -z "${doQuietly+x}" ]]; then
 	## No docker, or an image that won't build, falls back to this host with one line.
 	declare  -i doContainer=1
 	declare  -i doRemote=1  ## Native tests on the test boxes for the platforms only cross-built here
+	declare  -i doKeepTemp=0  ## --keep-temp: keep the run folder and the run's containers
 	declare  -i inContainer=0; [[ "${NGDB_IN_CONTAINER:-}" == "1" ]] && inContainer=1  ## Set for the run started inside
 	declare -r  projectName="nano-git-db"
 	declare -r  containerImage="nano-git-db-cicd"
@@ -122,6 +123,8 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "      --no-container  Build and test on this host, not in the container."
 	fEcho_Clean "      --no-remote     Skip the tests on the other boxes (Windows, FreeBSD, arm64"
 	fEcho_Clean "                      Linux, Intel macOS). A box that doesn't answer is a SKIP."
+	fEcho_Clean "      --keep-temp     Keep the run folder and the run's containers, and print"
+	fEcho_Clean "                      where they are."
 	fEcho_Clean "  -m, --message MSG   Commit message for publish (also --msg; -m MSG or -m=MSG)."
 	fEcho_Clean "                      With -q and no -m, a message is auto-generated."
 	fEcho_Clean "  -h, --help          Show this."
@@ -133,6 +136,12 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "Dogfood, profiler, demo, hooks and publish stay on this host. No docker, or an"
 	fEcho_Clean "image that won't build, runs it all here instead. NGDB_DOCKER names another"
 	fEcho_Clean "program that takes docker's arguments."
+	fEcho_Clean ""
+	fEcho_Clean "Each run works in \${HOST_TEMP}/nano-git-db-floss/<stamp>_<NNN>/, with TMPDIR"
+	fEcho_Clean "pointed at it, and removes it at the end, on failure and Ctrl+C too. It also"
+	fEcho_Clean "removes run folders older than 2 days whose run.pid is gone. At the end the"
+	fEcho_Clean "run's containers go, then this project's dangling images, its image tags older"
+	fEcho_Clean "than the one before the current, and build cache older than a week."
 	#           X-------------------------------------------------------------------------------X
 	fEcho_Clean "" ;:;}
 
@@ -155,6 +164,7 @@ fMain(){
 		--no-container)            doContainer=0                        ; shift ;;
 		--container)               doContainer=1                        ; shift ;;
 		--no-remote)               doRemote=0                           ; shift ;;
+		--keep-temp)               doKeepTemp=1                         ; shift ;;
 		--message=*|--msg=*|-m=*)  cliMessage="${1#*=}"                 ; shift ;;
 		-m|--message|--msg)        cliMessage="${2-}"; shift; (($#)) && shift ;;
 		-h|--help)                 fCopyright; fAbout; fSyntax          ; return 0 ;;
@@ -210,6 +220,7 @@ fMain(){
 		((doFormat))   ||  fEcho_Clean "gofmt ........................: check only (--no-format)"
 		((doContainer))  ||  fEcho_Clean "Container ....................: off, all on this host (--no-container)"
 		((doRemote))     ||  fEcho_Clean "Remote tests .................: skipped (--no-remote)"
+		((! doKeepTemp)) ||  fEcho_Clean "Temp files ...................: kept (--keep-temp)"
 		if ((! doPublish)); then
 		fEcho_Clean "Backup + publish .............: skipped (--no-publish)"
 		else
@@ -240,6 +251,18 @@ fMain(){
 
 	cd "${dirPath_Base}"
 
+	## The run's own temp folder. The run in the container gets the outer one's,
+	## mounted at the same path, so it makes none of its own.
+	if ((! inContainer)); then
+		fTempRun_Sweep
+		runDir="$(fTempRun_Make)"  ||  fThrowError "Couldn't make a run folder under '${HOST_TEMP}/${tempProject}'."
+		export NGDB_RUN_DIR="${runDir}"
+	else
+		export NGDB_RUN_DIR="${NGDB_RUN_DIR:-${TMPDIR:-/tmp}}"
+	fi
+	runStamp="${NGDB_RUN_DIR##*/}"
+	export TMPDIR="${NGDB_RUN_DIR}" TEMP="${NGDB_RUN_DIR}" TMP="${NGDB_RUN_DIR}"
+
 	## Capture the whole run to a rotated log so warnings from any stage (build,
 	## vet, staticcheck, govulncheck) can be reviewed after the fact - lint-report.bash
 	## reads the newest. Rotate the dir first, then tee. Best-effort: if the log can't
@@ -248,7 +271,8 @@ fMain(){
 	declare dirPath_ArtifactsLint="${dirPath_Base}/cicd/artifacts/lint"
 	if ((! inContainer))  &&  mkdir -p "${dirPath_ArtifactsLint}" 2>/dev/null; then
 		gfs_rotate "${dirPath_ArtifactsLint}" run log >/dev/null 2>&1 || true
-		exec > >(tee "${dirPath_ArtifactsLint}/run_${serialDT}.log") 2>&1
+		## tee ignores Ctrl+C, or the cleanup at exit writes into a dead pipe and dies.
+		exec > >(trap '' INT TERM; exec tee "${dirPath_ArtifactsLint}/run_${serialDT}.log") 2>&1
 	fi
 
 	if ((doContainer))  &&  fContainer_Ready; then
@@ -267,7 +291,7 @@ fMain(){
 		remoteSummary=""
 	else
 		fEcho_Section "Remote tests (Windows, FreeBSD, arm64 Linux, Intel macOS)"
-		"${dirPath_Base}/cicd/utility/remote-test.bash" --summary "${remoteSummary}"  ||  fThrowError "Remote tests failed; the output is above."
+		"${dirPath_Base}/cicd/utility/remote-test.bash" $( ((! doKeepTemp)) || echo "--keep-temp") --summary "${remoteSummary}"  ||  fThrowError "Remote tests failed; the output is above."
 	fi
 
 	if ((! doInstall)); then
@@ -507,6 +531,8 @@ fStages_BuildAndTest(){
 ## Sets containerTag, building the image if it isn't there yet. Returns 1 with
 ## one line when the run should stay on this host.
 declare containerTag=""
+declare runDir="" runStamp=""
+declare -i dockerUsed=0  imagePassed=0  ## For the cleanup at exit
 fContainer_Ready(){
 	local why=""
 	if [[ "$(uname -m)" != "x86_64" ]]; then why="the image is x86_64 only"
@@ -514,6 +540,7 @@ fContainer_Ready(){
 	elif ! "${containerEngine}" version --format '{{.Server.Version}}' &>/dev/null; then why="${containerEngine} isn't answering"
 	fi
 	if [[ -n "${why}" ]]; then fEcho_Clean "Container: ${why}, so build and test run on this host."; return 1; fi
+	dockerUsed=1
 
 	local -r recipe="${dirPath_Base}/cicd/container/Dockerfile"
 	## Called as an if condition, where set -e is off, so a throw has to exit.
@@ -528,12 +555,12 @@ fContainer_Ready(){
 	containerTag="${containerImage}:$(git -C "${dirPath_Base}" hash-object "${recipe}" | cut -c1-12)"
 	if ! "${containerEngine}" image inspect "${containerTag}" &>/dev/null; then
 		fEcho_Section "Container image (building ${containerTag})"
-		if ! nice -n 19 "${containerEngine}" build --label "dev.project=${projectName}" -t "${containerTag}" "$(dirname "${recipe}")"; then
+		if ! nice -n 19 "${containerEngine}" build --label "dev.project=${projectName}" --label "dev.run=${runStamp}" -t "${containerTag}" "$(dirname "${recipe}")"; then
 			fEcho_Clean "Container: ${containerTag} didn't build, so build and test run on this host."; return 1
 		fi
 	fi
 	if ! "${containerEngine}" volume inspect "${containerVolume}" &>/dev/null \
-		&&  ! "${containerEngine}" volume create --label "dev.project=${projectName}" "${containerVolume}" >/dev/null; then
+		&&  ! "${containerEngine}" volume create --label "dev.project=${projectName}" --label "dev.run=${runStamp}" "${containerVolume}" >/dev/null; then
 		fEcho_Clean "Container: no cache volume ${containerVolume}, so build and test run on this host."; return 1
 	fi
 	return 0
@@ -544,10 +571,12 @@ fContainer_Ready(){
 ## worktree's .git file still point at something. Caches live in the volume.
 fStage_Container(){
 	fEcho_Section "Container (build through security, in ${containerTag})"
-	local -a runArgs=(--rm --init
-		--name "${projectName}-${serialDT}-pipeline" --label "dev.project=${projectName}" --label "dev.run=${serialDT}"
+	local -a runArgs=(--init
+		--name "${projectName}-${runStamp}-pipeline" --label "dev.project=${projectName}" --label "dev.run=${runStamp}"
 		--cpus "${NGDB_JOBS}" --cpu-shares 256 --user "$(id -u):$(id -g)"
-		-v "${dirPath_Base}:${dirPath_Base}" -v "${containerVolume}:/cache" -e NGDB_IN_CONTAINER=1 -w "${dirPath_Base}")
+		-v "${dirPath_Base}:${dirPath_Base}" -v "${containerVolume}:/cache" -w "${dirPath_Base}"
+		-v "${runDir}:${runDir}" -e NGDB_RUN_DIR -e HOST_TEMP -e TMPDIR -e TEMP -e TMP -e NGDB_IN_CONTAINER=1)
+	((doKeepTemp))  ||  runArgs+=(--rm)
 	local gitCommon
 	gitCommon="$(git -C "${dirPath_Base}" rev-parse --path-format=absolute --git-common-dir)"
 	[[ "${gitCommon}" == "${dirPath_Base}/"* ]]  ||  runArgs+=(-v "${gitCommon}:${gitCommon}")
@@ -558,13 +587,69 @@ fStage_Container(){
 	((doFormat))    ||  innerArgs+=(--no-format)
 	fEcho_Clean "Runs: cicd.bash ${innerArgs[*]}"
 
-	"${containerEngine}" run "${runArgs[@]}" "${containerTag}" nice -n 19 bash "${dirPath_Base}/cicd/cicd.bash" "${innerArgs[@]}" \
-		||  fThrowError "The run in the container failed; its output is above."
+	## In the background, since Ctrl+C would only reach the container's init, and
+	## the run inside would finish its current step first. A wait returns at once,
+	## and the cleanup at exit removes the container.
+	"${containerEngine}" run "${runArgs[@]}" "${containerTag}" nice -n 19 bash "${dirPath_Base}/cicd/cicd.bash" "${innerArgs[@]}" &
+	wait "$!"  ||  fThrowError "The run in the container failed; its output is above."
+	imagePassed=1
+}
+
+
+## Only what carries this project's label, and never rmi -f, so an image a
+## container still uses stays. The run's containers go first, since they hold
+## the run folder's mount.
+fContainer_Cleanup(){
+	((dockerUsed))  ||  return 0
+	local -a ids=() removed=() oldTags=()
+	local before after tag
+	before="$(fDocker_Bytes)"
+
+	mapfile -t ids < <("${containerEngine}" ps -aq --filter "label=dev.project=${projectName}" --filter "label=dev.run=${runStamp}" 2> /dev/null)
+	if ((${#ids[@]})); then
+		if ((doKeepTemp)); then
+			"${containerEngine}" stop "${ids[@]}" &> /dev/null  ||  true
+			fEcho_Clean "Kept container ${projectName}-${runStamp}-pipeline (--keep-temp)."
+		else
+			"${containerEngine}" rm -f "${ids[@]}" &> /dev/null  &&  removed+=("${#ids[@]} container(s)")
+		fi
+	fi
+
+	mapfile -t ids < <("${containerEngine}" image ls -q --filter "label=dev.project=${projectName}" --filter dangling=true 2> /dev/null)
+	if ((${#ids[@]})) && "${containerEngine}" rmi "${ids[@]}" &> /dev/null; then removed+=("${#ids[@]} dangling image(s)"); fi
+
+	## Newest first. Keep the tag that just passed and the one before it.
+	if ((imagePassed)) && [[ -n "${containerTag}" ]]; then
+		mapfile -t oldTags < <("${containerEngine}" image ls "${containerImage}" --filter "label=dev.project=${projectName}" \
+			--format '{{.Repository}}:{{.Tag}}' 2> /dev/null | grep -vxF -e "${containerTag}" -e "${containerImage}:<none>" | tail -n +2)
+		for tag in "${oldTags[@]}"; do "${containerEngine}" rmi "${tag}" &> /dev/null  &&  removed+=("${tag}"); done
+	fi
+
+	"${containerEngine}" builder prune -f --filter until=168h &> /dev/null  ||  true
+
+	after="$(fDocker_Bytes)"
+	local freed="?"
+	[[ "${before}" =~ ^[0-9]+$ && "${after}" =~ ^[0-9]+$ ]]  &&  freed="$(numfmt --to=si --suffix=B $(( before > after ? before - after : 0 )))"
+	fEcho_Clean "Docker cleanup: removed ${removed[*]:-no containers or images}, plus week-old build cache; freed about ${freed}."
+}
+
+## Total of docker system df's sizes, in bytes.
+fDocker_Bytes(){
+	"${containerEngine}" system df --format '{{.Size}}' 2> /dev/null | numfmt --from=si --suffix=B --invalid=ignore 2> /dev/null \
+		| awk '{ sub(/B$/, ""); t += $1 } END { printf "%d\n", t }'
 }
 
 
 #••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 fCleanup(){
+	## Not inside the container: the outer run owns the folder and the docker side.
+	if ((! inContainer)); then
+		fContainer_Cleanup  ||  true
+		if [[ -n "${runDir}" && -d "${runDir}" ]]; then
+			if ((doKeepTemp)); then fEcho_Clean "Kept the run folder: ${runDir}"
+			else fSafeRm "${runDir}" > /dev/null  ||  true; fi
+		fi
+	fi
 	## Always leave a trailing blank line for breathing room before the prompt
 	## (fEcho_Clean collapses it if the last line was already blank).
 	fEcho_Clean
@@ -796,6 +881,9 @@ source "${meDir}/utility/include/gfs-rotate.bash"
 ## Pinned linter/scanner versions (NGDB_STATICCHECK/GOVULNCHECK/GOSEC)
 source "${meDir}/utility/include/tool-versions.bash"
 
+## Run folder and the safe removal guard (fTempRun_Make, fSafeRm)
+source "${meDir}/utility/include/temp-run.bash"
+
 ## Invoke main
 fMain  "${@}"
 
@@ -827,3 +915,4 @@ fMain  "${@}"
 ##		- 20261024 JC: Local hooks dir is two levels up, since the repo moved into nano-git-db-floss/repo.
 ##		- 20261025 JC: Build through security run in the pinned container by default; --no-container keeps them here.
 ##		- 20261025 JC: Tests on the other boxes (cicd/utility/remote-test.bash) after build and test; --no-remote skips them.
+##		- 20261025 JC: Each run gets its own temp folder, removed at the end along with its containers, dangling images and old image tags; --keep-temp keeps them.

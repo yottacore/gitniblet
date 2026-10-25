@@ -254,7 +254,13 @@ function Invoke-Install {
 		Write-Line
 	}
 	finally {
-		Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+		## Only the folder made above, under the temp folder, never a link.
+		$tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+		$item = Get-Item -LiteralPath $work -Force -ErrorAction SilentlyContinue
+		if ($item -and $item.PSIsContainer -and -not $item.LinkType -and $item.Name -like "$ExeName-install-*" `
+			-and $item.FullName.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+			Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+		}
 	}
 }
 

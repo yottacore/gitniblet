@@ -27,7 +27,6 @@
 
 set -Eeuo pipefail
 
-declare -r projectName="nano-git-db"
 declare -r meFile="$(realpath -e "${BASH_SOURCE[0]}")"
 declare -r dirPath_Base="$(realpath -e "$(dirname "${meFile}")/../..")"
 declare -r skipCode=75  ## from the per-box run: the box didn't answer
@@ -46,22 +45,6 @@ declare -ra sshOpts=(-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterva
 fEcho(){ printf '%s\n' "${*}"; }
 fWarn(){ printf 'WARNING: %s\n' "${*}" >&2; }
 fDie(){  printf 'remote-test: %s\n' "${*}" >&2; exit 1; }
-
-## Per Safe removal: only under a tmp folder or this project's own temp root.
-fSafeRm(){
-	local p="${1:-}" real='' own="${hostTemp:?}/${projectName:?}"
-	if [[ "${#}" -ne 1 || -z "${p}" || "${p}" == *..* || "${p}" == *//* || "${p}" == *$'\n'* ]]; then
-		printf 'safe-rm: refused, bad path: "%s"\n' "${p}" >&2; return 1
-	fi
-	p="${p%/}"
-	if ! [[ "${p}" =~ ^/(.+/)?tmp/[^/]+(/[^/]+)*$ || "${p}" == "${own}"/?* ]]; then
-		printf 'safe-rm: refused, not under a tmp folder: %s\n' "${p}" >&2; return 1
-	fi
-	if [[ -L "${p}" ]]; then printf 'safe-rm: refused, a link: %s\n' "${p}" >&2; return 1; fi
-	real="$(realpath -e -- "${p}" 2> /dev/null)" || { printf 'safe-rm: refused, not there: %s\n' "${p}" >&2; return 1; }
-	if [[ "${real}" != "${p}" ]]; then printf 'safe-rm: refused, goes through a link: %s\n' "${p}" >&2; return 1; fi
-	rm -rf --one-file-system -- "${p}" && printf 'removed %s\n' "${p}"
-}
 
 fTrim(){ local -n s_t9qx="${1}"; s_t9qx="${s_t9qx#"${s_t9qx%%[![:space:]]*}"}"; s_t9qx="${s_t9qx%"${s_t9qx##*[![:space:]]}"}"; }
 
@@ -93,7 +76,9 @@ fBuildBundle(){
 	else
 		cp "${dirPath_Base}/bin/ngdb-${os}-${arch}" "${stage}/ngdb"
 	fi
+	mkdir -p "${stage}/cicd/utility/include"
 	cp "${dirPath_Base}/cicd/utility/smoke-cli.bash" "${dirPath_Base}/cicd/utility/remote-unix.bash" "${stage}/cicd/utility/"
+	cp "${dirPath_Base}/cicd/utility/include/temp-run.bash" "${stage}/cicd/utility/include/"
 	tar -C "${dirPath_Base}" --exclude=./source/vendor -cf - ./source ./demos | tar -C "${stage}" -xf -
 	tar -C "${stage}" -czf "${runDir}/${tgt}/bundle.tgz" .
 	[[ -s "${stage}/tests/manifest" ]]  ||  fDie "${tgt}: no test packages found"
@@ -113,7 +98,7 @@ fOnBox(){
 	## The box's own temp root per Temp files, as sh, since a login shell may be csh.
 	local work
 	work="$(ssh "${sshOpts[@]}" "${dest}" sh -s <<- 'EOF'
-		r="${HOST_TEMP:-${TMPDIR:-/tmp}}"; r="${r%/}/nano-git-db"
+		r="${HOST_TEMP:-${TMPDIR:-/tmp}}"; r="${r%/}/nano-git-db-floss"
 		mkdir -p "${r}" && cd "${r}" && r="$(pwd -P)" || exit 1
 		s="$(date +%Y%m%d-%H%M%S)"; n=1
 		while ! mkdir "$(printf '%s/%s_%03d' "${r}" "${s}" "${n}")" 2> /dev/null; do
@@ -123,7 +108,7 @@ fOnBox(){
 	EOF
 	)" || { echo "fail" > "${statusFile}"; fWarn "${tgt}: couldn't make a work folder on ${dest}"; return 1; }
 	work="${work##*$'\n'}"  ## a noisy login can print first
-	[[ "${work}" =~ ^/[A-Za-z0-9._/-]+/nano-git-db/[0-9]{8}-[0-9]{6}_[0-9]{3}$ ]]  ||  { echo "fail" > "${statusFile}"; fWarn "${tgt}: odd work folder '${work}'"; return 1; }
+	[[ "${work}" =~ ^/[A-Za-z0-9._/-]+/nano-git-db-floss/[0-9]{8}-[0-9]{6}_[0-9]{3}$ ]]  ||  { echo "fail" > "${statusFile}"; fWarn "${tgt}: odd work folder '${work}'"; return 1; }
 	fEcho "${tgt}: ${dest}:${work}"
 
 	## cat, not scp: a login that prints breaks scp and sftp.
@@ -143,7 +128,7 @@ fOnBox_Windows(){
 	local -r tgt="${1}" dest="${2}" jobCap="${3}"
 	local -r statusFile="${runDir}/${tgt}/status"
 	local -r mkWork='$r = if ($env:HOST_TEMP) { $env:HOST_TEMP } else { $env:TEMP }
-		$r = Join-Path $r nano-git-db; $null = New-Item -ItemType Directory -Force $r
+		$r = Join-Path $r nano-git-db-floss; $null = New-Item -ItemType Directory -Force $r
 		$s = Get-Date -Format yyyyMMdd-HHmmss
 		for ($n = 1; $n -le 999; $n++) {
 			$p = "{0}\{1}_{2:d3}" -f $r, $s, $n
@@ -153,7 +138,7 @@ fOnBox_Windows(){
 	work="$(ssh "${sshOpts[@]}" "${dest}" pwsh -NoProfile -EncodedCommand "$(iconv -f utf-8 -t utf-16le <<< "${mkWork}" | base64 -w0)" < /dev/null 2> /dev/null | tr -d '\r')" \
 		||  { echo "fail" > "${statusFile}"; fWarn "${tgt}: couldn't make a work folder on ${dest}"; return 1; }
 	work="${work##*$'\n'}"
-	[[ "${work}" =~ ^[A-Za-z]:\\[A-Za-z0-9._~\\-]+\\nano-git-db\\[0-9]{8}-[0-9]{6}_[0-9]{3}$ ]]  ||  { echo "fail" > "${statusFile}"; fWarn "${tgt}: odd work folder '${work}'"; return 1; }
+	[[ "${work}" =~ ^[A-Za-z]:\\[A-Za-z0-9._~\\-]+\\nano-git-db-floss\\[0-9]{8}-[0-9]{6}_[0-9]{3}$ ]]  ||  { echo "fail" > "${statusFile}"; fWarn "${tgt}: odd work folder '${work}'"; return 1; }
 	fEcho "${tgt}: ${dest}:${work}"
 
 	local rc=0
@@ -203,14 +188,8 @@ fMain(){
 		fSummary; return 0
 	fi
 
-	hostTemp="$(realpath -m "${HOST_TEMP:-${TMPDIR:-/tmp}}")"
-	mkdir -p "${hostTemp}/${projectName}"
-	local stamp; stamp="$(date +%Y%m%d-%H%M%S)"
-	local -i n=1
-	until runDir="$(printf '%s/%s/%s_%03d' "${hostTemp}" "${projectName}" "${stamp}" "${n}")"; mkdir "${runDir}" 2> /dev/null; do
-		((++n <= 999))  ||  fDie "no free run folder under ${hostTemp}/${projectName}"
-	done
-	echo "$$" > "${runDir}/run.pid"
+	## Inside the cicd run's folder when there is one.
+	runDir="$(fTempDir_Make remote)"  ||  fDie "no run folder under ${HOST_TEMP}/${tempProject}"
 	if ((keepTemp)); then
 		trap 'echo "kept ${runDir}"' EXIT
 	else
@@ -261,8 +240,10 @@ fSummary(){
 }
 
 source "$(dirname "${meFile}")/include/cpu-limit.bash"
+source "$(dirname "${meFile}")/include/temp-run.bash"  ## fTempDir_Make + fSafeRm
 fMain "${@}"
 
 
 ##	History:
 ##		- 20261025 JC: Created. FreeBSD, Linux arm64 and Intel macOS.
+##		- 20261025 JC: Run folders under nano-git-db-floss, here and on the boxes, through the shared guard.

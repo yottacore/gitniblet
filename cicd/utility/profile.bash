@@ -46,10 +46,11 @@ command -v python3 >/dev/null || fSkip "python3 not found"
 
 source "${meDir}/include/cpu-limit.bash"   ## NGDB_JOBS + GOMAXPROCS (<=half cores)
 source "${meDir}/include/gfs-rotate.bash"
+source "${meDir}/include/temp-run.bash"     ## fTempDir_Make + fSafeRm
 
 cd "${meDir}/../../source"                              ## module root (go.mod)
 stamp="$(date +%Y%m%d-%H%M%S)"
-tmp="$(mktemp -d)"; trap 'rm -rf "${tmp}"' EXIT
+tmp="$(fTempDir_Make profile)"; trap 'fSafeRm "${tmp}" > /dev/null' EXIT
 
 ## Sample the replay benchmark. A build/run failure here is an app problem, but
 ## the stage stays non-gating - it warns and skips so a profiler hiccup never
@@ -84,3 +85,4 @@ python3 "${meDir}/flame-report.py" --dir "${profDir}" || echo "profile.bash: hot
 
 ##	Script history:
 ##		- 20260709: Created.
+##		- 20261025: Works in the run folder, removed through the guard.

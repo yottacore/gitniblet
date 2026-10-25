@@ -24,7 +24,7 @@ function Remove-RunFolder {
 	Set-Location $env:SystemDrive\
 	if ($Keep -eq 1) { "kept $($env:COMPUTERNAME):$Work"; return }
 	$item = Get-Item -LiteralPath $Work -ErrorAction SilentlyContinue
-	if ($Work -match '\\nano-git-db\\\d{8}-\d{6}_\d{3}$' -and $item -and $item.PSIsContainer -and -not $item.LinkType) {
+	if ($Work -match '\\nano-git-db-floss\\\d{8}-\d{6}_\d{3}$' -and $item -and $item.PSIsContainer -and -not $item.LinkType) {
 		Remove-Item -LiteralPath $Work -Recurse -Force
 	} else {
 		Write-Warning "remote-windows: left $Work, not a run folder"

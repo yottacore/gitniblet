@@ -22,30 +22,13 @@ set -uo pipefail
 
 repoRoot="$(realpath -e "$(dirname "$0")/../..")"
 recipe="${repoRoot}/cicd/container/Dockerfile"
-projectName="nano-git-db"
-HOST_TEMP="$(realpath -e "${HOST_TEMP:-${TMPDIR:-/tmp}}")"
-mkdir -p "${HOST_TEMP}/${projectName}"
-stamp="$(date +%Y%m%d-%H%M%S)"; n=1
-while ! mkdir "${HOST_TEMP}/${projectName}/${stamp}_$(printf %03d "${n}")" 2>/dev/null; do ((n++)); done
-runDir="${HOST_TEMP}/${projectName}/${stamp}_$(printf %03d "${n}")"
+# shellcheck source=include/temp-run.bash
+source "${repoRoot}/cicd/utility/include/temp-run.bash"
+runDir="$(fTempDir_Make container-fallback)"  ||  exit 1
 
-fSafeRm() {
-	local p="${1:-}" real='' own="${HOST_TEMP:?}/${projectName:?}"
-	if [[ "${#}" -ne 1 || -z "${p}" || "${p}" == *..* || "${p}" == *//* || "${p}" == *$'\n'* ]]; then
-		printf 'safe-rm: refused, bad path: "%s"\n' "${p}" >&2; return 1
-	fi
-	p="${p%/}"
-	if ! [[ "${p}" =~ ^/(.+/)?tmp/[^/]+(/[^/]+)*$ || "${p}" == "${own}"/?* ]]; then
-		printf 'safe-rm: refused, not under a tmp folder: %s\n' "${p}" >&2; return 1
-	fi
-	if [[ -L "${p}" ]]; then printf 'safe-rm: refused, a link: %s\n' "${p}" >&2; return 1; fi
-	real="$(realpath -e -- "${p}" 2> /dev/null)" || { printf 'safe-rm: refused, not there: %s\n' "${p}" >&2; return 1; }
-	if [[ "${real}" != "${p}" ]]; then printf 'safe-rm: refused, goes through a link: %s\n' "${p}" >&2; return 1; fi
-	rm -rf --one-file-system -- "${p}"
-}
 fCleanup(){
 	if [[ -f "${runDir}/Dockerfile.orig" ]]; then cp -p "${runDir}/Dockerfile.orig" "${recipe}"; fi
-	fSafeRm "${runDir}"
+	fSafeRm "${runDir}" > /dev/null
 }
 trap fCleanup EXIT
 
@@ -82,3 +65,4 @@ exit $((fails > 0))
 
 ##	History:
 ##		- 20261025 JC: Created.
+##		- 20261025 JC: The shared run folder and guard from include/temp-run.bash.

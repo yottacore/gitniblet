@@ -7,8 +7,9 @@
 ##	Syntax:
 ##		smoke-cli.bash [path to ngdb]     ## default: bin/ngdb
 ##	Notes:
-##		Works in its own mktemp folder with its own registry (--config), and
-##		removes only that folder on exit.
+##		Works in its own temp folder with its own registry (--config), inside
+##		the cicd run's folder when there is one, and removes it on exit through
+##		the guard in include/temp-run.bash.
 
 ##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 ##	SPDX-License-Identifier: AGPL-3.0-only
@@ -20,15 +21,10 @@ exe="${1:-${dirPath_Base}/bin/ngdb}"
 [[ "${exe}" == /* ]] || exe="${PWD}/${exe}"
 [[ -x "${exe}" ]] || { echo "smoke-cli: no binary at ${exe}" >&2; exit 1; }
 
-tmpRoot="${TMPDIR:-/tmp}"; tmpRoot="${tmpRoot%/}"
-work="$(mktemp -d "${tmpRoot}/ngdb-smoke.XXXXXX")"
-fCleanup(){
-	## Only the folder mktemp made above, never a link or anything outside it.
-	if [[ -n "${work}" && "${work}" == "${tmpRoot}"/ngdb-smoke.* && -d "${work}" && ! -L "${work}" ]]; then
-		rm -rf -- "${work}"
-	fi
-}
-trap fCleanup EXIT
+# shellcheck source=include/temp-run.bash
+source "$(dirname "${BASH_SOURCE[0]}")/include/temp-run.bash"
+work="$(fTempDir_Make smoke)"
+trap 'fSafeRm "${work}" > /dev/null' EXIT
 
 fail(){ echo "smoke-cli: FAIL: $*" >&2; exit 1; }
 ngdb(){ "${exe}" --config "${work}/registry" "$@"; }

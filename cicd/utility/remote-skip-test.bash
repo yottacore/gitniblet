@@ -19,28 +19,10 @@
 set -uo pipefail
 
 repoRoot="$(realpath -e "$(dirname "$0")/../..")"
-projectName="nano-git-db"
-HOST_TEMP="$(realpath -e "${HOST_TEMP:-${TMPDIR:-/tmp}}")"
-mkdir -p "${HOST_TEMP}/${projectName}"
-stamp="$(date +%Y%m%d-%H%M%S)"; n=1
-while ! mkdir "${HOST_TEMP}/${projectName}/${stamp}_$(printf %03d "${n}")" 2>/dev/null; do ((n++)); done
-runDir="${HOST_TEMP}/${projectName}/${stamp}_$(printf %03d "${n}")"
-
-fSafeRm() {
-	local p="${1:-}" real='' own="${HOST_TEMP:?}/${projectName:?}"
-	if [[ "${#}" -ne 1 || -z "${p}" || "${p}" == *..* || "${p}" == *//* || "${p}" == *$'\n'* ]]; then
-		printf 'safe-rm: refused, bad path: "%s"\n' "${p}" >&2; return 1
-	fi
-	p="${p%/}"
-	if ! [[ "${p}" =~ ^/(.+/)?tmp/[^/]+(/[^/]+)*$ || "${p}" == "${own}"/?* ]]; then
-		printf 'safe-rm: refused, not under a tmp folder: %s\n' "${p}" >&2; return 1
-	fi
-	if [[ -L "${p}" ]]; then printf 'safe-rm: refused, a link: %s\n' "${p}" >&2; return 1; fi
-	real="$(realpath -e -- "${p}" 2> /dev/null)" || { printf 'safe-rm: refused, not there: %s\n' "${p}" >&2; return 1; }
-	if [[ "${real}" != "${p}" ]]; then printf 'safe-rm: refused, goes through a link: %s\n' "${p}" >&2; return 1; fi
-	rm -rf --one-file-system -- "${p}"
-}
-trap 'fSafeRm "${runDir}"' EXIT
+# shellcheck source=include/temp-run.bash
+source "${repoRoot}/cicd/utility/include/temp-run.bash"
+runDir="$(fTempDir_Make remote-skip)"  ||  exit 1
+trap 'fSafeRm "${runDir}" > /dev/null' EXIT
 
 ## wrap: WRAP_MODE=run runs what follows --, hold gives up before it, as a lock wait would.
 ## ssh: SSH_MODE=dead never answers, half answers the probe and fails the rest.
@@ -49,7 +31,7 @@ printf '#!/bin/bash\n[[ "${WRAP_MODE}" == run ]] || exit 3\nwhile (($#)) && [[ "
 printf '#!/bin/bash\n[[ "${SSH_MODE}" == half && "${*: -1}" == 0 ]] && exit 0\nexit 255\n' > "${runDir}/bin/ssh"
 chmod +x "${runDir}/wrap" "${runDir}/bin/ssh"
 ## Its own temp root, so another run's folders don't count against dednb.
-mkdir -p "${runDir}/temp/${projectName}"
+mkdir -p "${runDir}/temp/${tempProject}"
 
 declare -i fails=0
 fCase(){  ## id, name, expected exit, expected line, env for the run
@@ -59,13 +41,13 @@ fCase(){  ## id, name, expected exit, expected line, env for the run
 	then echo "PASS ${id} ${name}"
 	else echo "FAIL ${id} ${name} (exit ${rc})"; tail -20 <<< "${out}"; fails+=1; fi
 }
-stand=(NGDB_VM_WRAP="${runDir}/wrap" PATH="${runDir}/bin:${PATH}" HOST_TEMP="${runDir}/temp")
+stand=(NGDB_RUN_DIR= NGDB_VM_WRAP="${runDir}/wrap" PATH="${runDir}/bin:${PATH}" HOST_TEMP="${runDir}/temp")
 fCase dedn7 "box that doesn't answer is a SKIP" 0 "SKIP macos: no answer from b26, vmKt6m"             "${stand[@]}" WRAP_MODE=run  SSH_MODE=dead
 fCase dedn8 "box that can't be held is a SKIP"  0 "SKIP freebsd: no answer from vmFreeBSD"             "${stand[@]}" WRAP_MODE=hold SSH_MODE=dead
 fCase dedn9 "no wrap helper is a SKIP"          0 "SKIP freebsd: no VM and host lock wrap helper here" NGDB_VM_WRAP= HOME=/nonexistent
 fCase dedna "box that fails is a FAIL"          1 "FAIL freebsd on vmFreeBSD"                          "${stand[@]}" WRAP_MODE=run  SSH_MODE=half
 
-left="$(find "${runDir}/temp/${projectName}" -mindepth 1 -maxdepth 1 | wc -l)"
+left="$(find "${runDir}/temp/${tempProject}" -mindepth 1 -maxdepth 1 | wc -l)"
 if ((left == 0)); then echo "PASS dednb runs remove their own folders"
 else echo "FAIL dednb runs remove their own folders (${left} left)"; fails+=1; fi
 
@@ -74,3 +56,4 @@ exit $((fails > 0))
 
 ##	History:
 ##		- 20261025 JC: Created.
+##		- 20261025 JC: The shared run folder and guard from include/temp-run.bash.

@@ -23,7 +23,7 @@ work="${1:?work folder}"; jobCap="${2:-4}"; keep="${3:-0}"
 fCleanup(){
 	cd / || return
 	if [[ "${keep}" == "1" ]]; then echo "kept $(hostname):${work}"; return; fi
-	if [[ "${work}" =~ ^/[A-Za-z0-9._/-]+/nano-git-db/[0-9]{8}-[0-9]{6}_[0-9]{3}$ && -d "${work}" && ! -L "${work}" ]]; then
+	if [[ "${work}" =~ ^/[A-Za-z0-9._/-]+/nano-git-db-floss/[0-9]{8}-[0-9]{6}_[0-9]{3}$ && -d "${work}" && ! -L "${work}" ]]; then
 		if [[ "$(uname -s)" == "Linux" ]]; then rm -rf --one-file-system -- "${work}"; else rm -rf -x -- "${work}"; fi
 	else
 		echo "remote-unix: left ${work}, not a run folder" >&2

@@ -24,6 +24,8 @@ set -Eeuo pipefail
 dirPath_Self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 dirPath_Repo="$(cd "$dirPath_Self/.." && pwd)"
 headless="$dirPath_Repo/cicd/utility/gui-headless.bash"
+# shellcheck source=../cicd/utility/include/temp-run.bash
+source "$dirPath_Repo/cicd/utility/include/temp-run.bash"   # fSafeRm
 exe="$dirPath_Repo/bin/ngdb"
 dirLarge="$dirPath_Repo/assets/screenshots/large"
 dirSmall="$dirPath_Repo/assets/screenshots"
@@ -51,7 +53,7 @@ fSetup() {
 	# A fixed, tidy path (not mktemp) so the picker screenshot shows clean,
 	# anonymous locations. Wiped first for a clean slate.
 	demo="/tmp/ngdb-demo"
-	rm -rf "$demo"
+	if [[ -e "$demo" ]]; then fSafeRm "$demo" > /dev/null; fi
 	mkdir -p "$demo"/{cfg,empty,databases/team-issues,databases/reading-list,databases/recipes}
 	export NANOGITDB_USER=demo NANOGITDB_HOST=workstation
 
@@ -127,7 +129,7 @@ DDL
 fCleanup() {
 	fKillTerms
 	RPD_HEADLESS_DISPLAY="$display" "$headless" stop >/dev/null 2>&1 || true
-	[[ -n "$demo" && -d "$demo" ]] && rm -rf "$demo"
+	if [[ -n "$demo" && -d "$demo" ]]; then fSafeRm "$demo" > /dev/null || true; fi
 }
 trap fCleanup EXIT
 
@@ -207,3 +209,4 @@ fMain "$@"
 ##	Script history:
 ##		- 20260704: Created.
 ##		- 20260704: Moved to github/utility/; headless helper still in cicd/utility/. Run from cicd under a non-quick build.
+##		- 20261025: Removals go through the shared guard.

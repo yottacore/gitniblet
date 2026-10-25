@@ -23,10 +23,15 @@ work="${1:-/tmp/ngdb-issues-demo}"
 
 export NANOGITDB_USER=demo NANOGITDB_HOST=workstation
 # a self-contained registry under the scratch dir - the demo never pollutes the
-# real one, and `rm -rf "$work"` is a clean reset.
+# real one, and removing "$work" is a clean reset.
 export XDG_CONFIG_HOME="$work/.config"
 
-rm -rf "$work"; mkdir -p "$work"
+# The reset only clears a folder under a tmp folder, so a stray argument cannot
+# wipe anything else.
+# shellcheck source=../../cicd/utility/include/temp-run.bash
+source "$dirPath_Self/../../cicd/utility/include/temp-run.bash"
+if [[ -e "$work" ]]; then fSafeRm "$work" > /dev/null; fi
+mkdir -p "$work"
 cp "$dirPath_Self/issues.shcl" "$dirPath_Self/issues.queries.shcl" "$work/"
 
 cd "$work"

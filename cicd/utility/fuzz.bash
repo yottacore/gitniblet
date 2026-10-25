@@ -28,6 +28,7 @@ while (($#)); do case "$1" in
 esac; done
 
 source "$(dirname "$0")/include/cpu-limit.bash"   ## NGDB_JOBS + GOMAXPROCS (<=half cores; caps fuzz workers)
+source "$(dirname "$0")/include/temp-run.bash"    ## fTempDir_Make + fSafeRm
 cd "$(dirname "$0")/../../source"   ## module root (go.mod)
 
 ## Discover "<import-path> <FuzzName>" pairs. `go test -list` prints the matching
@@ -48,7 +49,8 @@ if ((${#targets[@]} == 0)); then
 	echo "fuzz.bash: no fuzz targets found"; exit 0
 fi
 
-out="/tmp/ngdb-fuzz.$$"
+tmp="$(fTempDir_Make fuzz)"; trap 'fSafeRm "${tmp}" > /dev/null' EXIT
+out="${tmp}/out"
 
 fRunTarget() {   ## $1 = import path, $2 = target name
 	go test -mod=vendor -p "${NGDB_JOBS}" -run '^$' -fuzz="^${2}\$" -fuzztime="${fuzzTime}" "$1" >"${out}" 2>&1
@@ -82,7 +84,6 @@ for t in "${targets[@]}"; do
 		fails=$((fails + 1))
 	fi
 done
-rm -f "${out}"
 
 ((fails == 0)) || { echo "fuzz.bash: ${fails} target(s) crashed"; exit 1; }
 echo "fuzz.bash: all targets clean"
@@ -91,3 +92,4 @@ echo "fuzz.bash: all targets clean"
 ##	Script history:
 ##		- 20260709: Created.
 ##		- 20260804: Rerun a target once when the fuzz budget expires as a failure.
+##		- 20261025: Output goes in the run folder, not a fixed /tmp file.

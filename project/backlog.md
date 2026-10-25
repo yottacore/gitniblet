@@ -325,7 +325,9 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - CICD reset: container cleanup.
 	- ID: 2026102416210002
 	- Type: Task
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: The full-run line, for the container stage's labels and cleanup with packaging and fuzz in the run folder, and for the remote boxes, whose bundle now carries the include the smoke sources.
+	- Needs external testing: `ci.yml` on `cicd1025`, where the macOS job's smoke sources the include under bash 3.2.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-162100
 	- Opened by: JC
@@ -338,6 +340,57 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Then `docker builder prune -f --filter until=168h`. Never `docker rmi -f` or `docker system prune`, and never anything without this project's label.
 		- One line at the end says what was removed and about what it freed, from `docker system df` before and after.
 	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: Containers are named `nano-git-db-<run folder>-pipeline`, labelled `dev.project` and `dev.run`, and run with `--rm` unless `--keep-temp` is given. The image and the cache volume get `dev.run` too, from the run that made them.
+		- At exit, on failure and Ctrl+C too, the run's containers go by label. Then this project's dangling images go, and its image tags older than the one before the current one, but only once the current one has passed. Then `docker builder prune -f --filter until=168h`, and one line from `docker system df` before and after.
+		- The docker client runs in the background with a `wait`, so Ctrl+C reaches the cleanup at once. In the foreground the signal only reached the container's init, and the run inside finished its current step first.
+		- `--keep-temp` keeps the containers, stopping a running one, and says so.
+		- Verified: `cleanup-test.bash` passes, and fails with the folder removal or the background `wait` taken out. Two real quick runs, the second stopped by Ctrl+C 8 seconds after its container started, left no container, image, volume or run folder behind, and the stopped one ended 6 seconds after the signal. The fallback test, the remote skip test, `test.bash`, the wide gofmt, the build and the CLI smoke pass.
+		- Swept: every `docker` call in `cicd/`. The fallback test's stand-ins pass through the new cleanup.
+	- Decisions:
+		- The run's own containers go with `docker rm -f`, since a Ctrl+C can leave one running. Images are never forced.
+		- The builder prune runs whenever docker answered, as the shared rule says, though build cache carries no project label.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/cleanup-test.bash`, dedp9 to dedpd: a passing run, a failing one, Ctrl+C, `--keep-temp`, and no removal without this project's label.
+
+- CICD reset: temp files and safe removal.
+	- ID: 2026102416210006
+	- Type: Task
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: The full-run line, which runs fuzz, the profiler and the remote tests in the run folder.
+	- Needs external testing: The demo check from the round settings, then no `dbus-daemon`, `gvfsd` or at-spi process with the demo's HOME left on `:97`, and no run folder left.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, Temp files and Safe removal.
+		- Each run makes its own folder, `${HOST_TEMP}/nano-git-db-floss/<YYYYmmDD-HHMMSS>_<NNN>/`, writes `run.pid` there, and points `TMPDIR`, `TEMP`, and `TMP` at it. Today the fuzz, profile, smoke, and demo helpers each pick their own spot under `/tmp` or `TMPDIR`, and the demo and seed scripts use fixed `/tmp` paths.
+		- A trap removes the folder at the end, on failure and Ctrl+C too. `--keep-temp` keeps it and prints its path.
+		- Each run also removes this project's own stale run folders, older than 2 days with no live process from their `run.pid`.
+		- Every recursive removal goes through the repo's own copy of the safe removal guard. 9 are unguarded today, in 8 scripts, with the file list in the private notes.
+		- The demo recorder stops everything it starts. On 2026-10-24 it left 2 sets of `dbus-daemon`, `gvfsd`, and at-spi processes running on display `:97`, with HOME in its temp folder.
+		- Check it the way a gate is checked: run the pipeline twice, kill one run partway, and see that nothing new piles up.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: `cicd/utility/include/temp-run.bash` holds the run folder, the stale sweep, and the repo's copy of the safe removal guard, which also runs on macOS and the BSDs. cicd.bash, fuzz, profile, the smoke, the demo recorder and `demo-db.bash`, the remote, skip and fallback tests, `seed.bash` and `screenshots.bash` use it.
+		- Each `cicd.bash` run makes `${HOST_TEMP}/nano-git-db-floss/<stamp>_<NNN>/` with `run.pid`, points `TMPDIR`, `TEMP` and `TMP` at it, and mounts it into the container. A helper makes its folder inside it, or a run folder of its own when run alone.
+		- A trap removes it at the end, on failure and Ctrl+C too, and `--keep-temp` keeps it and prints its path. Run folders older than 2 days with no live `run.pid` process go at the start.
+		- The run log's `tee` ignores Ctrl+C. Without that, the cleanup wrote into a closed pipe and died.
+		- The installers are fetched on their own, so each got its own check: only its own temp folder, never a link.
+		- The demo recorder stops every process still running with its fake HOME, which covers what `dbus-run-session` started.
+		- The remote boxes' work folders moved to `nano-git-db-floss` too, in all 4 places that name them.
+		- Verified: `cleanup-test.bash` dedp4 to dedpb pass. The run-twice check, with one run stopped by Ctrl+C, left nothing new. A `dbus-daemon` outlived a stopped `dbus-run-session`, and the recorder's cleanup stopped it. fuzz, profile, `demo-db.bash`, `seed.bash`, the CLI smoke, the remote skip test and the fallback test ran and left no folder.
+		- Swept: every `rm -r`, `rmtree`, `Remove-Item -Recurse` and `mktemp` outside `vendor/`.
+	- Decisions:
+		- The temp root is `nano-git-db-floss`, as asked, while the docker labels stay `nano-git-db`.
+		- `seed.bash` and `screenshots.bash` keep their fixed `/tmp` paths, since the walkthrough and the screenshots show them, and the folder outlives the run. Their wipe goes through the guard, so a stray argument can't remove anything outside a tmp folder.
+		- `gui-headless.bash` keeps its state at `/tmp/rpd-gui-headless` across its start and stop calls, so it stays.
+		- `walkthrough.md` still tells the presenter to `rm -rf` the two demo folders by hand. It's a user doc, so it was left alone.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/cleanup-test.bash`, dedp4 to dedpb.
 
 - CICD reset: CPU and priority.
 	- ID: 2026102416210003
@@ -481,24 +534,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Version and build: Pre-next-cut
 	- Requirements [Feature]:
 		- FLOSS version: Support `--help`|`--about`|`--donate`, in a similar way as sister project shcl.
-
-- CICD reset: temp files and safe removal.
-	- ID: 2026102416210006
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-162100
-	- Opened by: JC
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per the shared CICD rules, Temp files and Safe removal.
-		- Each run makes its own folder, `${HOST_TEMP}/nano-git-db-floss/<YYYYmmDD-HHMMSS>_<NNN>/`, writes `run.pid` there, and points `TMPDIR`, `TEMP`, and `TMP` at it. Today the fuzz, profile, smoke, and demo helpers each pick their own spot under `/tmp` or `TMPDIR`, and the demo and seed scripts use fixed `/tmp` paths.
-		- A trap removes the folder at the end, on failure and Ctrl+C too. `--keep-temp` keeps it and prints its path.
-		- Each run also removes this project's own stale run folders, older than 2 days with no live process from their `run.pid`.
-		- Every recursive removal goes through the repo's own copy of the safe removal guard. 9 are unguarded today, in 8 scripts, with the file list in the private notes.
-		- The demo recorder stops everything it starts. On 2026-10-24 it left 2 sets of `dbus-daemon`, `gvfsd`, and at-spi processes running on display `:97`, with HOME in its temp folder.
-		- Check it the way a gate is checked: run the pipeline twice, kill one run partway, and see that nothing new piles up.
-	- Estimated effort: Avg
 
 - CICD reset: version line.
 	- ID: 2026102416210007
