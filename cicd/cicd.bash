@@ -51,6 +51,7 @@ if [[ -z "${doQuietly+x}" ]]; then
 	## Build through security run in the pinned image from cicd/container/ unless --no-container.
 	## No docker, or an image that won't build, falls back to this host with one line.
 	declare  -i doContainer=1
+	declare  -i doRemote=1  ## Native tests on the test boxes for the platforms only cross-built here
 	declare  -i inContainer=0; [[ "${NGDB_IN_CONTAINER:-}" == "1" ]] && inContainer=1  ## Set for the run started inside
 	declare -r  projectName="nano-git-db"
 	declare -r  containerImage="nano-git-db-cicd"
@@ -110,7 +111,7 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "Usage: ${meName} [options]"
 	fEcho_Clean "  -q, --quiet         Run unattended (no prompt) and quiet; flows to publish."
 	fEcho_Clean "      --quick         Skip the slow stages: cross-builds, packaging, fuzz,"
-	fEcho_Clean "                      profiler, demo recording, govulncheck + gosec."
+	fEcho_Clean "                      remote tests, profiler, demo recording, govulncheck + gosec."
 	fEcho_Clean "      --no-arm        Build/package amd64 only (skip arm64) to trim a full run."
 	fEcho_Clean "      --no-install    Skip the dogfood install of the built binary."
 	fEcho_Clean "      --no-hooks      Skip the local pre-publish hooks (../private/cicd-hooks)."
@@ -119,6 +120,8 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "      --no-format     Check gofmt only, fail on unformatted Go files rather"
 	fEcho_Clean "                      than rewriting them."
 	fEcho_Clean "      --no-container  Build and test on this host, not in the container."
+	fEcho_Clean "      --no-remote     Skip the tests on the other boxes (Windows, FreeBSD, arm64"
+	fEcho_Clean "                      Linux, Intel macOS). A box that doesn't answer is a SKIP."
 	fEcho_Clean "  -m, --message MSG   Commit message for publish (also --msg; -m MSG or -m=MSG)."
 	fEcho_Clean "                      With -q and no -m, a message is auto-generated."
 	fEcho_Clean "  -h, --help          Show this."
@@ -151,6 +154,7 @@ fMain(){
 		--no-format)               doFormat=0                           ; shift ;;
 		--no-container)            doContainer=0                        ; shift ;;
 		--container)               doContainer=1                        ; shift ;;
+		--no-remote)               doRemote=0                           ; shift ;;
 		--message=*|--msg=*|-m=*)  cliMessage="${1#*=}"                 ; shift ;;
 		-m|--message|--msg)        cliMessage="${2-}"; shift; (($#)) && shift ;;
 		-h|--help)                 fCopyright; fAbout; fSyntax          ; return 0 ;;
@@ -195,7 +199,7 @@ fMain(){
 		fi
 		fEcho_Clean "Test script ..................: ${filePath_CICD_TestExec}"
 		if ((doQuick)); then
-		fEcho_Clean "Quick mode ...................: cross-builds + packaging + fuzz + profiler + demo + govulncheck + gosec skipped"
+		fEcho_Clean "Quick mode ...................: cross-builds + packaging + fuzz + remote tests + profiler + demo + govulncheck + gosec skipped"
 		fi
 		if ((doNoArm)); then
 		fEcho_Clean "No-arm mode ..................: arm64 builds + packages skipped (amd64 only)"
@@ -205,6 +209,7 @@ fMain(){
 		((doDemo))     ||  fEcho_Clean "Demo recording ...............: skipped (--no-demo)"
 		((doFormat))   ||  fEcho_Clean "gofmt ........................: check only (--no-format)"
 		((doContainer))  ||  fEcho_Clean "Container ....................: off, all on this host (--no-container)"
+		((doRemote))     ||  fEcho_Clean "Remote tests .................: skipped (--no-remote)"
 		if ((! doPublish)); then
 		fEcho_Clean "Backup + publish .............: skipped (--no-publish)"
 		else
@@ -253,6 +258,17 @@ fMain(){
 	fi
 	## The rest needs this machine, so the run inside stops here.
 	((! inContainer))  ||  return 0
+
+	## Tests on the other boxes, native and outside the container, since they need
+	## this machine's host lock and ssh. A box that's away is a SKIP, not a failure.
+	local remoteSummary="${dirPath_ArtifactsLint}/remote_${serialDT}.txt"
+	if ((doQuick)) || ((! doRemote)); then
+		fEcho_Section "Remote tests (skipped: $( ((doQuick)) && echo "--quick" || echo "--no-remote"))"
+		remoteSummary=""
+	else
+		fEcho_Section "Remote tests (Windows, FreeBSD, arm64 Linux, Intel macOS)"
+		"${dirPath_Base}/cicd/utility/remote-test.bash" --summary "${remoteSummary}"  ||  fThrowError "Remote tests failed; the output is above."
+	fi
 
 	if ((! doInstall)); then
 		fEcho_Section "Dogfood (skipped: --no-install)"
@@ -341,6 +357,10 @@ fMain(){
 	fi
 
 	## Done
+	if [[ -n "${remoteSummary}" && -s "${remoteSummary}" ]]; then
+		fEcho_Section "Remote tests"
+		cat "${remoteSummary}"
+	fi
 	fEcho_Section "${exeName} CI/CD: done."
 }
 
@@ -806,3 +826,4 @@ fMain  "${@}"
 ##		- 20261024 JC: Added --no-install, --no-hooks, --no-publish, --no-demo and --no-format, so a full run can leave the box and the tracked tree alone.
 ##		- 20261024 JC: Local hooks dir is two levels up, since the repo moved into nano-git-db-floss/repo.
 ##		- 20261025 JC: Build through security run in the pinned container by default; --no-container keeps them here.
+##		- 20261025 JC: Tests on the other boxes (cicd/utility/remote-test.bash) after build and test; --no-remote skips them.

@@ -293,7 +293,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - CICD reset: other hosts and VMs.
 	- ID: 2026102416210001
 	- Type: Task
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: One run of the round's full-run line, which now has the Remote tests stage. It should show a PASS or SKIP per box, and the same in the summary at the end.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-162100
 	- Opened by: JC
@@ -309,6 +310,17 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Each box gets a work folder of this project's own, under its temp root.
 		- Overrides the line in the private round settings that leaves the Intel Mac checks as a by-hand option.
 	- Estimated effort: High
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: New `cicd/utility/remote-test.bash`. It cross-builds the Go test binaries and ngdb per target, then on each box runs them and the CLI smoke in a work folder of its own under the box's temp root, and removes it after. `remote-windows.ps1` is the Windows side, `remote-unix.bash` the rest.
+		- 20261025: `cicd.bash` runs it on the host after build and test, before dogfood. `--no-remote` skips it.
+	- Decisions:
+		- Intel macOS tries b26 first, then vmKt6m. b26 is real hardware, and vmKt6m ignores the ACPI shutdown, so it doesn't go back to off by itself.
+		- Windows runs as `wintest`, which isn't an admin.
+		- `--quick` skips the stage, like the cross-builds.
+		- linux-arm64 runs at most 2 test jobs, since that VM is emulated.
+	- Branch: cicd1025
+	- Test case: All 4 targets passed on their boxes 20261025, and both VMs went back to off. `cicd/utility/remote-skip-test.bash`, IDs dedn7 to dednb, covers the SKIP and FAIL paths without a box.
 
 - CICD reset: container cleanup.
 	- ID: 2026102416210002

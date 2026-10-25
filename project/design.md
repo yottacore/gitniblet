@@ -62,13 +62,23 @@ In spite of being a SQL backend, data is saved one-field at a time - as long as 
 Manually kicked off via `cicd/cicd.bash`. Stages, in order (each fails early and hard on a real problem, exit >0):
 
 - **Build** native size-optimized, then cross-compile (windows-amd64, linux-arm64, windows-arm64; pure Go, no extra toolchains), zip windows into `dist/`.
+
 - **Lint + format**: `gofmt -w` rewrites Go in place (never Bash), then `staticcheck` gates. `go vet` runs in test.bash.
+
 - **Tests**: full regression suite (`go test`), which also runs every fuzz target's seed corpus.
+
 - **Fuzz**: `cicd/utility/fuzz.bash` auto-discovers each `FuzzXxx` and runs it a short budget; a crash fails the run.
+
 - **Security + supply-chain**: `go mod verify`, `govulncheck`, and `gosec` (with a documented exclude list justified for a local-first single-user git-synced tool).
+
+- **Remote tests**: the test binaries and the CLI smoke run natively on the test boxes, for Windows, FreeBSD, arm64 Linux and Intel macOS. Each box is held through the shared host lock for the whole time it is used, and a VM is put back the way it was found. A box that doesn't answer is a `SKIP`, never a failure. `--no-remote` and `--quick` skip the stage.
+
 - **Profiler** (non-gating artifact): samples the CPU-hot tx-log replay path, renders an inferno flamegraph into `cicd/artifacts/profiling/` (GFS-rotated), and prints a hotspot summary (`flame-report.py`). Tooling misses warn and skip.
+
 - **Dogfood**: copy the native release to the local run path.
+
 - **Screenshots**: regenerate the README thumbnails.
+
 - **Publish**: `n8git_backup-and-publish`.
 
 The whole run is tee'd to a rotated `cicd/artifacts/lint/run_<ts>.log` so warnings from any stage can be reviewed after the fact (`lint-report.bash`). `--quick` skips the slow stages (cross-builds, fuzz, profiler, screenshots, govulncheck, gosec); lint + tests still run. Each stage that installs, commits, pushes or rewrites a tracked file has its own off flag: `--no-install` (dogfood), `--no-hooks` (local pre-publish hooks), `--no-publish`, `--no-demo` (rewrites `assets/demo.gif`), and `--no-format`, which checks with `gofmt -l` and fails on unformatted files instead of running `gofmt -w`. Every step is capped to at most half the cores (`cpu-limit.bash`: `GOMAXPROCS` + `-p`). `cicd/artifacts/` is gitignored.
