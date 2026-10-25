@@ -369,6 +369,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-162100
 	- Opened by: JC
+	- Prereq IDs: 2026101303344552, 2026102416210001, 2026102416210006
+		- `--no-container`, `--no-remote` and `--keep-temp` turn off what those 3 add, so they go in first.
 	- Requirements [Feature]:
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
 		- Per the shared CICD rules, the flags in the CICD style guide, and Merge gate.
@@ -404,6 +406,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261019-153057
 	- Opened by: JC
+	- Prereq IDs: 2026101915293586
+		- Each Done item names its test by the new ID, so the IDs come first.
 	- Version and build: Pre-next-cut
 	- Requirements [Feature]:
 		- Make sure all completed features and bug reports on all subproject backlogs have a corresponding regression test in CI. At least, missing a test that could exist and would make sense to exist.
