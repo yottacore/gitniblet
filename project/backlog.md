@@ -637,6 +637,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261019-152935
 	- Opened by: JC
+	- Prereq IDs: 2026102416210007
+		- `--about` shows the same version and copyright lines as `--version`, from `app.VersionLine()` and `app.Copyright`.
 	- Version and build: Pre-next-cut
 	- Requirements [Feature]:
 		- FLOSS version: Support `--help`|`--about`|`--donate`, in a similar way as sister project shcl.
