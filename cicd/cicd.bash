@@ -48,6 +48,14 @@ if [[ -z "${doQuietly+x}" ]]; then
 	declare  -i doNoArm=0  ## --no-arm: build/package amd64 only (arm64 is cheap here, so this is just a run-time trim)
 	## Off switches for the stages that touch the box or the tracked tree, so a full run can stay hands-off
 	declare  -i doInstall=1  doHooks=1  doPublish=1  doDemo=1  doFormat=1
+	## Build through security run in the pinned image from cicd/container/ unless --no-container.
+	## No docker, or an image that won't build, falls back to this host with one line.
+	declare  -i doContainer=1
+	declare  -i inContainer=0; [[ "${NGDB_IN_CONTAINER:-}" == "1" ]] && inContainer=1  ## Set for the run started inside
+	declare -r  projectName="nano-git-db"
+	declare -r  containerImage="nano-git-db-cicd"
+	declare -r  containerVolume="nano-git-db-cicd-cache"
+	declare -r  containerEngine="${NGDB_DOCKER:-docker}"  ## Anything that takes docker's arguments
 	declare  -i doPromptToContinue=1
 	declare -r  thisVersion="1.0.0-beta3"         ## Put you script's semantic version here.
 	declare -r  thisBuild="1mzfd9c"
@@ -110,10 +118,18 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "      --no-demo       Skip the demo recording, which rewrites assets/demo.gif."
 	fEcho_Clean "      --no-format     Check gofmt only, fail on unformatted Go files rather"
 	fEcho_Clean "                      than rewriting them."
+	fEcho_Clean "      --no-container  Build and test on this host, not in the container."
 	fEcho_Clean "  -m, --message MSG   Commit message for publish (also --msg; -m MSG or -m=MSG)."
 	fEcho_Clean "                      With -q and no -m, a message is auto-generated."
 	fEcho_Clean "  -h, --help          Show this."
 	fEcho_Clean "  -v, --version       Show version."
+	fEcho_Clean ""
+	fEcho_Clean "Build, lint, tests, fuzz and the security checks run in an x86_64 Debian image"
+	fEcho_Clean "with Go pinned, built from cicd/container/Dockerfile the first time it's"
+	fEcho_Clean "needed and tagged by that file's hash. The repo is mounted at its own path."
+	fEcho_Clean "Dogfood, profiler, demo, hooks and publish stay on this host. No docker, or an"
+	fEcho_Clean "image that won't build, runs it all here instead. NGDB_DOCKER names another"
+	fEcho_Clean "program that takes docker's arguments."
 	#           X-------------------------------------------------------------------------------X
 	fEcho_Clean "" ;:;}
 
@@ -133,6 +149,8 @@ fMain(){
 		--no-publish)              doPublish=0                          ; shift ;;
 		--no-demo)                 doDemo=0                             ; shift ;;
 		--no-format)               doFormat=0                           ; shift ;;
+		--no-container)            doContainer=0                        ; shift ;;
+		--container)               doContainer=1                        ; shift ;;
 		--message=*|--msg=*|-m=*)  cliMessage="${1#*=}"                 ; shift ;;
 		-m|--message|--msg)        cliMessage="${2-}"; shift; (($#)) && shift ;;
 		-h|--help)                 fCopyright; fAbout; fSyntax          ; return 0 ;;
@@ -145,9 +163,11 @@ fMain(){
 	local commitMessage="${cliMessage}"
 	if [[ -z "${commitMessage}" ]] && ((doQuietly)); then commitMessage="Updated"; fi
 
+	if ((inContainer)); then doContainer=0; fi
+
 	# Validate dependencies
 	fMustBeInPath realpath
-	fMustBeInPath trash
+	((inContainer))  ||  fMustBeInPath trash
 
 	## Resolve paths
 	fResolvePath  dirPath_Base                                 "${dirPath_Base}"                                   ; readonly dirPath_Base
@@ -184,6 +204,7 @@ fMain(){
 		((doHooks))    ||  fEcho_Clean "Local hooks ..................: skipped (--no-hooks)"
 		((doDemo))     ||  fEcho_Clean "Demo recording ...............: skipped (--no-demo)"
 		((doFormat))   ||  fEcho_Clean "gofmt ........................: check only (--no-format)"
+		((doContainer))  ||  fEcho_Clean "Container ....................: off, all on this host (--no-container)"
 		if ((! doPublish)); then
 		fEcho_Clean "Backup + publish .............: skipped (--no-publish)"
 		else
@@ -218,11 +239,116 @@ fMain(){
 	## vet, staticcheck, govulncheck) can be reviewed after the fact - lint-report.bash
 	## reads the newest. Rotate the dir first, then tee. Best-effort: if the log can't
 	## be created the run just goes uncaptured.
+	## Inside the container the outer run already logs all of this.
 	declare dirPath_ArtifactsLint="${dirPath_Base}/cicd/artifacts/lint"
-	if mkdir -p "${dirPath_ArtifactsLint}" 2>/dev/null; then
+	if ((! inContainer))  &&  mkdir -p "${dirPath_ArtifactsLint}" 2>/dev/null; then
 		gfs_rotate "${dirPath_ArtifactsLint}" run log >/dev/null 2>&1 || true
 		exec > >(tee "${dirPath_ArtifactsLint}/run_${serialDT}.log") 2>&1
 	fi
+
+	if ((doContainer))  &&  fContainer_Ready; then
+		fStage_Container
+	else
+		fStages_BuildAndTest
+	fi
+	## The rest needs this machine, so the run inside stops here.
+	((! inContainer))  ||  return 0
+
+	if ((! doInstall)); then
+		fEcho_Section "Dogfood (skipped: --no-install)"
+	else
+		fEcho_Section "Dogfood (install locally)"
+
+		## Linux x86_64
+		for nextPath in "${preferredInstallPaths_Linux_x8664[@]}"; do
+			if [[ -d "${nextPath}" ]]; then
+				fEcho_Clean "copying ${filePath_ExecToTestAndInstall_FinalHome} -> ${nextPath%%/}/"
+				if { ! cp -av --update=older --reflink=auto "${filePath_ExecToTestAndInstall_FinalHome}"  "${nextPath%%/}/"; }  &&  [[ "${nextPath}" != "${HOME}/"* ]]; then
+					sudo cp -av --update=older --reflink=auto "${filePath_ExecToTestAndInstall_FinalHome}"  "${nextPath%%/}/"
+				fi
+				ls  -lA  --color=always  --human-readable  --time-style=+"%Y-%m-%d %H:%M:%S"  "$(which "$(basename "${filePath_ExecToTestAndInstall_FinalHome}")")"
+				fEcho_Clean "Installed (linux x86_64) -> ${nextPath%%/}/"
+				break
+			fi
+		done;:
+	fi
+
+	## Profiler: sample the CPU-hot replay path, render a flamegraph into
+	## cicd/artifacts/profiling, GFS-rotate the old ones, and print the hotspot
+	## summary (flame-report.py, plain mode) into the log. Non-gating artifact -
+	## any tooling miss warns and skips. Slow, so --quick skips it. cicd never
+	## touches the .flame-seen marker; that startup gate is flame-report.py --check.
+	if ((doQuick)); then
+		fEcho_Section "Profiler (skipped: --quick)"
+	elif [[ -x "${dirPath_Base}/cicd/utility/profile.bash" ]]; then
+		fEcho_Section "Profiler (flamegraph + hotspots)"
+		"${dirPath_Base}/cicd/utility/profile.bash"
+	fi
+
+	## Screenshots stage disabled - the animated demo gif at the top of the README
+	## covers this, so the static thumbnails aren't worth restaging every build.
+	## Left here (commented) in case per-shot thumbnails are wanted again later.
+	#if ((doQuick)); then
+	#	fEcho_Section "Screenshots (skipped: --quick)"
+	#elif [[ -x "${dirPath_Base}/utility/screenshots.bash" ]]; then
+	#	fEcho_Section "Screenshots"
+	#	"${dirPath_Base}/utility/screenshots.bash" --no-build
+	#	fEcho_Clean "Screenshots regenerated"
+	#fi
+
+	## Demo recording: mp4 + looping gif of the TUI-then-CLI walkthrough. mp4 + the
+	## full gif land in ../private/demo-video/{video,gif} (GFS-rotated, not
+	## committed); the latest gif is copied to assets/demo.gif for the README.
+	## Slow (headless capture + two encodes), so --quick skips it.
+	if ((doQuick)) || ((! doDemo)); then
+		fEcho_Section "Demo recording (skipped: $( ((doQuick)) && echo "--quick" || echo "--no-demo"))"
+	elif [[ -x "${dirPath_Base}/cicd/utility/demo-video/demo-video.py" ]]; then
+		fEcho_Section "Demo recording"
+		python3 "${dirPath_Base}/cicd/utility/demo-video/demo-video.py" --no-build
+		fEcho_Clean "Demo mp4 + gif regenerated"
+	fi
+
+	## Optional local pre-publish hooks (not committed, kept in ../../private/cicd-hooks). Each
+	## *.bash there runs here before publish so anything a hook regenerates gets
+	## committed in the same run. No-op when the folder is absent. A hook gets the
+	## repo base path as $1; a failing hook warns but does not abort the run.
+	declare hooksDir="${dirPath_Base}/../../private/cicd-hooks"
+	if ((! doHooks)); then
+		fEcho_Section "Local hooks (skipped: --no-hooks)"
+	elif [[ -d "${hooksDir}" ]]; then
+		fEcho_Section "Local hooks"
+		for nextHook in "${hooksDir}"/*.bash; do
+			[[ -f "${nextHook}" ]]  ||  continue
+			fEcho_Clean "running $(basename "${nextHook}")"
+			bash "${nextHook}" "${dirPath_Base}"  ||  fEcho_Clean "hook failed (continuing): $(basename "${nextHook}")"
+		done
+	fi
+
+	## Git automation script (backup, commit, push). Flow the quiet flag and the
+	## resolved commit message through so an unattended run stays hands-off.
+	if ((! doPublish)); then
+		fEcho_Section "Backup + publish (skipped: --no-publish)"
+	else
+		fEcho_Section "Backup + publish"
+		## doPromptToContinue=0: cicd already gated up front (message captured above),
+		## so the publish step keeps its remote/branch/SSH review but skips a second
+		## y/n. Set as a settings variable, not a switch - that script is kept
+		## identical across projects and takes no flag for this.
+		local -a gitArgs=()
+		if ((doQuietly));                then gitArgs+=(--quiet); fi
+		if [[ -n "${commitMessage}" ]];  then gitArgs+=("--message=${commitMessage}"); fi
+		doPromptToContinue=0  "${gitAutomationScript}"  "${gitArgs[@]}"
+	fi
+
+	## Done
+	fEcho_Section "${exeName} CI/CD: done."
+}
+
+
+#••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+## Build, lint, tests, fuzz and security. Runs in the container or, without
+## one, here.
+fStages_BuildAndTest(){
 
 	pushd "${dirPath_Source}" 1>/dev/null
 
@@ -354,94 +480,66 @@ fMain(){
 
 	popd 1>/dev/null
 
-	if ((! doInstall)); then
-		fEcho_Section "Dogfood (skipped: --no-install)"
-	else
-		fEcho_Section "Dogfood (install locally)"
+}
 
-		## Linux x86_64
-		for nextPath in "${preferredInstallPaths_Linux_x8664[@]}"; do
-			if [[ -d "${nextPath}" ]]; then
-				fEcho_Clean "copying ${filePath_ExecToTestAndInstall_FinalHome} -> ${nextPath%%/}/"
-				if { ! cp -av --update=older --reflink=auto "${filePath_ExecToTestAndInstall_FinalHome}"  "${nextPath%%/}/"; }  &&  [[ "${nextPath}" != "${HOME}/"* ]]; then
-					sudo cp -av --update=older --reflink=auto "${filePath_ExecToTestAndInstall_FinalHome}"  "${nextPath%%/}/"
-				fi
-				ls  -lA  --color=always  --human-readable  --time-style=+"%Y-%m-%d %H:%M:%S"  "$(which "$(basename "${filePath_ExecToTestAndInstall_FinalHome}")")"
-				fEcho_Clean "Installed (linux x86_64) -> ${nextPath%%/}/"
-				break
-			fi
-		done;:
+
+#••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+## Sets containerTag, building the image if it isn't there yet. Returns 1 with
+## one line when the run should stay on this host.
+declare containerTag=""
+fContainer_Ready(){
+	local why=""
+	if [[ "$(uname -m)" != "x86_64" ]]; then why="the image is x86_64 only"
+	elif ! command -v "${containerEngine}" &>/dev/null; then why="no ${containerEngine}"
+	elif ! "${containerEngine}" version --format '{{.Server.Version}}' &>/dev/null; then why="${containerEngine} isn't answering"
 	fi
+	if [[ -n "${why}" ]]; then fEcho_Clean "Container: ${why}, so build and test run on this host."; return 1; fi
 
-	## Profiler: sample the CPU-hot replay path, render a flamegraph into
-	## cicd/artifacts/profiling, GFS-rotate the old ones, and print the hotspot
-	## summary (flame-report.py, plain mode) into the log. Non-gating artifact -
-	## any tooling miss warns and skips. Slow, so --quick skips it. cicd never
-	## touches the .flame-seen marker; that startup gate is flame-report.py --check.
-	if ((doQuick)); then
-		fEcho_Section "Profiler (skipped: --quick)"
-	elif [[ -x "${dirPath_Base}/cicd/utility/profile.bash" ]]; then
-		fEcho_Section "Profiler (flamegraph + hotspots)"
-		"${dirPath_Base}/cicd/utility/profile.bash"
+	local -r recipe="${dirPath_Base}/cicd/container/Dockerfile"
+	## Called as an if condition, where set -e is off, so a throw has to exit.
+	[[ -f "${recipe}" ]]  ||  { fThrowError "Missing the container recipe: '${recipe}'."; exit 1; }
+	## A stale pin would build with an older Go than go.mod asks for, and pass.
+	local goPin modPin
+	goPin="$(sed -n 's/^ARG GO_VER=//p' "${recipe}")"
+	modPin="$(sed -n 's/^toolchain go//p' "${dirPath_Source}/go.mod")"
+	[[ -n "${goPin}" && "${goPin}" == "${modPin}" ]]  ||  { fThrowError "GO_VER in cicd/container/Dockerfile is '${goPin}', but source/go.mod pins '${modPin}'. Bump GO_VER and GO_SHA256 to match."; exit 1; }
+
+	## Tagged by the recipe's hash, so an edited recipe can't run on the old image.
+	containerTag="${containerImage}:$(git -C "${dirPath_Base}" hash-object "${recipe}" | cut -c1-12)"
+	if ! "${containerEngine}" image inspect "${containerTag}" &>/dev/null; then
+		fEcho_Section "Container image (building ${containerTag})"
+		if ! nice -n 19 "${containerEngine}" build --label "dev.project=${projectName}" -t "${containerTag}" "$(dirname "${recipe}")"; then
+			fEcho_Clean "Container: ${containerTag} didn't build, so build and test run on this host."; return 1
+		fi
 	fi
-
-	## Screenshots stage disabled - the animated demo gif at the top of the README
-	## covers this, so the static thumbnails aren't worth restaging every build.
-	## Left here (commented) in case per-shot thumbnails are wanted again later.
-	#if ((doQuick)); then
-	#	fEcho_Section "Screenshots (skipped: --quick)"
-	#elif [[ -x "${dirPath_Base}/utility/screenshots.bash" ]]; then
-	#	fEcho_Section "Screenshots"
-	#	"${dirPath_Base}/utility/screenshots.bash" --no-build
-	#	fEcho_Clean "Screenshots regenerated"
-	#fi
-
-	## Demo recording: mp4 + looping gif of the TUI-then-CLI walkthrough. mp4 + the
-	## full gif land in ../private/demo-video/{video,gif} (GFS-rotated, not
-	## committed); the latest gif is copied to assets/demo.gif for the README.
-	## Slow (headless capture + two encodes), so --quick skips it.
-	if ((doQuick)) || ((! doDemo)); then
-		fEcho_Section "Demo recording (skipped: $( ((doQuick)) && echo "--quick" || echo "--no-demo"))"
-	elif [[ -x "${dirPath_Base}/cicd/utility/demo-video/demo-video.py" ]]; then
-		fEcho_Section "Demo recording"
-		python3 "${dirPath_Base}/cicd/utility/demo-video/demo-video.py" --no-build
-		fEcho_Clean "Demo mp4 + gif regenerated"
+	if ! "${containerEngine}" volume inspect "${containerVolume}" &>/dev/null \
+		&&  ! "${containerEngine}" volume create --label "dev.project=${projectName}" "${containerVolume}" >/dev/null; then
+		fEcho_Clean "Container: no cache volume ${containerVolume}, so build and test run on this host."; return 1
 	fi
+	return 0
+}
 
-	## Optional local pre-publish hooks (not committed, kept in ../../private/cicd-hooks). Each
-	## *.bash there runs here before publish so anything a hook regenerates gets
-	## committed in the same run. No-op when the folder is absent. A hook gets the
-	## repo base path as $1; a failing hook warns but does not abort the run.
-	declare hooksDir="${dirPath_Base}/../../private/cicd-hooks"
-	if ((! doHooks)); then
-		fEcho_Section "Local hooks (skipped: --no-hooks)"
-	elif [[ -d "${hooksDir}" ]]; then
-		fEcho_Section "Local hooks"
-		for nextHook in "${hooksDir}"/*.bash; do
-			[[ -f "${nextHook}" ]]  ||  continue
-			fEcho_Clean "running $(basename "${nextHook}")"
-			bash "${nextHook}" "${dirPath_Base}"  ||  fEcho_Clean "hook failed (continuing): $(basename "${nextHook}")"
-		done
-	fi
 
-	## Git automation script (backup, commit, push). Flow the quiet flag and the
-	## resolved commit message through so an unattended run stays hands-off.
-	if ((! doPublish)); then
-		fEcho_Section "Backup + publish (skipped: --no-publish)"
-	else
-		fEcho_Section "Backup + publish"
-		## doPromptToContinue=0: cicd already gated up front (message captured above),
-		## so the publish step keeps its remote/branch/SSH review but skips a second
-		## y/n. Set as a settings variable, not a switch - that script is kept
-		## identical across projects and takes no flag for this.
-		local -a gitArgs=()
-		if ((doQuietly));                then gitArgs+=(--quiet); fi
-		if [[ -n "${commitMessage}" ]];  then gitArgs+=("--message=${commitMessage}"); fi
-		doPromptToContinue=0  "${gitAutomationScript}"  "${gitArgs[@]}"
-	fi
+## The repo at its own path, as the caller's uid, so paths in logs and a
+## worktree's .git file still point at something. Caches live in the volume.
+fStage_Container(){
+	fEcho_Section "Container (build through security, in ${containerTag})"
+	local -a runArgs=(--rm --init
+		--name "${projectName}-${serialDT}-pipeline" --label "dev.project=${projectName}" --label "dev.run=${serialDT}"
+		--cpus "${NGDB_JOBS}" --cpu-shares 256 --user "$(id -u):$(id -g)"
+		-v "${dirPath_Base}:${dirPath_Base}" -v "${containerVolume}:/cache" -e NGDB_IN_CONTAINER=1 -w "${dirPath_Base}")
+	local gitCommon
+	gitCommon="$(git -C "${dirPath_Base}" rev-parse --path-format=absolute --git-common-dir)"
+	[[ "${gitCommon}" == "${dirPath_Base}/"* ]]  ||  runArgs+=(-v "${gitCommon}:${gitCommon}")
 
-	## Done
-	fEcho_Section "${exeName} CI/CD: done."
+	local -a innerArgs=(-q --no-container --no-install --no-hooks --no-publish --no-demo)
+	((! doQuick))   ||  innerArgs+=(--quick)
+	((! doNoArm))   ||  innerArgs+=(--no-arm)
+	((doFormat))    ||  innerArgs+=(--no-format)
+	fEcho_Clean "Runs: cicd.bash ${innerArgs[*]}"
+
+	"${containerEngine}" run "${runArgs[@]}" "${containerTag}" nice -n 19 bash "${dirPath_Base}/cicd/cicd.bash" "${innerArgs[@]}" \
+		||  fThrowError "The run in the container failed; its output is above."
 }
 
 
@@ -707,3 +805,4 @@ fMain  "${@}"
 ##		- 20260804 JC: Publish step skips its second y/n via the doPromptToContinue setting; the --no-prompt switch no longer exists in that script.
 ##		- 20261024 JC: Added --no-install, --no-hooks, --no-publish, --no-demo and --no-format, so a full run can leave the box and the tracked tree alone.
 ##		- 20261024 JC: Local hooks dir is two levels up, since the repo moved into nano-git-db-floss/repo.
+##		- 20261025 JC: Build through security run in the pinned container by default; --no-container keeps them here.

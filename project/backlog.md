@@ -290,23 +290,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Progress log:
 		- 20261024: Held for the uncommitted enterprise edits from 2026-10-19, in `go.mod`, `ci.yml` and `release.yml`, to be committed. Enterprise isn't in floss rounds.
 
-- Build and test in a pinned container.
-	- ID: 2026101303344552
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261013-033445
-	- Opened by: JC
-	- Target OS: Linux
-	- Requirements [Feature]:
-		- `cicd.bash --container` runs the build and test stages in an image built from a pinned recipe in `cicd/container/`. Toolchains come from pinned downloads with checksums.
-		- Toolchains on the build box clash between projects, such as 2 Zig versions on one link. A container keeps this project's pins apart.
-		- Other test boxes stay native, since their OS is what's being tested.
-		- zuid's `--container` stage is the model. gitsby and convert-base-v2 have one too.
-		- 20261024: CICD reset, raised to high. A container is the default, not opt-in. `--no-container` runs on the host on purpose, and a missing docker or an image that won't build falls back to the host with one line, never failing the run. A test whose point is the real OS stays on the host or a test box.
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Overrides the opt-in `--container` flag above.
-
 - CICD reset: other hosts and VMs.
 	- ID: 2026102416210001
 	- Type: Task
@@ -574,6 +557,37 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- `id` and `date_created` show read-only and are never written from a form. That likely means honoring `ui: readonly` first.
 	- Progress log:
 		- 20261024: Lists already honor `visible_list` on system fields. The example DDL's built-in `lookups` and `lookup_values` tables ask for `id` on forms, read-only.
+
+- Build and test in a pinned container.
+	- ID: 2026101303344552
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261013-033445
+	- Opened by: JC
+	- Target OS: Linux
+	- Requirements [Feature]:
+		- `cicd.bash --container` runs the build and test stages in an image built from a pinned recipe in `cicd/container/`. Toolchains come from pinned downloads with checksums.
+		- Toolchains on the build box clash between projects, such as 2 Zig versions on one link. A container keeps this project's pins apart.
+		- Other test boxes stay native, since their OS is what's being tested.
+		- zuid's `--container` stage is the model. gitsby and convert-base-v2 have one too.
+		- 20261024: CICD reset, raised to high. A container is the default, not opt-in. `--no-container` runs on the host on purpose, and a missing docker or an image that won't build falls back to the host with one line, never failing the run. A test whose point is the real OS stays on the host or a test box.
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Overrides the opt-in `--container` flag above.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: Added `cicd/container/Dockerfile`: Debian trixie-slim by digest, Go 1.26.10 from its tarball by sha256, plus git and nsis. `cicd.bash` runs build, cross-compile and packaging, lint, tests, fuzz and security in it by default. Dogfood, profiler, demo, hooks and publish stay on the host.
+		- 20261025: `--no-container` keeps it all on the host. No docker, a docker that doesn't answer, a box that isn't x86_64, or an image that won't build prints one line and runs on the host.
+		- 20261025: The image is tagged by the recipe's git hash. A `GO_VER` that doesn't match the `toolchain` line in `source/go.mod` fails the run.
+		- 20261025: For 2026102416210002, containers are named `nano-git-db-<run stamp>-pipeline` and labelled `dev.project` and `dev.run`, and the image and the `nano-git-db-cicd-cache` volume get `dev.project`. The run stamp is the run log's `YYYYmmDD-HHMMSS`, since `cicd.bash` makes no run folder yet.
+		- Verified: a quick run and a full run (`--no-install --no-hooks --no-publish --no-demo --no-format`) passed in the container, packages and Windows installers included, with the profiler after it on the host. The fallback test passes, and its stale pin case failed until the check exited the run.
+	- Decisions:
+		- `--container` is still taken, and does nothing, since it's the default now.
+		- The profiler stays on the host, since it needs `inferno-flamegraph` from cargo.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/container-fallback-test.bash`, dedmb to dedme: no docker, docker not answering, an image that won't build, and a stale `GO_VER`. The container path itself runs on every `cicd.bash` run.
+	- Closed: 20261025-070309
 
 - govulncheck flags the pinned Go toolchain.
 	- ID: 2026102407051369
