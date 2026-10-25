@@ -81,7 +81,8 @@ fBuildBundle(){
 	mkdir -p "${stage}/cicd/utility/include"
 	cp "${dirPath_Base}/cicd/utility/smoke-cli.bash" "${dirPath_Base}/cicd/utility/remote-unix.bash" "${stage}/cicd/utility/"
 	cp "${dirPath_Base}/cicd/utility/include/temp-run.bash" "${stage}/cicd/utility/include/"
-	tar -C "${dirPath_Base}" --exclude=./source/vendor -cf - ./source ./demos | tar -C "${stage}" -xf -
+	## The ddl and seed tests parse project/example.shcl, from 4 levels up their package folder.
+	tar -C "${dirPath_Base}" --exclude=./source/vendor -cf - ./source ./demos ./project/example.shcl | tar -C "${stage}" -xf -
 	tar -C "${stage}" -czf "${runDir}/${tgt}/bundle.tgz" .
 	[[ -s "${stage}/tests/manifest" ]]  ||  fDie "${tgt}: no test packages found"
 }

@@ -581,7 +581,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - Remote boxes skip the 3 tests that parse `project/example.shcl`.
 	- ID: 2026102509132812
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: The full-run line, for the 3 tests passing on the other 3 boxes, Windows included.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261025-091328
 	- Opened by: JC
@@ -592,6 +593,16 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Expected behavior [Bug]: They run on the boxes, as they do here.
 	- Reproduced [Bug]: 20261025, on b29w and vmFreeBSD, on `cicd1025`.
 	- Possible cause [Bug]: The bundle in `remote-test.bash` tars only `source` and `demos`, and the tests read `../../../../project/example.shcl` from their package folder. The ddl fuzz seed reads it too.
+	- Actual cause [Bug]: As guessed.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: The bundle carries `project/example.shcl` too, at the same path, so the tests find it on every box.
+		- Verified: dedrg fails on the old `remote-test.bash` and passes on the new one, with the rest of `remote-skip-test.bash`. A real run on vmFreeBSD passed d9dzs, dec94 and dec96, with no `SKIP` lines, and the box went back to off. `test.bash`, the wide gofmt, the build and the CLI smoke pass.
+		- Swept: both box runners unpack the one bundle, and no other script ships the source to a box. `example.queries.shcl` is read by no test.
+	- Actual fix [Bug]: `remote-test.bash` adds `project/example.shcl` to the bundle.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/remote-skip-test.bash` dedrg, which checks the bundle a stand-in box is sent.
 
 - A user table that restates a built-in table merges into it, as a system field does.
 	- ID: 2026102409431186
