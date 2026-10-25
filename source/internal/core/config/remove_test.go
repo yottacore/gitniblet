@@ -10,6 +10,7 @@ import (
 )
 
 // Deregister drops the registry record but leaves the tx-log and DDL alone.
+// ID: d9ex5
 func TestDeregisterKeepsFiles(t *testing.T) {
 	isolate(t)
 	ddl := writeDDL(t, t.TempDir())
@@ -41,6 +42,7 @@ func TestDeregisterKeepsFiles(t *testing.T) {
 }
 
 // DeleteFiles removes the tx-log and record dir but never the DDL.
+// ID: d9ex6
 func TestDeleteFilesKeepsDDL(t *testing.T) {
 	isolate(t)
 	ddl := writeDDL(t, t.TempDir())

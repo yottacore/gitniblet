@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// ID: d9e17
 func TestInRepoAndSkip(t *testing.T) {
 	dir := t.TempDir()
 	if InRepo(dir) {
@@ -22,6 +23,7 @@ func TestInRepoAndSkip(t *testing.T) {
 	}
 }
 
+// ID: d9e18
 func TestSyncCommitsLocally(t *testing.T) {
 	dir := t.TempDir()
 	gitInit(t, dir)
@@ -43,6 +45,7 @@ func TestSyncCommitsLocally(t *testing.T) {
 
 // Two clients appending concurrently must converge to the same entry set after
 // syncing through a shared remote (union merge + canonical replay order).
+// ID: d9e19
 func TestTwoClientsConverge(t *testing.T) {
 	base := t.TempDir()
 	remote := filepath.Join(base, "remote.git")
@@ -149,6 +152,7 @@ func equal(a, b []string) bool {
 	return true
 }
 
+// ID: d9hsq
 func TestRepoAccount(t *testing.T) {
 	dir := t.TempDir()
 	if RepoAccount(dir) != "" {

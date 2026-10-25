@@ -15,6 +15,7 @@ import (
 // single physical line (that is the whole reason the format exists), and
 // decodeSym must reverse it - up to the illegal control characters encodeSym
 // scrubs on purpose. Anything that violates either is a real format bug.
+// ID: d9nwm
 func FuzzSymCodec(f *testing.F) {
 	for _, s := range []string{
 		"", "plain", "a,b,c", "line\nbreak\rmore", "tab\there",
@@ -49,6 +50,7 @@ func FuzzSymCodec(f *testing.F) {
 // readLogFile parses whatever bytes a synced git repo hands us (another client's
 // append, a merge artifact, a truncated write); it must return warnings/errors,
 // never panic.
+// ID: d9nwn
 func FuzzReadLogFile(f *testing.F) {
 	hdr := strings.Join(header, ",")
 	for _, s := range []string{

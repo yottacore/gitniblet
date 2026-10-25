@@ -11,6 +11,7 @@ import (
 // The open-source build registers no provider, so scripting is off: --script is
 // rejected and a DDL that defines code: hooks gets a warning rather than silent
 // dead triggers.
+// ID: d9e21
 func TestNoProviderDisablesScripting(t *testing.T) {
 	if Available() {
 		t.Skip("a scripting provider is registered")
@@ -28,6 +29,7 @@ func TestNoProviderDisablesScripting(t *testing.T) {
 }
 
 // CodeSet.Empty distinguishes a DDL with hooks from one without.
+// ID: d9e22
 func TestCodeSetEmpty(t *testing.T) {
 	if !(CodeSet{}).Empty() {
 		t.Fatal("zero CodeSet should be empty")

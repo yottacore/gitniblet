@@ -80,6 +80,7 @@ func newLookupCheckAPI(t *testing.T) (*API, string, *ddl.Schema, map[string]stri
 	return a, logDir, sch, ids
 }
 
+// ID: decar
 func TestLookupWriteCheck(t *testing.T) {
 	a, logDir, _, ids := newLookupCheckAPI(t)
 
@@ -161,6 +162,7 @@ func TestLookupWriteCheck(t *testing.T) {
 
 // The check is write-time only. A value that was fine when logged, or one an
 // older build let in, still applies at replay.
+// ID: decas
 func TestLookupReplayDoesNotCheck(t *testing.T) {
 	a, logDir, sch, _ := newLookupCheckAPI(t)
 	unchecked := New(a.st, a.log)

@@ -104,6 +104,7 @@ func rebuild(t *testing.T, logDir string, sch *ddl.Schema, cipher enc.Cipher) *A
 // A key-armed write puts ciphertext in the log for auto/always fields and
 // cleartext for never fields; a replay with the key restores everything, and a
 // replay without the key leaves encrypted fields empty but keeps clear ones.
+// ID: d9dze
 func TestEncryptWriteReplay(t *testing.T) {
 	a, logDir, sch := encAPI(t, fakeCipher{}, "auto")
 	id, err := a.Create("person", map[string]string{"name": "Ann", "ssn": "123-45-6789", "public_id": "P1"})
@@ -152,6 +153,7 @@ func TestEncryptWriteReplay(t *testing.T) {
 }
 
 // A field marked encryption: always cannot be written without a cipher.
+// ID: d9dzf
 func TestAlwaysRefusesWithoutKey(t *testing.T) {
 	a, _, _ := encAPI(t, nil, "off")
 	if _, err := a.Create("person", map[string]string{"name": "Ann", "ssn": "123"}); err == nil {
@@ -164,6 +166,7 @@ func TestAlwaysRefusesWithoutKey(t *testing.T) {
 }
 
 // pref=off leaves everything (except always fields) cleartext even with a key.
+// ID: d9dzg
 func TestPrefOffStaysClear(t *testing.T) {
 	a, logDir, _ := encAPI(t, fakeCipher{}, "off")
 	if _, err := a.Create("person", map[string]string{"name": "Ann", "ssn": "S", "public_id": "P1"}); err != nil {

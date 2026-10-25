@@ -32,6 +32,110 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 ## Issues
 
+- CICD reset: other hosts and VMs.
+	- ID: 2026102416210001
+	- Type: Task
+	- Status: Waiting on signoff
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Target OS: Windows, macOS, FreeBSD, and Linux on arm64
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, Other hosts and VMs.
+		- The default run tests the builds made for other platforms on the test boxes: Windows on b29w, Intel macOS on vmKt6m or b26, FreeBSD on vmFreeBSD, and Linux arm64 on vmDebARM64. Today they're only cross-built, and only arm64 macOS gets tested, in hosted CI.
+		- Windows testing uses `b29w`, never `b29w-wif`. Nothing here needs vm925w's GPU.
+		- Each box is held through the shared host lock for the whole time it's used, in its `wrap` form, so a crash can't leave it held.
+		- A VM is put back the way it was found, through the VM state helper: resumed or started at the start, and paused or powered off again at the end.
+		- A box that doesn't answer is skipped with a warning and a `SKIP` line, in any mode, and the run goes on. `--no-remote` skips them all.
+		- Each box gets a work folder of this project's own, under its temp root.
+		- Overrides the line in the private round settings that leaves the Intel Mac checks as a by-hand option.
+	- Estimated effort: High
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: New `cicd/utility/remote-test.bash`. It cross-builds the Go test binaries and ngdb per target, then on each box runs them and the CLI smoke in a work folder of its own under the box's temp root, and removes it after. `remote-windows.ps1` is the Windows side, `remote-unix.bash` the rest.
+		- 20261025: `cicd.bash` runs it on the host after build and test, before dogfood. `--no-remote` skips it.
+		- 20261025: Verified: the full run's Remote tests stage passed windows on b29w, freebsd on vmFreeBSD and macos on vmKt6m, and showed SKIP for linux-arm64, since another session held vmDebARM64, in the stage and in the summary at the end. b26 was held too, so macos fell back to vmKt6m. A linux-arm64 run alone then passed on vmDebARM64, which went back to off.
+		- Departs from the requirements: vmKt6m stayed running after the run, with a warning, since it ignores the ACPI shutdown. It was shut down from inside afterwards. That's 2026102510392387.
+	- Decisions:
+		- Intel macOS tries b26 first, then vmKt6m. b26 is real hardware, and vmKt6m ignores the ACPI shutdown, so it doesn't go back to off by itself.
+		- Windows runs as `wintest`, which isn't an admin.
+		- `--quick` skips the stage, like the cross-builds.
+		- linux-arm64 runs at most 2 test jobs, since that VM is emulated.
+	- Branch: cicd1025
+	- Test case: All 4 targets passed on their boxes 20261025, and both VMs went back to off. `cicd/utility/remote-skip-test.bash`, IDs dedn7 to dednb, covers the SKIP and FAIL paths without a box.
+
+- CICD reset: CPU and priority.
+	- ID: 2026102416210003
+	- Type: Task
+	- Status: Waiting on signoff
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Related IDs: 2026102416210005
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, Machine use.
+		- Every step is already capped at half the logical CPUs from one include. What's left is below.
+		- Check the 1-minute load at the start and again before each step, and drop to a quarter when it's over half the CPU count.
+		- Fuzz, `-race`, and the leak checks use a quarter, busy or not.
+		- Every step runs under `nice -n 19` and `ionice -c 3`. A container gets `--cpus` and `--cpu-shares 256`, plus `nice` inside it.
+		- Pass the count to every tool that runs in parallel, goreleaser's `--parallelism` included.
+		- The same rules apply on the test boxes, with each box's own CPU count and load.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: The job count is worked out again before each step from the 1-minute load: half the CPUs, or a quarter when the load is over half the CPU count. Fuzz takes a quarter either way. Each step prints its count and the load.
+		- The run drops itself to nice 19 and the idle I/O class at the start, so every step inherits both. The helper scripts do the same when run alone.
+		- The container gets `--cpus` at half the CPUs, `--cpu-shares 256`, and `nice` inside. The run inside checks the load before each of its steps, and never goes past the container's `--cpus`.
+		- The count now also goes to goreleaser's `--parallelism`, to gosec's `-concurrency`, which went by the core count before, and to `go test -parallel`. The boxes get idle I/O where they have `ionice`, and `-test.parallel`.
+		- design.md's CI/CD pipeline section and `--help` say so.
+		- Verified: `steps-test.bash` dedq2, dedq3 and dedq9 pass, and fail on the old include and `cicd.bash`. `cleanup-test.bash`, `container-fallback-test.bash`, `remote-skip-test.bash`, a short fuzz run, `test.bash`, the wide gofmt, and the CLI smoke pass. A quick run through the container passed, with 8 jobs per step at load 38 to 70 on 32 CPUs.
+		- Swept: every `go build`, `go test`, `go vet` and `go run` tool in `cicd/`, goreleaser, gosec, staticcheck and govulncheck (which follow `GOMAXPROCS`), the container run, and the box side on Unix and Windows.
+		- 20261025: Verified: in the full run each step printed its count and load, 8 of 32 CPUs at load 51 to 62, with the container at `--cpus 16`. Fuzz took 8 inside the container, and goreleaser and gosec passed with that count. The boxes ran 4 test jobs, and linux-arm64 2. Idle I/O on the boxes doesn't show in the log, so it's unverified.
+		- Departs from the requirements: b29w printed `load ?%`, since WMI refuses the `wintest` logon, so it never drops to a quarter when busy. That's 2026102510392398.
+	- Decisions:
+		- The container's `--cpus` is half the CPUs, the most any step gets, rather than the count when it starts. So a step inside can still take half once the load drops.
+		- Nothing in the pipeline runs `-race` or a leak check yet, so fuzz is the only heavy step.
+		- `docker build` runs in the daemon, so `nice` on it reaches only the client. The image is rebuilt only when its recipe changes.
+		- The Windows box keeps its CPU percent as its load, since it has no load average. It already ran at `BelowNormal`.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/steps-test.bash`, dedq2, dedq3 and dedq9.
+
+- CICD reset: step output.
+	- ID: 2026102416210005
+	- Type: Task
+	- Status: Waiting on signoff
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Related IDs: 2026102416210003
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, the step lines in the CICD style guide.
+		- Each step opens under a 79-character rule with `[ <time>: Step N of M; Starting <name> ]`, and closes with the same line saying `PASS` or `FAIL`. The time is local, as `YYYYmmDD-HHMMSS.NN`.
+		- Today a section prints a 74-character rule and a bare title, with no count, time, or result.
+		- A step that's turned off isn't counted, and the first section lists those with the flag or reason for each.
+		- One blank line between sections, and one at the end.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: Every step is planned before the first one runs. The first section gives the count, lists each step that's off with its flag or reason, and says whether build and test run in the container. Each step then opens under a 79-character rule with `[ <time>: Step N of M; Starting <name> ]` in local time, and closes with `PASS` or `FAIL`.
+		- A step that fails, or is stopped with Ctrl+C, closes with `FAIL` from the exit trap.
+		- The run in the container takes the outer run's list, so its steps carry on the same numbers. It gets the host's time zone, since its clock read UTC.
+		- The last section says `done; PASS` with the count, and holds the remote tests' summary.
+		- Verified: `steps-test.bash` dedq4 to dedq8 pass, and dedq4, dedq7 and dedq8 fail on the old `cicd.bash`. Without the `FAIL` line in the exit trap, dedq8 fails. A quick run through the container numbered all 5 steps across it.
+		- Swept: every section title in `cicd.bash`. Only the first and last sections are left. The helper scripts print plain lines inside a step, so their output stays.
+		- 20261025: Verified: the full run listed the 4 steps that were off with their flags, numbered 9 steps across the container and this host, opened and closed each with its time and `PASS`, and ended with `done; PASS, 9 steps` and the remote summary.
+		- Departs from the requirements: the switch from the container's step 7 to this host's step 8 left 2 blank lines in place of 1. That's 2026102510392392.
+	- Decisions:
+		- Building the container image is part of the first section, not a step, since it doesn't change the count. If it fails, the same steps run on this host.
+		- 20261025: `container-fallback-test.bash` matched the old section titles. dedmb to dedme now look for `Starting Build (native debug) ]` in place of `[ Build (native debug) ]`, and `Container: running ` in place of `[ Container (`. What they check is the same.
+		- Ctrl+C while the container runs is expected to leave the step inside without a `FAIL` line, since the container is removed first. Not checked.
+		- The summary shown before the commit message prompt still lists what's skipped, as before.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/steps-test.bash`, dedq4 to dedq8.
+
 - Tests wrote to the real database registry on macOS.
 	- ID: 2026102318473520
 	- Type: Bug
@@ -78,6 +182,44 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- 20261024: The version line's form here is superseded by 2026102416210007.
 	- Test case: `TestVersionLine` in `source/app/app_test.go`, and the date check in `smoke-cli.bash`.
 	- Branch: macci
+
+- CICD reset: temp files and safe removal.
+	- ID: 2026102416210006
+	- Type: Task
+	- Status: Waiting on signoff
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, Temp files and Safe removal.
+		- Each run makes its own folder, `${HOST_TEMP}/nano-git-db-floss/<YYYYmmDD-HHMMSS>_<NNN>/`, writes `run.pid` there, and points `TMPDIR`, `TEMP`, and `TMP` at it. Today the fuzz, profile, smoke, and demo helpers each pick their own spot under `/tmp` or `TMPDIR`, and the demo and seed scripts use fixed `/tmp` paths.
+		- A trap removes the folder at the end, on failure and Ctrl+C too. `--keep-temp` keeps it and prints its path.
+		- Each run also removes this project's own stale run folders, older than 2 days with no live process from their `run.pid`.
+		- Every recursive removal goes through the repo's own copy of the safe removal guard. 9 are unguarded today, in 8 scripts, with the file list in the private notes.
+		- The demo recorder stops everything it starts. On 2026-10-24 it left 2 sets of `dbus-daemon`, `gvfsd`, and at-spi processes running on display `:97`, with HOME in its temp folder.
+		- Check it the way a gate is checked: run the pipeline twice, kill one run partway, and see that nothing new piles up.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: `cicd/utility/include/temp-run.bash` holds the run folder, the stale sweep, and the repo's copy of the safe removal guard, which also runs on macOS and the BSDs. cicd.bash, fuzz, profile, the smoke, the demo recorder and `demo-db.bash`, the remote, skip and fallback tests, `seed.bash` and `screenshots.bash` use it.
+		- Each `cicd.bash` run makes `${HOST_TEMP}/nano-git-db-floss/<stamp>_<NNN>/` with `run.pid`, points `TMPDIR`, `TEMP` and `TMP` at it, and mounts it into the container. A helper makes its folder inside it, or a run folder of its own when run alone.
+		- A trap removes it at the end, on failure and Ctrl+C too, and `--keep-temp` keeps it and prints its path. Run folders older than 2 days with no live `run.pid` process go at the start.
+		- The run log's `tee` ignores Ctrl+C. Without that, the cleanup wrote into a closed pipe and died.
+		- The installers are fetched on their own, so each got its own check: only its own temp folder, never a link.
+		- The demo recorder stops every process still running with its fake HOME, which covers what `dbus-run-session` started.
+		- The remote boxes' work folders moved to `nano-git-db-floss` too, in all 4 places that name them.
+		- Verified: `cleanup-test.bash` dedp4 to dedpb pass. The run-twice check, with one run stopped by Ctrl+C, left nothing new. A `dbus-daemon` outlived a stopped `dbus-run-session`, and the recorder's cleanup stopped it. fuzz, profile, `demo-db.bash`, `seed.bash`, the CLI smoke, the remote skip test and the fallback test ran and left no folder.
+		- Swept: every `rm -r`, `rmtree`, `Remove-Item -Recurse` and `mktemp` outside `vendor/`.
+		- 20261025: Verified: the full run ran fuzz, the profiler and the remote tests, and left no run folder of its own. The demo check recorded with `--no-build`, and afterwards `:97` was gone, no `dbus-daemon`, `gvfsd` or at-spi process outside the desktop's was left, and no run folder. `assets/demo.gif` was restored by copy.
+		- Departs from the requirements: `seed.bash` and `screenshots.bash` keep their fixed `/tmp` paths, per the decisions below.
+	- Decisions:
+		- The temp root is `nano-git-db-floss`, as asked, while the docker labels stay `nano-git-db`.
+		- `seed.bash` and `screenshots.bash` keep their fixed `/tmp` paths, since the walkthrough and the screenshots show them, and the folder outlives the run. Their wipe goes through the guard, so a stray argument can't remove anything outside a tmp folder.
+		- `gui-headless.bash` keeps its state at `/tmp/rpd-gui-headless` across its start and stop calls, so it stays.
+		- `walkthrough.md` still tells the presenter to `rm -rf` the two demo folders by hand. It's a user doc, so it was left alone.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/cleanup-test.bash`, dedp4 to dedpb.
 
 - A `null_ok: no` field with no default makes its table drop every row, silently.
 	- ID: 2026102407331876
@@ -290,77 +432,44 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Progress log:
 		- 20261024: Held for the uncommitted enterprise edits from 2026-10-19, in `go.mod`, `ci.yml` and `release.yml`, to be committed. Enterprise isn't in floss rounds.
 
-- Build and test in a pinned container.
-	- ID: 2026101303344552
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261013-033445
-	- Opened by: JC
-	- Target OS: Linux
-	- Requirements [Feature]:
-		- `cicd.bash --container` runs the build and test stages in an image built from a pinned recipe in `cicd/container/`. Toolchains come from pinned downloads with checksums.
-		- Toolchains on the build box clash between projects, such as 2 Zig versions on one link. A container keeps this project's pins apart.
-		- Other test boxes stay native, since their OS is what's being tested.
-		- zuid's `--container` stage is the model. gitsby and convert-base-v2 have one too.
-		- 20261024: CICD reset, raised to high. A container is the default, not opt-in. `--no-container` runs on the host on purpose, and a missing docker or an image that won't build falls back to the host with one line, never failing the run. A test whose point is the real OS stays on the host or a test box.
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Overrides the opt-in `--container` flag above.
-
-- CICD reset: other hosts and VMs.
-	- ID: 2026102416210001
+- CICD reset: version line.
+	- ID: 2026102416210007
 	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Status: Stalled
+		- Held for the next release cut, for the notes' header.
+	- Needs external testing: `release.yml` at the next release cut, for the notes' first line.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-162100
 	- Opened by: JC
-	- Target OS: Windows, macOS, FreeBSD, and Linux on arm64
+	- Related IDs: 2026102318473518, 2026101915293585
 	- Requirements [Feature]:
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per the shared CICD rules, Other hosts and VMs.
-		- The default run tests the builds made for other platforms on the test boxes: Windows on b29w, Intel macOS on vmKt6m or b26, FreeBSD on vmFreeBSD, and Linux arm64 on vmDebARM64. Today they're only cross-built, and only arm64 macOS gets tested, in hosted CI.
-		- Windows testing uses `b29w`, never `b29w-wif`. Nothing here needs vm925w's GPU.
-		- Each box is held through the shared host lock for the whole time it's used, in its `wrap` form, so a crash can't leave it held.
-		- A VM is put back the way it was found, through the VM state helper: resumed or started at the start, and paused or powered off again at the end.
-		- A box that doesn't answer is skipped with a warning and a `SKIP` line, in any mode, and the run goes on. `--no-remote` skips them all.
-		- Each box gets a work folder of this project's own, under its temp root.
-		- Overrides the line in the private round settings that leaves the Intel Mac checks as a by-hand option.
-	- Estimated effort: High
-
-- CICD reset: container cleanup.
-	- ID: 2026102416210002
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261024-162100
-	- Opened by: JC
-	- Prereq IDs: 2026101303344552
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per the shared CICD rules, the container bullets of Cleanup after a run.
-		- Every container, image, and volume the pipeline makes gets `dev.project` and `dev.run` labels. Containers are named `<project>-<run folder>-<step>`, and run with `--rm` unless `--keep-temp` is given.
-		- At the end of a run, on failure and Ctrl+C too, remove the run's containers by label. Then remove this project's dangling images, and its older tags once a newer one has passed, keeping the current tag and the one before.
-		- Then `docker builder prune -f --filter until=168h`. Never `docker rmi -f` or `docker system prune`, and never anything without this project's label.
-		- One line at the end says what was removed and about what it freed, from `docker system df` before and after.
-	- Estimated effort: Avg
-
-- CICD reset: CPU and priority.
-	- ID: 2026102416210003
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261024-162100
-	- Opened by: JC
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per the shared CICD rules, Machine use.
-		- Every step is already capped at half the logical CPUs from one include. What's left is below.
-		- Check the 1-minute load at the start and again before each step, and drop to a quarter when it's over half the CPU count.
-		- Fuzz, `-race`, and the leak checks use a quarter, busy or not.
-		- Every step runs under `nice -n 19` and `ionice -c 3`. A container gets `--cpus` and `--cpu-shares 256`, plus `nice` inside it.
-		- Pass the count to every tool that runs in parallel, goreleaser's `--parallelism` included.
-		- The same rules apply on the test boxes, with each box's own CPU count and load.
+		- Per the shared CICD rules, the build number in Branches and releases.
+		- The date on non-release builds is already in. What's left is below.
+		- `--version` prints `ngdb v<version> build <build>`, then the copyright line, and `--about` and the release notes show the same.
+		- The build number is the commit's time in minutes since 2000, in lowercase Crockford base 32. It comes from the commit, not the wall clock. Today that spot shows the short commit and a dirty flag.
+		- Release builds from goreleaser stamp the build number too, and leave the date off.
+		- Overrides the `ngdb <version> (<commit>) (<date>)` form in 2026102318473518, and the commit stamp in the private notes, under cicd-branch-model.
 	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: `--version` prints `ngdb v1.0.0-beta.2 build dedrq (2026-10-25)`, then `Copyright © 2025-26 Jim Collier.` A release build leaves the date off.
+		- `app.Build` is gone. Builds stamp `app.CommitTime`, the commit's unix time, and `app.BuildNumber` turns it into the number. `build.bash` takes it from `git log`, goreleaser from `.CommitTimestamp`. A plain `go build` shows no build number.
+		- The release notes start with the same line, through goreleaser's `release.header`. `release.yml` works the number out with `cicd/utility/include/build-number.bash`.
+		- The smoke checks the new form, the copyright line, and that the number is HEAD's. It also checks `install.bash` still reads the installed version. Both installers read only the first line now and drop the `v`, so old binaries still parse.
+		- 20261025: `TestVersionLine` (debg5) changed for the new form. Old: `ngdb 1.0.0-beta.2 (abc1234) (2026-10-24)`. New: `ngdb v1.0.0-beta.2 build decp8 (2026-10-24)`. The date and time zone cases are as they were.
+		- Verified: `TestBuildNumber` (dedrs) and `TestVersionLine` pass, and fail to build on the old `app.go`. The smoke passes, and fails on a binary with no commit time, one with the wrong commit time, the installed b23 build, and the old `install.bash`. The new installer code reads both forms, in bash and pwsh. A goreleaser release run without publish stamped the same number as `build-number.bash`. `test.bash`, the wide gofmt, staticcheck, `remote-skip-test.bash` and goreleaser's check pass.
+		- Not verified: the notes header, since goreleaser renders it only when it publishes.
+		- `--about` isn't in the FLOSS build yet. 2026101915293585 adds it, and can print `app.VersionLine` and `app.Copyright`.
+		- Swept: every `--version` reader in the repo (both installers, the smoke, `cicd.bash`, `remote-unix.bash`, `remote-windows.ps1`), every `app.Build` stamp (`build.bash`, goreleaser), and the docs.
+		- 20261025: Verified: the full run's goreleaser packaging passed, and the smoke passed on all 4 boxes. `ci.yml` run 40212963323 passed the smoke on Linux and arm64 macOS, with `ngdb v1.0.0-beta.2 build deds3 (2026-10-25)`.
+	- Decisions:
+		- The binary works the number out from the stamped commit time, so goreleaser needs no help for it. Only the notes use the bash copy, and the smoke checks the two agree.
+		- The dirty flag is dropped with the short commit, per the requirements.
+		- The notes' header has the version line only, not the copyright line.
+	- Branch: cicd1025
+	- Commit: e37fe11
+	- Test case: `TestBuildNumber` (dedrs) and `TestVersionLine` (debg5) in `source/app/app_test.go`, and the version checks in `smoke-cli.bash`.
 
 - CICD reset: standard flags.
 	- ID: 2026102416210004
@@ -369,6 +478,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-162100
 	- Opened by: JC
+	- Prereq IDs: 2026101303344552, 2026102416210001, 2026102416210006
+		- `--no-container`, `--no-remote` and `--keep-temp` turn off what those 3 add, so they go in first.
 	- Requirements [Feature]:
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
 		- Per the shared CICD rules, the flags in the CICD style guide, and Merge gate.
@@ -381,22 +492,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Once it's in, these flags replace the gate commands and the full-run line in the private round settings.
 	- Estimated effort: Avg
 
-- CICD reset: step output.
-	- ID: 2026102416210005
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261024-162100
-	- Opened by: JC
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per the shared CICD rules, the step lines in the CICD style guide.
-		- Each step opens under a 79-character rule with `[ <time>: Step N of M; Starting <name> ]`, and closes with the same line saying `PASS` or `FAIL`. The time is local, as `YYYYmmDD-HHMMSS.NN`.
-		- Today a section prints a 74-character rule and a bare title, with no count, time, or result.
-		- A step that's turned off isn't counted, and the first section lists those with the flag or reason for each.
-		- One blank line between sections, and one at the end.
-	- Estimated effort: Low
-
 - Regression tests for all completed features and bug reports.
 	- ID: 2026101915305767
 	- Type: Task
@@ -404,6 +499,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261019-153057
 	- Opened by: JC
+	- Prereq IDs: 2026101915293586
+		- Each Done item names its test by the new ID, so the IDs come first.
 	- Version and build: Pre-next-cut
 	- Requirements [Feature]:
 		- Make sure all completed features and bug reports on all subproject backlogs have a corresponding regression test in CI. At least, missing a test that could exist and would make sense to exist.
@@ -413,20 +510,21 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
 	- Related IDs: 2026101915293586
 
-- Give every CI test a unique ID.
-	- ID: 2026101915293586
-	- Type: Task
+- `remote-test.bash` leaves vmKt6m running after it's used.
+	- ID: 2026102510392387
+	- Type: Bug
 	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261019-152935
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-103923
 	- Opened by: JC
-	- Version and build: Pre-next-cut
-	- Requirements [Feature]:
-		- Try to estimate the time the test was created, directly or indirectly.
-		- Test ID format: Take that time, convert it to milliseconds since 2000-01-01 00:00, then base 62 of that number.
-		- 20261024: CICD reset, raised to high. The ID is whole minutes since 2000-01-01 00:00 UTC in lowercase Crockford base 32, such as `decp8` for 2026-10-24 22:00 UTC. A clash takes the next free minute, and an ID never changes once given. The run prints one `PASS`, `FAIL`, or `SKIP` line per regression and fuzz test, with its ID.
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Overrides the base 62 milliseconds format above.
+	- Related IDs: 2026102416210001
+	- Steps to reproduce [Bug]:
+		- Run `cicd/utility/remote-test.bash macos` while b26 is held, with vmKt6m off.
+	- Incorrect behavior [Bug]: vmKt6m stays running. The run waits 300 seconds for it to stop, then warns `vmKt6m may not be back as it was found`.
+	- Expected behavior [Bug]: vmKt6m goes back to off, as the other VMs do.
+	- Reproduced [Bug]: 20261025, in the full run on `cicd1025`.
+	- Possible cause [Bug]: vmKt6m ignores the ACPI shutdown. The machine notes shut it down from inside, with `sudo -n shutdown -h now` as `collierjr`, then run `restore` again.
+	- Estimated effort: Low
 
 - Lookup picker and write-time value check.
 	- ID: 2026102407295340
@@ -445,6 +543,37 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Progress log:
 		- 20261024: Split into 2026102408470107 (write check), 2026102408470113 (lookup picker) and 2026102408470118 (`literal` and `sql` pickers). This item closes with the last of them.
 		- 20261024: All 3 are in. The write check is Done, and the 2 pickers wait on a look by eye.
+
+- A run through the container prints 2 blank lines before the first step on this host.
+	- ID: 2026102510392392
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261025-103923
+	- Opened by: JC
+	- Related IDs: 2026102416210005
+	- Steps to reproduce [Bug]:
+		- Run `cicd/cicd.bash` with the container on and the remote tests on.
+	- Incorrect behavior [Bug]: 2 blank lines sit between `Step 7 of 9; PASS Security + supply-chain` and the rule above step 8.
+	- Expected behavior [Bug]: One blank line between sections.
+	- Reproduced [Bug]: 20261025, in the full run on `cicd1025`.
+	- Estimated effort: Low
+
+- b29w's load is unknown, so its tests never drop to a quarter when busy.
+	- ID: 2026102510392398
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261025-103923
+	- Opened by: JC
+	- Related IDs: 2026102416210003
+	- Steps to reproduce [Bug]:
+		- Run `cicd/utility/remote-test.bash windows`.
+	- Incorrect behavior [Bug]: It prints `load ?%`, since `remote-windows.ps1` reads the load through WMI, which refuses the `wintest` ssh logon.
+	- Expected behavior [Bug]: The box's load is read, and the job count drops to a quarter when it's over half, as on the other boxes.
+	- Reproduced [Bug]: 20261025, in the full run on `cicd1025`.
+	- Possible cause [Bug]: A source that doesn't need WMI, such as `Get-Counter` on the processor time, might work for a non-admin. Not tried.
+	- Estimated effort: Low
 
 - A user table that restates a built-in table merges into it, as a system field does.
 	- ID: 2026102409431186
@@ -479,45 +608,11 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261019-152935
 	- Opened by: JC
+	- Prereq IDs: 2026102416210007
+		- `--about` shows the same version and copyright lines as `--version`, from `app.VersionLine()` and `app.Copyright`.
 	- Version and build: Pre-next-cut
 	- Requirements [Feature]:
 		- FLOSS version: Support `--help`|`--about`|`--donate`, in a similar way as sister project shcl.
-
-- CICD reset: temp files and safe removal.
-	- ID: 2026102416210006
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-162100
-	- Opened by: JC
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per the shared CICD rules, Temp files and Safe removal.
-		- Each run makes its own folder, `${HOST_TEMP}/nano-git-db-floss/<YYYYmmDD-HHMMSS>_<NNN>/`, writes `run.pid` there, and points `TMPDIR`, `TEMP`, and `TMP` at it. Today the fuzz, profile, smoke, and demo helpers each pick their own spot under `/tmp` or `TMPDIR`, and the demo and seed scripts use fixed `/tmp` paths.
-		- A trap removes the folder at the end, on failure and Ctrl+C too. `--keep-temp` keeps it and prints its path.
-		- Each run also removes this project's own stale run folders, older than 2 days with no live process from their `run.pid`.
-		- Every recursive removal goes through the repo's own copy of the safe removal guard. 9 are unguarded today, in 8 scripts, with the file list in the private notes.
-		- The demo recorder stops everything it starts. On 2026-10-24 it left 2 sets of `dbus-daemon`, `gvfsd`, and at-spi processes running on display `:97`, with HOME in its temp folder.
-		- Check it the way a gate is checked: run the pipeline twice, kill one run partway, and see that nothing new piles up.
-	- Estimated effort: Avg
-
-- CICD reset: version line.
-	- ID: 2026102416210007
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-162100
-	- Opened by: JC
-	- Related IDs: 2026102318473518, 2026101915293585
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per the shared CICD rules, the build number in Branches and releases.
-		- The date on non-release builds is already in. What's left is below.
-		- `--version` prints `ngdb v<version> build <build>`, then the copyright line, and `--about` and the release notes show the same.
-		- The build number is the commit's time in minutes since 2000, in lowercase Crockford base 32. It comes from the commit, not the wall clock. Today that spot shows the short commit and a dirty flag.
-		- Release builds from goreleaser stamp the build number too, and leave the date off.
-		- Overrides the `ngdb <version> (<commit>) (<date>)` form in 2026102318473518, and the commit stamp in the private notes, under cicd-branch-model.
-	- Estimated effort: Low
 
 - CICD reset: CICD process gaps.
 	- ID: 2026102416210008
@@ -571,6 +666,102 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Progress log:
 		- 20261024: Lists already honor `visible_list` on system fields. The example DDL's built-in `lookups` and `lookup_values` tables ask for `id` on forms, read-only.
 
+- CICD reset: container cleanup.
+	- ID: 2026102416210002
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Prereq IDs: 2026101303344552
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, the container bullets of Cleanup after a run.
+		- Every container, image, and volume the pipeline makes gets `dev.project` and `dev.run` labels. Containers are named `<project>-<run folder>-<step>`, and run with `--rm` unless `--keep-temp` is given.
+		- At the end of a run, on failure and Ctrl+C too, remove the run's containers by label. Then remove this project's dangling images, and its older tags once a newer one has passed, keeping the current tag and the one before.
+		- Then `docker builder prune -f --filter until=168h`. Never `docker rmi -f` or `docker system prune`, and never anything without this project's label.
+		- One line at the end says what was removed and about what it freed, from `docker system df` before and after.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: Containers are named `nano-git-db-<run folder>-pipeline`, labelled `dev.project` and `dev.run`, and run with `--rm` unless `--keep-temp` is given. The image and the cache volume get `dev.run` too, from the run that made them.
+		- At exit, on failure and Ctrl+C too, the run's containers go by label. Then this project's dangling images go, and its image tags older than the one before the current one, but only once the current one has passed. Then `docker builder prune -f --filter until=168h`, and one line from `docker system df` before and after.
+		- The docker client runs in the background with a `wait`, so Ctrl+C reaches the cleanup at once. In the foreground the signal only reached the container's init, and the run inside finished its current step first.
+		- `--keep-temp` keeps the containers, stopping a running one, and says so.
+		- Verified: `cleanup-test.bash` passes, and fails with the folder removal or the background `wait` taken out. Two real quick runs, the second stopped by Ctrl+C 8 seconds after its container started, left no container, image, volume or run folder behind, and the stopped one ended 6 seconds after the signal. The fallback test, the remote skip test, `test.bash`, the wide gofmt, the build and the CLI smoke pass.
+		- Swept: every `docker` call in `cicd/`. The fallback test's stand-ins pass through the new cleanup.
+		- 20261025: Verified: the full run's container ran as `nano-git-db-20261025-094223_001-pipeline` and left no container behind, only the current image and the cache volume, both labelled. The end line said what was removed. The smoke, which sources the include, passed on vmKt6m under its stock bash 3.2, on the other 3 boxes, and in `ci.yml` run 40212963323 on Linux and arm64 macOS.
+	- Decisions:
+		- The run's own containers go with `docker rm -f`, since a Ctrl+C can leave one running. Images are never forced.
+		- The builder prune runs whenever docker answered, as the shared rule says, though build cache carries no project label.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/cleanup-test.bash`, dedp9 to dedpd: a passing run, a failing one, Ctrl+C, `--keep-temp`, and no removal without this project's label.
+	- Closed: 20261025-104000
+
+- Give every CI test a unique ID.
+	- ID: 2026101915293586
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261019-152935
+	- Opened by: JC
+	- Related IDs: 2026102508574387
+	- Version and build: Pre-next-cut
+	- Requirements [Feature]:
+		- Try to estimate the time the test was created, directly or indirectly.
+		- Test ID format: Take that time, convert it to milliseconds since 2000-01-01 00:00, then base 62 of that number.
+		- 20261024: CICD reset, raised to high. The ID is whole minutes since 2000-01-01 00:00 UTC in lowercase Crockford base 32, such as `decp8` for 2026-10-24 22:00 UTC. A clash takes the next free minute, and an ID never changes once given. The run prints one `PASS`, `FAIL`, or `SKIP` line per regression and fuzz test, with its ID.
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Overrides the base 62 milliseconds format above.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: All 245 Go tests and fuzz targets got an ID from the commit that first added them, as a `// ID: xxxxx` line right above the func. A clash took the next free minute, and the bash tests' dedmb to dedq9 were kept and skipped over.
+		- `cicd/utility/testid`, a small Go module of its own, checks that every Go test has an ID and that no ID is used twice across Go and bash, and names the next free ID for one that's missing. `testid next` gives a free ID.
+		- `test.bash` runs the check, then `go test -json` through `testid report`: one `PASS`, `FAIL` or `SKIP` line per test with its ID, a skip's reason, a failed test's output, and a count at the end. `fuzz.bash` prints `PASS` or `FAIL` per target with its ID. `ci.yml` does the same as `test.bash` in both jobs.
+		- design.md's Tests bullet says so.
+		- Verified: `test.bash` printed 249 `PASS` lines and passed. A missing ID, an ID shared with `steps-test.bash`, a failing test and a skipped one each gave the right line, and the first 3 failed the run. `testid`'s own tests dedqq to dedqt, a short fuzz run, the wide gofmt, the build, the CLI smoke and `steps-test.bash` pass.
+		- Swept: every `go test` in `cicd/` and `.github/`. The remote boxes still print one line per box, which is 2026102508574387.
+		- 20261025: Verified: in the full run's container, the ID check found 251 Go tests and 280 IDs, each unique, `test.bash` printed 251 `PASS` lines with IDs, and fuzz printed 6. `ci.yml` run 40212963323 did the same on Linux and arm64 macOS.
+	- Decisions:
+		- The ID sits in the test file, so it moves with a rename or a move.
+		- The bash tests' IDs are found as the first argument of `fCheck` or `fCase`, or in their own `PASS xxxxx` line.
+		- A package that fails outside any test, such as a build error, prints `FAIL -----` with its output.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/testid`, dedqq to dedqt, plus the check itself on every `test.bash` and CI run.
+	- Closed: 20261025-104000
+
+- Build and test in a pinned container.
+	- ID: 2026101303344552
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261013-033445
+	- Opened by: JC
+	- Target OS: Linux
+	- Requirements [Feature]:
+		- `cicd.bash --container` runs the build and test stages in an image built from a pinned recipe in `cicd/container/`. Toolchains come from pinned downloads with checksums.
+		- Toolchains on the build box clash between projects, such as 2 Zig versions on one link. A container keeps this project's pins apart.
+		- Other test boxes stay native, since their OS is what's being tested.
+		- zuid's `--container` stage is the model. gitsby and convert-base-v2 have one too.
+		- 20261024: CICD reset, raised to high. A container is the default, not opt-in. `--no-container` runs on the host on purpose, and a missing docker or an image that won't build falls back to the host with one line, never failing the run. A test whose point is the real OS stays on the host or a test box.
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Overrides the opt-in `--container` flag above.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: Added `cicd/container/Dockerfile`: Debian trixie-slim by digest, Go 1.26.10 from its tarball by sha256, plus git and nsis. `cicd.bash` runs build, cross-compile and packaging, lint, tests, fuzz and security in it by default. Dogfood, profiler, demo, hooks and publish stay on the host.
+		- 20261025: `--no-container` keeps it all on the host. No docker, a docker that doesn't answer, a box that isn't x86_64, or an image that won't build prints one line and runs on the host.
+		- 20261025: The image is tagged by the recipe's git hash. A `GO_VER` that doesn't match the `toolchain` line in `source/go.mod` fails the run.
+		- 20261025: For 2026102416210002, containers are named `nano-git-db-<run stamp>-pipeline` and labelled `dev.project` and `dev.run`, and the image and the `nano-git-db-cicd-cache` volume get `dev.project`. The run stamp is the run log's `YYYYmmDD-HHMMSS`, since `cicd.bash` makes no run folder yet.
+		- Verified: a quick run and a full run (`--no-install --no-hooks --no-publish --no-demo --no-format`) passed in the container, packages and Windows installers included, with the profiler after it on the host. The fallback test passes, and its stale pin case failed until the check exited the run.
+	- Decisions:
+		- `--container` is still taken, and does nothing, since it's the default now.
+		- The profiler stays on the host, since it needs `inferno-flamegraph` from cargo.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/container-fallback-test.bash`, dedmb to dedme: no docker, docker not answering, an image that won't build, and a stale `GO_VER`. The container path itself runs on every `cicd.bash` run.
+	- Closed: 20261025-070309
+
 - govulncheck flags the pinned Go toolchain.
 	- ID: 2026102407051369
 	- Type: Bug
@@ -613,6 +804,34 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Actual fix [Bug]: The hooks dir is now `../../private/cicd-hooks`, which is the same folder from the main checkout and from a worktree beside it.
 	- Branch: ciflow
 	- Test case: Not applicable, a path in a local-only stage.
+
+- Remote boxes: one line per test with its ID.
+	- ID: 2026102508574387
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-085743
+	- Opened by: JC
+	- Related IDs: 2026101915293586, 2026102416210001, 2026102509132812
+	- Requirements [Feature]:
+		- `remote-test.bash` runs each package's test binary on the boxes and prints one line per box. Print one `PASS`, `FAIL` or `SKIP` line per test with its ID, as `test.bash` does.
+		- The boxes have no Go, so the binaries' `-test.v=test2json` output would go back to this host for `testid report`.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: Each box runs every test binary with `-test.v=test2json`, between a begin line naming the package and an end line with its exit code. `testid remote` on this host turns each one into events through `go tool test2json`, then prints `testid report`'s lines: one `PASS`, `FAIL` or `SKIP` per test with its ID, a failed test's output, and a count per box.
+		- The exit code settles what the output can't. A test still running when its binary died fails, with its output, and so does its package. A box that drops mid-binary fails that package too.
+		- `remote-test.bash` builds testid before holding a box. The per-box summary at the end stays. design.md's Remote tests bullet says so.
+		- Verified: testid's `TestRemote` and `remote-skip-test.bash` pass, and dedr4 fails on the old `remote-test.bash`. A real run on b29w and vmFreeBSD printed 242 `PASS` and 3 `SKIP` lines on each, with IDs, and the smoke passed. vmFreeBSD went back to off. `remote-unix.bash` run here through `testid remote` gave the same lines. `test.bash`, the wide gofmt, the build and the CLI smoke pass.
+		- Swept: both box runners, both `fOnBox` paths, and every script that builds or runs a test binary. `test.bash`, `fuzz.bash` and `ci.yml` already print one line per test, and `profile.bash` runs only a benchmark.
+		- 20261025: Verified: the full run printed one line per test with its ID, 246 `PASS` and the smoke, on vmKt6m under its stock bash 3.2, and the per-box summary at the end. A linux-arm64 run on vmDebARM64 did the same.
+	- Decisions:
+		- The box sends the raw output and this host converts it, as asked, rather than a test2json build going to each box.
+		- The smoke keeps its `PASS smoke-cli` line with no ID, since it's one script, not a Go test.
+		- The 3 skips on every box come from the bundle leaving out `project/example.shcl`. That's 2026102509132812.
+	- Branch: cicd1025
+	- Test case: testid's `TestRemote` (dedr3), and `cicd/utility/remote-skip-test.bash` dedr4.
+	- Closed: 20261025-104000
 
 - Off flags for the cicd.bash stages that install, publish, or rewrite tracked files.
 	- ID: 2026102407051370
@@ -697,6 +916,33 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: round1024
 	- Test case: `TestSeedParse` and `TestSeedParseExample` in `source/internal/core/ddl/seed_test.go`, `TestSeedRowsLogFirst` and `TestSeedRowsExample` in `source/internal/core/schema/seed_test.go`.
 	- Closed: 20261024-075842
+
+- Remote boxes skip the 3 tests that parse `project/example.shcl`.
+	- ID: 2026102509132812
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261025-091328
+	- Opened by: JC
+	- Related IDs: 2026102508574387, 2026102416210001
+	- Steps to reproduce [Bug]:
+		- Run `cicd/utility/remote-test.bash windows` or `freebsd`.
+	- Incorrect behavior [Bug]: `TestParseExampleDDL` (d9dzs), `TestSeedParseExample` (dec94) and `TestSeedRowsExample` (dec96) skip on the box, with "project/example.shcl not found".
+	- Expected behavior [Bug]: They run on the boxes, as they do here.
+	- Reproduced [Bug]: 20261025, on b29w and vmFreeBSD, on `cicd1025`.
+	- Possible cause [Bug]: The bundle in `remote-test.bash` tars only `source` and `demos`, and the tests read `../../../../project/example.shcl` from their package folder. The ddl fuzz seed reads it too.
+	- Actual cause [Bug]: As guessed.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: The bundle carries `project/example.shcl` too, at the same path, so the tests find it on every box.
+		- Verified: dedrg fails on the old `remote-test.bash` and passes on the new one, with the rest of `remote-skip-test.bash`. A real run on vmFreeBSD passed d9dzs, dec94 and dec96, with no `SKIP` lines, and the box went back to off. `test.bash`, the wide gofmt, the build and the CLI smoke pass.
+		- Swept: both box runners unpack the one bundle, and no other script ships the source to a box. `example.queries.shcl` is read by no test.
+		- 20261025: Verified: the full run passed d9dzs, dec94 and dec96 on b29w, vmFreeBSD and vmKt6m, with 246 passed and 0 skipped on each. A linux-arm64 run on vmDebARM64 did the same.
+	- Actual fix [Bug]: `remote-test.bash` adds `project/example.shcl` to the bundle.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/remote-skip-test.bash` dedrg, which checks the bundle a stand-in box is sent.
+	- Closed: 20261025-104000
 
 - The TUI's simulation-screen tests fail under `-race`.
 	- ID: 2026102408252318

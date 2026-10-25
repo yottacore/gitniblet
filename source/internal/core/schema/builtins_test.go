@@ -45,6 +45,7 @@ func hasTable(t *testing.T, st *store.Store, name string) bool {
 	return n > 0
 }
 
+// ID: d9e0c
 func TestBuiltinsParseClean(t *testing.T) {
 	s, err := Builtins()
 	if err != nil {
@@ -72,6 +73,7 @@ func TestBuiltinsParseClean(t *testing.T) {
 	}
 }
 
+// ID: d9e0d
 func TestBootstrapAlwaysOnAndOptIn(t *testing.T) {
 	st := openStore(t)
 	if _, err := Bootstrap(st, nil); err != nil {
@@ -101,6 +103,7 @@ func TestBootstrapAlwaysOnAndOptIn(t *testing.T) {
 	}
 }
 
+// ID: d9e0e
 func TestAuditTrailHasExactlyItsFields(t *testing.T) {
 	st := openStore(t)
 	if _, err := Bootstrap(st, nil); err != nil {
@@ -135,6 +138,7 @@ func TestAuditTrailHasExactlyItsFields(t *testing.T) {
 	}
 }
 
+// ID: d9e0f
 func TestSeedDefaultsIdempotent(t *testing.T) {
 	st := openStore(t)
 	if _, err := Bootstrap(st, nil); err != nil {
@@ -196,6 +200,7 @@ func TestSeedDefaultsIdempotent(t *testing.T) {
 	}
 }
 
+// ID: d9e0g
 func TestBootstrapWarnsOnReservedName(t *testing.T) {
 	st := openStore(t)
 	user, err := ddl.Parse([]byte("tables:\n\ttable: users\n\t\tfields:\n\t\t\tfield: nick\n\t\t\t\ttype: string\n"))

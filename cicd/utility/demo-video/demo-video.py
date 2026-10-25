@@ -36,7 +36,6 @@ import shutil
 import signal
 import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
 
@@ -44,6 +43,7 @@ ME_DIR  = Path(__file__).resolve().parent
 REPO    = ME_DIR.parents[2]                       # cicd/utility/demo-video -> nano-git-db-floss/repo
 PRIVATE = REPO.parent / "private" / "demo-video"  # ../private symlink -> synced tree
 DEMO_DB = ME_DIR / "demo-db.bash"
+TEMP_RUN = REPO / "cicd/utility/include/temp-run.bash"   # run folder + the safe removal guard
 
 BORDER   = 4                                      # black outline around the window
 WM_THEME = "Demo-square"                           # squared Greybird-dark copy (prep_home)
@@ -83,6 +83,24 @@ def out_of(cmd, env=None):
 	return subprocess.run(cmd, check=True, capture_output=True, text=True, env=env).stdout
 
 
+def temp_run(*args):
+	# the bash include, so the guard has one copy
+	return subprocess.run(["bash", "-c", 'source "$1"; shift; "$@"', "temp-run", str(TEMP_RUN), *args],
+		capture_output=True, text=True)
+
+
+def make_work():
+	# inside the cicd run's folder when there is one, else a run folder of its own
+	r = temp_run("fTempDir_Make", "demo")
+	if r.returncode or not r.stdout.strip():
+		sys.exit(f"demo-video: no temp folder: {r.stderr.strip()}")
+	work = Path(r.stdout.strip())
+	pid = work / "run.pid"
+	if pid.exists():
+		pid.write_text(f"{os.getpid()}\n")   # it held the helper shell's pid
+	return work
+
+
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ##	Recorder: display / WM / xterm / capture lifecycle
 
@@ -95,7 +113,7 @@ class Rec:
 		self.num     = self.display.lstrip(":")
 		self.auth    = f"/tmp/rpd-gui-headless/Xauthority-{self.num}"
 		self.bin     = os.environ.get("NGDB_BIN", str(REPO / "bin/ngdb"))
-		self.work    = Path(tempfile.mkdtemp(prefix="ngdb-demo-"))
+		self.work    = make_work()
 		self.home    = self.work / "home"
 		self.cfg     = self.home / ".config"   # hermetic registry base (XDG_CONFIG_HOME)
 		self.keep    = args.keep_work
@@ -145,9 +163,41 @@ class Rec:
 			except subprocess.TimeoutExpired:
 				self.wm.kill()
 			self.wm = None
+		self.reap_strays()
 		gh = str(REPO / "cicd/utility/gui-headless.bash")
 		subprocess.run([gh, "stop"],
 			env=dict(os.environ, RPD_HEADLESS_DISPLAY=self.display), capture_output=True)
+
+	def reap_strays(self):
+		# dbus-run-session's daemon, and the gvfsd and at-spi it starts, outlive
+		# it. All of them carry the fake HOME, which nothing else here has.
+		mark = b"\0HOME=" + str(self.home).encode() + b"\0"
+		def strays():
+			found = []
+			for d in Path("/proc").iterdir():
+				if not d.name.isdigit() or int(d.name) == os.getpid():
+					continue
+				try:
+					if mark in b"\0" + (d / "environ").read_bytes():
+						found.append(int(d.name))
+				except OSError:
+					pass
+			return found
+		for sig, wait in ((signal.SIGTERM, 3.0), (signal.SIGKILL, 1.0)):
+			pids = strays()
+			if not pids:
+				return
+			for pid in pids:
+				try:
+					os.kill(pid, sig)
+				except OSError:
+					pass
+			end = time.monotonic() + wait
+			while time.monotonic() < end and strays():
+				time.sleep(0.1)
+		left = strays()
+		if left:
+			print(f"demo-video: still running with the demo HOME: {left}", file=sys.stderr)
 
 	# --- terminal geometry (self-calibrating) ---------------------------------
 	def _client_wh(self, win):
@@ -303,8 +353,12 @@ class Rec:
 		self.stop_capture()
 		self.kill_app()
 		self.stop_display()
-		if not self.keep and self.work.exists():
-			shutil.rmtree(self.work, ignore_errors=True)
+		if self.keep:
+			print(f"kept {self.work}")
+		elif self.work.exists():
+			r = temp_run("fSafeRm", str(self.work))
+			if r.returncode:
+				print(r.stderr.strip(), file=sys.stderr)
 
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
@@ -671,3 +725,6 @@ if __name__ == "__main__":
 ##		- 20260804: Brisk typing is set by the wpm band now rather than falling
 ##		  out of the spawn subtraction, so the pace keeps proportional jitter.
 ##		  Fixed beats trimmed, holding the ones that exist to be read.
+##		- 20261025: Works in the cicd run folder, or a run folder of its own,
+##		  removed through the shared guard. Stops what the wm's dbus session
+##		  left running.

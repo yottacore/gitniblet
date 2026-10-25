@@ -67,6 +67,13 @@ jobs:
           git config user.email "release@nano-git-db.local"
           git tag -a "v${{ steps.v.outputs.version }}" -m "v${{ steps.v.outputs.version }}"
           git push origin "v${{ steps.v.outputs.version }}"
+      # For the release notes' version line. The binaries work it out themselves.
+      - name: Build number
+        if: steps.v.outputs.skip != '1'
+        run: |
+          source cicd/utility/include/build-number.bash
+          build="$(fBuildNumber)"
+          echo "NGDB_BUILD=${build}" >> "$GITHUB_ENV"
       - name: goreleaser
         if: steps.v.outputs.skip != '1'
         uses: goreleaser/goreleaser-action@v7

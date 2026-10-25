@@ -21,6 +21,9 @@
 
 set -Eeuo pipefail
 
+# shellcheck source=../include/temp-run.bash
+source "$(dirname "${BASH_SOURCE[0]}")/../include/temp-run.bash"   ## fSafeRm
+
 parent="${1:?usage: demo-db.bash <parent-dir> <ngdb-bin>}"
 exe="${2:?usage: demo-db.bash <parent-dir> <ngdb-bin>}"
 [[ -x "$exe" ]] || { echo "demo-db: no binary at '$exe'" >&2; exit 1; }
@@ -29,7 +32,8 @@ exe="$(cd "$(dirname "$exe")" && pwd)/$(basename "$exe")"   # absolutize before 
 export NANOGITDB_USER=demo NANOGITDB_HOST=workstation
 
 dir="$parent/team-issues"
-rm -rf "$dir"; mkdir -p "$dir"
+if [[ -e "$dir" ]]; then fSafeRm "$dir" > /dev/null; fi
+mkdir -p "$dir"
 
 cat > "$dir/issues.shcl" <<'DDL'
 database:
@@ -102,3 +106,4 @@ echo "dir=$dir"
 
 ##	Script history:
 ##		- 20260715: Created; co-located short-path layout for the recorder.
+##		- 20261025: The wipe goes through the shared guard, so it only clears a temp folder.

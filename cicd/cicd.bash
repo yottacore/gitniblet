@@ -48,6 +48,16 @@ if [[ -z "${doQuietly+x}" ]]; then
 	declare  -i doNoArm=0  ## --no-arm: build/package amd64 only (arm64 is cheap here, so this is just a run-time trim)
 	## Off switches for the stages that touch the box or the tracked tree, so a full run can stay hands-off
 	declare  -i doInstall=1  doHooks=1  doPublish=1  doDemo=1  doFormat=1
+	## Build through security run in the pinned image from cicd/container/ unless --no-container.
+	## No docker, or an image that won't build, falls back to this host with one line.
+	declare  -i doContainer=1
+	declare  -i doRemote=1  ## Native tests on the test boxes for the platforms only cross-built here
+	declare  -i doKeepTemp=0  ## --keep-temp: keep the run folder and the run's containers
+	declare  -i inContainer=0; [[ "${NGDB_IN_CONTAINER:-}" == "1" ]] && inContainer=1  ## Set for the run started inside
+	declare -r  projectName="nano-git-db"
+	declare -r  containerImage="nano-git-db-cicd"
+	declare -r  containerVolume="nano-git-db-cicd-cache"
+	declare -r  containerEngine="${NGDB_DOCKER:-docker}"  ## Anything that takes docker's arguments
 	declare  -i doPromptToContinue=1
 	declare -r  thisVersion="1.0.0-beta3"         ## Put you script's semantic version here.
 	declare -r  thisBuild="1mzfd9c"
@@ -102,7 +112,7 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "Usage: ${meName} [options]"
 	fEcho_Clean "  -q, --quiet         Run unattended (no prompt) and quiet; flows to publish."
 	fEcho_Clean "      --quick         Skip the slow stages: cross-builds, packaging, fuzz,"
-	fEcho_Clean "                      profiler, demo recording, govulncheck + gosec."
+	fEcho_Clean "                      remote tests, profiler, demo recording, govulncheck + gosec."
 	fEcho_Clean "      --no-arm        Build/package amd64 only (skip arm64) to trim a full run."
 	fEcho_Clean "      --no-install    Skip the dogfood install of the built binary."
 	fEcho_Clean "      --no-hooks      Skip the local pre-publish hooks (../private/cicd-hooks)."
@@ -110,10 +120,31 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "      --no-demo       Skip the demo recording, which rewrites assets/demo.gif."
 	fEcho_Clean "      --no-format     Check gofmt only, fail on unformatted Go files rather"
 	fEcho_Clean "                      than rewriting them."
+	fEcho_Clean "      --no-container  Build and test on this host, not in the container."
+	fEcho_Clean "      --no-remote     Skip the tests on the other boxes (Windows, FreeBSD, arm64"
+	fEcho_Clean "                      Linux, Intel macOS). A box that doesn't answer is a SKIP."
+	fEcho_Clean "      --keep-temp     Keep the run folder and the run's containers, and print"
+	fEcho_Clean "                      where they are."
 	fEcho_Clean "  -m, --message MSG   Commit message for publish (also --msg; -m MSG or -m=MSG)."
 	fEcho_Clean "                      With -q and no -m, a message is auto-generated."
 	fEcho_Clean "  -h, --help          Show this."
 	fEcho_Clean "  -v, --version       Show version."
+	fEcho_Clean ""
+	fEcho_Clean "Build, lint, tests, fuzz and the security checks run in an x86_64 Debian image"
+	fEcho_Clean "with Go pinned, built from cicd/container/Dockerfile the first time it's"
+	fEcho_Clean "needed and tagged by that file's hash. The repo is mounted at its own path."
+	fEcho_Clean "Dogfood, profiler, demo, hooks and publish stay on this host. No docker, or an"
+	fEcho_Clean "image that won't build, runs it all here instead. NGDB_DOCKER names another"
+	fEcho_Clean "program that takes docker's arguments."
+	fEcho_Clean ""
+	fEcho_Clean "Each run works in \${HOST_TEMP}/nano-git-db-floss/<stamp>_<NNN>/, with TMPDIR"
+	fEcho_Clean "pointed at it, and removes it at the end, on failure and Ctrl+C too. It also"
+	fEcho_Clean "removes run folders older than 2 days whose run.pid is gone. At the end the"
+	fEcho_Clean "run's containers go, then this project's dangling images, its image tags older"
+	fEcho_Clean "than the one before the current, and build cache older than a week."
+	fEcho_Clean ""
+	fEcho_Clean "Every step runs at nice 19 and idle I/O, on half the CPUs, or a quarter for"
+	fEcho_Clean "fuzz or when the 1-minute load is over half of them, checked before each step."
 	#           X-------------------------------------------------------------------------------X
 	fEcho_Clean "" ;:;}
 
@@ -133,6 +164,10 @@ fMain(){
 		--no-publish)              doPublish=0                          ; shift ;;
 		--no-demo)                 doDemo=0                             ; shift ;;
 		--no-format)               doFormat=0                           ; shift ;;
+		--no-container)            doContainer=0                        ; shift ;;
+		--container)               doContainer=1                        ; shift ;;
+		--no-remote)               doRemote=0                           ; shift ;;
+		--keep-temp)               doKeepTemp=1                         ; shift ;;
 		--message=*|--msg=*|-m=*)  cliMessage="${1#*=}"                 ; shift ;;
 		-m|--message|--msg)        cliMessage="${2-}"; shift; (($#)) && shift ;;
 		-h|--help)                 fCopyright; fAbout; fSyntax          ; return 0 ;;
@@ -145,9 +180,11 @@ fMain(){
 	local commitMessage="${cliMessage}"
 	if [[ -z "${commitMessage}" ]] && ((doQuietly)); then commitMessage="Updated"; fi
 
+	if ((inContainer)); then doContainer=0; fi
+
 	# Validate dependencies
 	fMustBeInPath realpath
-	fMustBeInPath trash
+	((inContainer))  ||  fMustBeInPath trash
 
 	## Resolve paths
 	fResolvePath  dirPath_Base                                 "${dirPath_Base}"                                   ; readonly dirPath_Base
@@ -175,7 +212,7 @@ fMain(){
 		fi
 		fEcho_Clean "Test script ..................: ${filePath_CICD_TestExec}"
 		if ((doQuick)); then
-		fEcho_Clean "Quick mode ...................: cross-builds + packaging + fuzz + profiler + demo + govulncheck + gosec skipped"
+		fEcho_Clean "Quick mode ...................: cross-builds + packaging + fuzz + remote tests + profiler + demo + govulncheck + gosec skipped"
 		fi
 		if ((doNoArm)); then
 		fEcho_Clean "No-arm mode ..................: arm64 builds + packages skipped (amd64 only)"
@@ -184,6 +221,9 @@ fMain(){
 		((doHooks))    ||  fEcho_Clean "Local hooks ..................: skipped (--no-hooks)"
 		((doDemo))     ||  fEcho_Clean "Demo recording ...............: skipped (--no-demo)"
 		((doFormat))   ||  fEcho_Clean "gofmt ........................: check only (--no-format)"
+		((doContainer))  ||  fEcho_Clean "Container ....................: off, all on this host (--no-container)"
+		((doRemote))     ||  fEcho_Clean "Remote tests .................: skipped (--no-remote)"
+		((! doKeepTemp)) ||  fEcho_Clean "Temp files ...................: kept (--keep-temp)"
 		if ((! doPublish)); then
 		fEcho_Clean "Backup + publish .............: skipped (--no-publish)"
 		else
@@ -214,15 +254,199 @@ fMain(){
 
 	cd "${dirPath_Base}"
 
+	## The run's own temp folder. The run in the container gets the outer one's,
+	## mounted at the same path, so it makes none of its own.
+	if ((! inContainer)); then
+		fTempRun_Sweep
+		runDir="$(fTempRun_Make)"  ||  fThrowError "Couldn't make a run folder under '${HOST_TEMP}/${tempProject}'."
+		export NGDB_RUN_DIR="${runDir}"
+	else
+		export NGDB_RUN_DIR="${NGDB_RUN_DIR:-${TMPDIR:-/tmp}}"
+	fi
+	runStamp="${NGDB_RUN_DIR##*/}"
+	export TMPDIR="${NGDB_RUN_DIR}" TEMP="${NGDB_RUN_DIR}" TMP="${NGDB_RUN_DIR}"
+
 	## Capture the whole run to a rotated log so warnings from any stage (build,
 	## vet, staticcheck, govulncheck) can be reviewed after the fact - lint-report.bash
 	## reads the newest. Rotate the dir first, then tee. Best-effort: if the log can't
 	## be created the run just goes uncaptured.
+	## Inside the container the outer run already logs all of this.
 	declare dirPath_ArtifactsLint="${dirPath_Base}/cicd/artifacts/lint"
-	if mkdir -p "${dirPath_ArtifactsLint}" 2>/dev/null; then
+	if ((! inContainer))  &&  mkdir -p "${dirPath_ArtifactsLint}" 2>/dev/null; then
 		gfs_rotate "${dirPath_ArtifactsLint}" run log >/dev/null 2>&1 || true
-		exec > >(tee "${dirPath_ArtifactsLint}/run_${serialDT}.log") 2>&1
+		## tee ignores Ctrl+C, or the cleanup at exit writes into a dead pipe and dies.
+		exec > >(trap '' INT TERM; exec tee "${dirPath_ArtifactsLint}/run_${serialDT}.log") 2>&1
 	fi
+
+	## Every step is counted before the first one runs. The run in the container
+	## takes the outer run's list, so its numbers carry on.
+	declare hooksDir="${dirPath_Base}/../../private/cicd-hooks"
+	if ((inContainer)) && [[ -n "${NGDB_STEPS:-}" ]]; then fSteps_Import
+	else fSteps_PlanAll; fi
+
+	local -i useContainer=0
+	if ((! inContainer)); then
+		local containerLine="Container: off (--no-container), so build and test run on this host."
+		if ((doContainer)); then
+			if fContainer_Check; then
+				useContainer=1
+				fInnerArgs
+				containerLine="Container: ${containerTag} for build through security, at --cpus ${NGDB_JOBS_MAX}, as cicd.bash ${innerArgs[*]}"
+			else
+				containerLine="Container: ${containerWhy}, so build and test run on this host."
+			fi
+		fi
+		fSteps_Header "${exeName} CI/CD" "${containerLine}" "CPUs: ${NGDB_CORES}, load ${NGDB_LOAD}. A step gets half, or a quarter for fuzz or when the load is over half."
+	fi
+
+	if ((useContainer))  &&  fContainer_Ready; then
+		fStage_Container
+	else
+		fStages_BuildAndTest
+	fi
+	## The rest needs this machine, so the run inside stops here.
+	((! inContainer))  ||  return 0
+
+	## Tests on the other boxes, native and outside the container, since they need
+	## this machine's host lock and ssh. A box that's away is a SKIP, not a failure.
+	local remoteSummary=""
+	if fStep "Remote tests"; then
+		remoteSummary="${dirPath_ArtifactsLint}/remote_${serialDT}.txt"
+		fEcho_Clean "Windows, FreeBSD, arm64 Linux and Intel macOS"
+		"${dirPath_Base}/cicd/utility/remote-test.bash" $( ((! doKeepTemp)) || echo "--keep-temp") --summary "${remoteSummary}"  ||  fThrowError "Remote tests failed; the output is above."
+		fStep_End
+	fi
+
+	if fStep "Dogfood"; then
+
+		## Linux x86_64
+		for nextPath in "${preferredInstallPaths_Linux_x8664[@]}"; do
+			if [[ -d "${nextPath}" ]]; then
+				fEcho_Clean "copying ${filePath_ExecToTestAndInstall_FinalHome} -> ${nextPath%%/}/"
+				if { ! cp -av --update=older --reflink=auto "${filePath_ExecToTestAndInstall_FinalHome}"  "${nextPath%%/}/"; }  &&  [[ "${nextPath}" != "${HOME}/"* ]]; then
+					sudo cp -av --update=older --reflink=auto "${filePath_ExecToTestAndInstall_FinalHome}"  "${nextPath%%/}/"
+				fi
+				ls  -lA  --color=always  --human-readable  --time-style=+"%Y-%m-%d %H:%M:%S"  "$(which "$(basename "${filePath_ExecToTestAndInstall_FinalHome}")")"
+				fEcho_Clean "Installed (linux x86_64) -> ${nextPath%%/}/"
+				break
+			fi
+		done;:
+		fStep_End
+	fi
+
+	## Profiler: sample the CPU-hot replay path, render a flamegraph into
+	## cicd/artifacts/profiling, GFS-rotate the old ones, and print the hotspot
+	## summary (flame-report.py, plain mode) into the log. Non-gating artifact -
+	## any tooling miss warns and skips. Slow, so --quick skips it. cicd never
+	## touches the .flame-seen marker; that startup gate is flame-report.py --check.
+	if fStep "Profiler"; then
+		fEcho_Clean "Flamegraph and hotspots"
+		"${dirPath_Base}/cicd/utility/profile.bash"
+		fStep_End
+	fi
+
+	## Screenshots stage disabled - the animated demo gif at the top of the README
+	## covers this, so the static thumbnails aren't worth restaging every build.
+	## Left here (commented) in case per-shot thumbnails are wanted again later.
+	#if ((doQuick)); then
+	#	fEcho_Section "Screenshots (skipped: --quick)"
+	#elif [[ -x "${dirPath_Base}/utility/screenshots.bash" ]]; then
+	#	fEcho_Section "Screenshots"
+	#	"${dirPath_Base}/utility/screenshots.bash" --no-build
+	#	fEcho_Clean "Screenshots regenerated"
+	#fi
+
+	## Demo recording: mp4 + looping gif of the TUI-then-CLI walkthrough. mp4 + the
+	## full gif land in ../private/demo-video/{video,gif} (GFS-rotated, not
+	## committed); the latest gif is copied to assets/demo.gif for the README.
+	## Slow (headless capture + two encodes), so --quick skips it.
+	if fStep "Demo recording"; then
+		python3 "${dirPath_Base}/cicd/utility/demo-video/demo-video.py" --no-build
+		fEcho_Clean "Demo mp4 + gif regenerated"
+		fStep_End
+	fi
+
+	## Optional local pre-publish hooks (not committed, kept in ../../private/cicd-hooks). Each
+	## *.bash there runs here before publish so anything a hook regenerates gets
+	## committed in the same run. No-op when the folder is absent. A hook gets the
+	## repo base path as $1; a failing hook warns but does not abort the run.
+	if fStep "Local hooks"; then
+		for nextHook in "${hooksDir}"/*.bash; do
+			[[ -f "${nextHook}" ]]  ||  continue
+			fEcho_Clean "running $(basename "${nextHook}")"
+			bash "${nextHook}" "${dirPath_Base}"  ||  fEcho_Clean "hook failed (continuing): $(basename "${nextHook}")"
+		done
+		fStep_End
+	fi
+
+	## Git automation script (backup, commit, push). Flow the quiet flag and the
+	## resolved commit message through so an unattended run stays hands-off.
+	if fStep "Backup + publish"; then
+		## doPromptToContinue=0: cicd already gated up front (message captured above),
+		## so the publish step keeps its remote/branch/SSH review but skips a second
+		## y/n. Set as a settings variable, not a switch - that script is kept
+		## identical across projects and takes no flag for this.
+		local -a gitArgs=()
+		if ((doQuietly));                then gitArgs+=(--quiet); fi
+		if [[ -n "${commitMessage}" ]];  then gitArgs+=("--message=${commitMessage}"); fi
+		doPromptToContinue=0  "${gitAutomationScript}"  "${gitArgs[@]}"
+		fStep_End
+	fi
+
+	## Done
+	local -a remoteLines=()
+	[[ -z "${remoteSummary}" || ! -s "${remoteSummary}" ]]  ||  mapfile -t remoteLines < "${remoteSummary}"
+	fSteps_Footer "${exeName} CI/CD: done; PASS, ${#stepsOn[@]} steps" "${remoteLines[@]}"
+}
+
+
+## Every step in run order, on or off, with why it's off. The conditions here
+## are the only ones; each step below runs when fStep finds it in this list.
+fSteps_PlanAll(){
+	local why
+	if ((isCompileProject)); then
+		fStep_Plan "Build (native debug)"
+		fStep_Plan "Build (native release)"
+		why="";  ((! doQuick))  ||  why="--quick"
+		fStep_Plan "Cross-compile + package" "${why}"
+	fi
+	fStep_Plan "Lint + format"
+	fStep_Plan "Tests"
+	why="";  ((! doQuick))  ||  why="--quick"
+	fStep_Plan "Fuzz" "${why}"
+	fStep_Plan "Security + supply-chain"
+	## The rest runs on this machine, never in the container.
+	((! inContainer))  ||  return 0
+
+	why="";  ((! doQuick))  ||  why="--quick";  ((doRemote))  ||  why="--no-remote"
+	fStep_Plan "Remote tests" "${why}"
+	why="";  ((doInstall))  ||  why="--no-install"
+	fStep_Plan "Dogfood" "${why}"
+	why="";  [[ -x "${dirPath_Base}/cicd/utility/profile.bash" ]]  ||  why="no cicd/utility/profile.bash";  ((! doQuick))  ||  why="--quick"
+	fStep_Plan "Profiler" "${why}"
+	why="";  [[ -x "${dirPath_Base}/cicd/utility/demo-video/demo-video.py" ]]  ||  why="no demo-video.py";  ((doDemo))  ||  why="--no-demo";  ((! doQuick))  ||  why="--quick"
+	fStep_Plan "Demo recording" "${why}"
+	why="";  [[ -d "${hooksDir}" ]]  ||  why="no ${hooksDir}";  ((doHooks))  ||  why="--no-hooks"
+	fStep_Plan "Local hooks" "${why}"
+	why="";  ((doPublish))  ||  why="--no-publish"
+	fStep_Plan "Backup + publish" "${why}"
+}
+
+## Opens a step that's planned, after checking the load again. Fuzz gets a
+## quarter of the CPUs, busy or not.
+fStep(){
+	fStep_Start "${1}"  ||  return 1
+	local busy=""
+	if [[ "${1}" == "Fuzz" ]]; then fCpuLimit heavy; else fCpuLimit; fi
+	((! NGDB_BUSY))  ||  busy=", busy"
+	fEcho_Clean "Jobs: ${NGDB_JOBS} of ${NGDB_CORES} CPUs, load ${NGDB_LOAD}${busy}"
+}
+
+
+#••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+## Build, lint, tests, fuzz and security. Runs in the container or, without
+## one, here.
+fStages_BuildAndTest(){
 
 	pushd "${dirPath_Source}" 1>/dev/null
 
@@ -231,16 +455,19 @@ fMain(){
 		## Native debug build (symbols kept, unstripped) - drives the smoke check and
 		## is the artifact for manual profiling/debugging. The test, fuzz, and profiler
 		## stages below compile their own debug/bench binaries via `go test`.
-		fEcho_Section "Build (native debug)"
-		"${dirPath_Base}/cicd/build.bash" --debug
-		## Minimal execution test: --version prints one line and exits, never opening the
-		## TUI. Running the app for real stays a separate manual step before the merge.
-		fEcho_Clean "version check (debug):"
-		"${dirPath_Base}/bin/ngdb-debug" --version
+		if fStep "Build (native debug)"; then
+			"${dirPath_Base}/cicd/build.bash" --debug
+			## Minimal execution test: --version prints two lines and exits, never opening the
+			## TUI. Running the app for real stays a separate manual step before the merge.
+			fEcho_Clean "version check (debug):"
+			"${dirPath_Base}/bin/ngdb-debug" --version
+			fStep_End
+		fi
 
 		## Native release build (size-optimized, stripped) - what gets dogfooded and
 		## screenshotted; goreleaser rebuilds the same optimized flags per-target below.
-		fEcho_Section "Build (native release, size-optimized)"
+		fStep "Build (native release)"  ||  fThrowError "The release build isn't planned."
+		fEcho_Clean "Size-optimized"
 		"${dirPath_Base}/cicd/build.bash"
 		fEcho_Clean "version check (release):"
 		"${filePath_ExecToTestAndInstall_BuildLocation}" --version
@@ -260,6 +487,7 @@ fMain(){
 		if [[ -n "${badgeVersion}" && "${badgeVersion}" != "${srcVersion}" ]]; then
 			fEcho_Clean "WARNING: README version badge ${badgeVersion} != app.Version ${srcVersion}."
 		fi
+		fStep_End
 
 		## Cross-compile + package via goreleaser (the same .goreleaser.yaml the release
 		## uses): binaries for linux/darwin/windows/freebsd (amd64+arm64), .deb/.rpm for
@@ -268,10 +496,8 @@ fMain(){
 		## installer(s) via NSIS. Skipped under --quick; --no-arm filters the goarch line
 		## to amd64 only. Deferred (need the target OS's own host): macOS .dmg, Windows
 		## .msi, FreeBSD .pkg - those ship as archives for now.
-		if ((doQuick)); then
-			fEcho_Section "Cross-compile + package (skipped: --quick)"
-		else
-			fEcho_Section "Cross-compile + package (goreleaser: binaries, .deb/.rpm, archives, checksums)"
+		if fStep "Cross-compile + package"; then
+			fEcho_Clean "goreleaser: binaries, .deb/.rpm, archives, checksums"
 			local grConfig=".goreleaser.yaml"
 			if ((doNoArm)); then
 				grConfig="${dirPath_Base}/cicd/artifacts/goreleaser-noarm.yaml"
@@ -279,10 +505,11 @@ fMain(){
 				sed 's/\[amd64, arm64\]/[amd64]/' "${dirPath_Base}/.goreleaser.yaml" > "${grConfig}"
 				fEcho_Clean "arm64 skipped (--no-arm): amd64-only matrix"
 			fi
-			( cd "${dirPath_Base}"  &&  GOFLAGS=  go run "${NGDB_GORELEASER}" release --snapshot --clean --config "${grConfig}" )
+			( cd "${dirPath_Base}"  &&  GOFLAGS=  go run "${NGDB_GORELEASER}" release --snapshot --clean --parallelism "${NGDB_JOBS}" --config "${grConfig}" )
 			fEcho_Clean "Packaged into ${dirPath_Base}/dist/ (binaries, .deb/.rpm, archives, checksums)"
 			## Windows single-file .exe installer(s) from the just-built binaries (NSIS).
 			( cd "${dirPath_Base}"  &&  "${dirPath_Base}/cicd/utility/windows-installer.bash" "${srcVersion:-0.0.0}" )
+			fStep_End
 		fi
 
 	fi
@@ -291,7 +518,7 @@ fMain(){
 	## Bash is never auto-formatted). staticcheck is the deeper linter and resolves
 	## its own module, so it runs outside vendor mode. go vet lives in test.bash.
 	## Under --quick, staticcheck's network fetch is skipped (gofmt still runs).
-	fEcho_Section "Lint + format"
+	fStep "Lint + format"  ||  fThrowError "Lint isn't planned."
 	if ((doFormat)); then
 		( cd "${dirPath_Source}"  &&  gofmt -w cmd internal )
 		fEcho_Clean "gofmt: formatted in place"
@@ -307,21 +534,21 @@ fMain(){
 		( cd "${dirPath_Source}"  &&  GOFLAGS=  go run "${NGDB_STATICCHECK}" ./... )
 		fEcho_Clean "staticcheck: clean"
 	fi
+	fStep_End
 
 	## Test
-	fEcho_Section "Tests"
+	fStep "Tests"  ||  fThrowError "Tests aren't planned."
 	"${filePath_CICD_TestExec}"
 	fEcho_Clean "Tests passed"
+	fStep_End
 
 	## Fuzz the parsers/decoders with mutated input. The seed corpus already runs
 	## inside test.bash (every FuzzXxx executes its seeds as a normal test); this is
 	## the mutation budget, which is the slow part, so --quick skips it. A crash
 	## fails the run and the minimized input lands under the package's testdata/.
-	if ((doQuick)); then
-		fEcho_Section "Fuzz (skipped: --quick)"
-	else
-		fEcho_Section "Fuzz"
+	if fStep "Fuzz"; then
 		"${dirPath_Base}/cicd/utility/fuzz.bash" --time 10s
+		fStep_End
 	fi
 
 	## Security + supply-chain. go mod verify is quick and offline; govulncheck and
@@ -340,113 +567,167 @@ fMain(){
 	##   G203            template.HTML/CSS - only wraps dev-computed layout CSS, never user input
 	##   G124            cookie Secure - set under HTTPS; local mode is loopback-only HTTP
 	##   G101            false positive on a filename constant
-	fEcho_Section "Security + supply-chain (go mod verify$( ((doQuick)) || echo " + govulncheck + gosec"))"
+	fStep "Security + supply-chain"  ||  fThrowError "Security isn't planned."
+	fEcho_Clean "go mod verify$( ((doQuick)) || echo ", govulncheck and gosec")"
 	( cd "${dirPath_Source}"  &&  go mod verify )
 	if ((doQuick)); then
 		fEcho_Clean "Module verified (govulncheck + gosec skipped: --quick)"
 	else
 		( cd "${dirPath_Source}"  &&  GOFLAGS=  go run "${NGDB_GOVULNCHECK}" ./... )
 		fEcho_Clean "No known vulnerabilities (govulncheck)"
-		( cd "${dirPath_Source}"  &&  GOFLAGS=  go run "${NGDB_GOSEC}" \
+		( cd "${dirPath_Source}"  &&  GOFLAGS=  go run "${NGDB_GOSEC}" -concurrency "${NGDB_JOBS}" \
 			-exclude=G101,G104,G124,G202,G203,G204,G301,G302,G304,G306,G703 -quiet ./... )
 		fEcho_Clean "No security findings (gosec)"
 	fi
+	fStep_End
 
 	popd 1>/dev/null
 
-	if ((! doInstall)); then
-		fEcho_Section "Dogfood (skipped: --no-install)"
-	else
-		fEcho_Section "Dogfood (install locally)"
+}
 
-		## Linux x86_64
-		for nextPath in "${preferredInstallPaths_Linux_x8664[@]}"; do
-			if [[ -d "${nextPath}" ]]; then
-				fEcho_Clean "copying ${filePath_ExecToTestAndInstall_FinalHome} -> ${nextPath%%/}/"
-				if { ! cp -av --update=older --reflink=auto "${filePath_ExecToTestAndInstall_FinalHome}"  "${nextPath%%/}/"; }  &&  [[ "${nextPath}" != "${HOME}/"* ]]; then
-					sudo cp -av --update=older --reflink=auto "${filePath_ExecToTestAndInstall_FinalHome}"  "${nextPath%%/}/"
-				fi
-				ls  -lA  --color=always  --human-readable  --time-style=+"%Y-%m-%d %H:%M:%S"  "$(which "$(basename "${filePath_ExecToTestAndInstall_FinalHome}")")"
-				fEcho_Clean "Installed (linux x86_64) -> ${nextPath%%/}/"
-				break
-			fi
-		done;:
+
+#••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+## Sets containerTag, or containerWhy when the run should stay on this host.
+## Prints nothing, so the first section can say which it is.
+declare containerTag="" containerWhy=""
+declare -a innerArgs=()
+declare runDir="" runStamp=""
+declare -i dockerUsed=0  imagePassed=0  ## For the cleanup at exit
+fContainer_Check(){
+	if [[ "$(uname -m)" != "x86_64" ]]; then containerWhy="the image is x86_64 only"
+	elif ! command -v "${containerEngine}" &>/dev/null; then containerWhy="no ${containerEngine}"
+	elif ! "${containerEngine}" version --format '{{.Server.Version}}' &>/dev/null; then containerWhy="${containerEngine} isn't answering"
+	fi
+	[[ -z "${containerWhy}" ]]  ||  return 1
+	dockerUsed=1
+
+	local -r recipe="${dirPath_Base}/cicd/container/Dockerfile"
+	## Called as an if condition, where set -e is off, so a throw has to exit.
+	[[ -f "${recipe}" ]]  ||  { fThrowError "Missing the container recipe: '${recipe}'."; exit 1; }
+	## A stale pin would build with an older Go than go.mod asks for, and pass.
+	local goPin modPin
+	goPin="$(sed -n 's/^ARG GO_VER=//p' "${recipe}")"
+	modPin="$(sed -n 's/^toolchain go//p' "${dirPath_Source}/go.mod")"
+	[[ -n "${goPin}" && "${goPin}" == "${modPin}" ]]  ||  { fThrowError "GO_VER in cicd/container/Dockerfile is '${goPin}', but source/go.mod pins '${modPin}'. Bump GO_VER and GO_SHA256 to match."; exit 1; }
+
+	## Tagged by the recipe's hash, so an edited recipe can't run on the old image.
+	containerTag="${containerImage}:$(git -C "${dirPath_Base}" hash-object "${recipe}" | cut -c1-12)"
+	return 0
+}
+
+## Builds the image if it isn't there yet, and makes the cache volume. Returns
+## 1 with one line when the run should stay on this host after all.
+fContainer_Ready(){
+	if ! "${containerEngine}" image inspect "${containerTag}" &>/dev/null; then
+		fEcho_Clean "Container image: building ${containerTag}"
+		## nice reaches only the client; the build itself runs in the daemon.
+		if ! nice -n 19 "${containerEngine}" build --label "dev.project=${projectName}" --label "dev.run=${runStamp}" -t "${containerTag}" "${dirPath_Base}/cicd/container"; then
+			fEcho_Clean "Container: ${containerTag} didn't build, so build and test run on this host."; return 1
+		fi
+	fi
+	if ! "${containerEngine}" volume inspect "${containerVolume}" &>/dev/null \
+		&&  ! "${containerEngine}" volume create --label "dev.project=${projectName}" --label "dev.run=${runStamp}" "${containerVolume}" >/dev/null; then
+		fEcho_Clean "Container: no cache volume ${containerVolume}, so build and test run on this host."; return 1
+	fi
+	return 0
+}
+
+fInnerArgs(){
+	innerArgs=(-q --no-container --no-install --no-hooks --no-publish --no-demo)
+	((! doQuick))   ||  innerArgs+=(--quick)
+	((! doNoArm))   ||  innerArgs+=(--no-arm)
+	((doFormat))    ||  innerArgs+=(--no-format)
+	return 0
+}
+
+
+## The repo at its own path, as the caller's uid, so paths in logs and a
+## worktree's .git file still point at something. Caches live in the volume.
+## The run inside numbers its steps from this run's list, checks the load
+## before each one, and never takes more than the container's --cpus.
+fStage_Container(){
+	fCpuLimit
+	fSteps_Export
+	local -a runArgs=(--init
+		--name "${projectName}-${runStamp}-pipeline" --label "dev.project=${projectName}" --label "dev.run=${runStamp}"
+		--cpus "${NGDB_JOBS_MAX}" --cpu-shares 256 --user "$(id -u):$(id -g)"
+		-v "${dirPath_Base}:${dirPath_Base}" -v "${containerVolume}:/cache" -w "${dirPath_Base}"
+		-v "${runDir}:${runDir}" -e NGDB_RUN_DIR -e HOST_TEMP -e TMPDIR -e TEMP -e TMP -e NGDB_IN_CONTAINER=1
+		-e NGDB_STEPS -e "NGDB_JOBS_CAP=${NGDB_JOBS_MAX}")
+	((doKeepTemp))  ||  runArgs+=(--rm)
+	## The host's time zone, for the step lines' local time.
+	[[ ! -f /etc/localtime ]]  ||  runArgs+=(-v /etc/localtime:/etc/localtime:ro)
+	[[ -z "${TZ:-}" ]]  ||  runArgs+=(-e TZ)
+	local gitCommon
+	gitCommon="$(git -C "${dirPath_Base}" rev-parse --path-format=absolute --git-common-dir)"
+	[[ "${gitCommon}" == "${dirPath_Base}/"* ]]  ||  runArgs+=(-v "${gitCommon}:${gitCommon}")
+
+	## In the background, since Ctrl+C would only reach the container's init, and
+	## the run inside would finish its current step first. A wait returns at once,
+	## and the cleanup at exit removes the container.
+	fEcho_Clean "Container: running ${projectName}-${runStamp}-pipeline"
+	"${containerEngine}" run "${runArgs[@]}" "${containerTag}" nice -n 19 bash "${dirPath_Base}/cicd/cicd.bash" "${innerArgs[@]}" &
+	wait "$!"  ||  fThrowError "The run in the container failed; its output is above."
+	imagePassed=1
+}
+
+
+## Only what carries this project's label, and never rmi -f, so an image a
+## container still uses stays. The run's containers go first, since they hold
+## the run folder's mount.
+fContainer_Cleanup(){
+	((dockerUsed))  ||  return 0
+	local -a ids=() removed=() oldTags=()
+	local before after tag
+	before="$(fDocker_Bytes)"
+
+	mapfile -t ids < <("${containerEngine}" ps -aq --filter "label=dev.project=${projectName}" --filter "label=dev.run=${runStamp}" 2> /dev/null)
+	if ((${#ids[@]})); then
+		if ((doKeepTemp)); then
+			"${containerEngine}" stop "${ids[@]}" &> /dev/null  ||  true
+			fEcho_Clean "Kept container ${projectName}-${runStamp}-pipeline (--keep-temp)."
+		else
+			"${containerEngine}" rm -f "${ids[@]}" &> /dev/null  &&  removed+=("${#ids[@]} container(s)")
+		fi
 	fi
 
-	## Profiler: sample the CPU-hot replay path, render a flamegraph into
-	## cicd/artifacts/profiling, GFS-rotate the old ones, and print the hotspot
-	## summary (flame-report.py, plain mode) into the log. Non-gating artifact -
-	## any tooling miss warns and skips. Slow, so --quick skips it. cicd never
-	## touches the .flame-seen marker; that startup gate is flame-report.py --check.
-	if ((doQuick)); then
-		fEcho_Section "Profiler (skipped: --quick)"
-	elif [[ -x "${dirPath_Base}/cicd/utility/profile.bash" ]]; then
-		fEcho_Section "Profiler (flamegraph + hotspots)"
-		"${dirPath_Base}/cicd/utility/profile.bash"
+	mapfile -t ids < <("${containerEngine}" image ls -q --filter "label=dev.project=${projectName}" --filter dangling=true 2> /dev/null)
+	if ((${#ids[@]})) && "${containerEngine}" rmi "${ids[@]}" &> /dev/null; then removed+=("${#ids[@]} dangling image(s)"); fi
+
+	## Newest first. Keep the tag that just passed and the one before it.
+	if ((imagePassed)) && [[ -n "${containerTag}" ]]; then
+		mapfile -t oldTags < <("${containerEngine}" image ls "${containerImage}" --filter "label=dev.project=${projectName}" \
+			--format '{{.Repository}}:{{.Tag}}' 2> /dev/null | grep -vxF -e "${containerTag}" -e "${containerImage}:<none>" | tail -n +2)
+		for tag in "${oldTags[@]}"; do "${containerEngine}" rmi "${tag}" &> /dev/null  &&  removed+=("${tag}"); done
 	fi
 
-	## Screenshots stage disabled - the animated demo gif at the top of the README
-	## covers this, so the static thumbnails aren't worth restaging every build.
-	## Left here (commented) in case per-shot thumbnails are wanted again later.
-	#if ((doQuick)); then
-	#	fEcho_Section "Screenshots (skipped: --quick)"
-	#elif [[ -x "${dirPath_Base}/utility/screenshots.bash" ]]; then
-	#	fEcho_Section "Screenshots"
-	#	"${dirPath_Base}/utility/screenshots.bash" --no-build
-	#	fEcho_Clean "Screenshots regenerated"
-	#fi
+	"${containerEngine}" builder prune -f --filter until=168h &> /dev/null  ||  true
 
-	## Demo recording: mp4 + looping gif of the TUI-then-CLI walkthrough. mp4 + the
-	## full gif land in ../private/demo-video/{video,gif} (GFS-rotated, not
-	## committed); the latest gif is copied to assets/demo.gif for the README.
-	## Slow (headless capture + two encodes), so --quick skips it.
-	if ((doQuick)) || ((! doDemo)); then
-		fEcho_Section "Demo recording (skipped: $( ((doQuick)) && echo "--quick" || echo "--no-demo"))"
-	elif [[ -x "${dirPath_Base}/cicd/utility/demo-video/demo-video.py" ]]; then
-		fEcho_Section "Demo recording"
-		python3 "${dirPath_Base}/cicd/utility/demo-video/demo-video.py" --no-build
-		fEcho_Clean "Demo mp4 + gif regenerated"
-	fi
+	after="$(fDocker_Bytes)"
+	local freed="?"
+	[[ "${before}" =~ ^[0-9]+$ && "${after}" =~ ^[0-9]+$ ]]  &&  freed="$(numfmt --to=si --suffix=B $(( before > after ? before - after : 0 )))"
+	fEcho_Clean "Docker cleanup: removed ${removed[*]:-no containers or images}, plus week-old build cache; freed about ${freed}."
+}
 
-	## Optional local pre-publish hooks (not committed, kept in ../../private/cicd-hooks). Each
-	## *.bash there runs here before publish so anything a hook regenerates gets
-	## committed in the same run. No-op when the folder is absent. A hook gets the
-	## repo base path as $1; a failing hook warns but does not abort the run.
-	declare hooksDir="${dirPath_Base}/../../private/cicd-hooks"
-	if ((! doHooks)); then
-		fEcho_Section "Local hooks (skipped: --no-hooks)"
-	elif [[ -d "${hooksDir}" ]]; then
-		fEcho_Section "Local hooks"
-		for nextHook in "${hooksDir}"/*.bash; do
-			[[ -f "${nextHook}" ]]  ||  continue
-			fEcho_Clean "running $(basename "${nextHook}")"
-			bash "${nextHook}" "${dirPath_Base}"  ||  fEcho_Clean "hook failed (continuing): $(basename "${nextHook}")"
-		done
-	fi
-
-	## Git automation script (backup, commit, push). Flow the quiet flag and the
-	## resolved commit message through so an unattended run stays hands-off.
-	if ((! doPublish)); then
-		fEcho_Section "Backup + publish (skipped: --no-publish)"
-	else
-		fEcho_Section "Backup + publish"
-		## doPromptToContinue=0: cicd already gated up front (message captured above),
-		## so the publish step keeps its remote/branch/SSH review but skips a second
-		## y/n. Set as a settings variable, not a switch - that script is kept
-		## identical across projects and takes no flag for this.
-		local -a gitArgs=()
-		if ((doQuietly));                then gitArgs+=(--quiet); fi
-		if [[ -n "${commitMessage}" ]];  then gitArgs+=("--message=${commitMessage}"); fi
-		doPromptToContinue=0  "${gitAutomationScript}"  "${gitArgs[@]}"
-	fi
-
-	## Done
-	fEcho_Section "${exeName} CI/CD: done."
+## Total of docker system df's sizes, in bytes.
+fDocker_Bytes(){
+	"${containerEngine}" system df --format '{{.Size}}' 2> /dev/null | numfmt --from=si --suffix=B --invalid=ignore 2> /dev/null \
+		| awk '{ sub(/B$/, ""); t += $1 } END { printf "%d\n", t }'
 }
 
 
 #••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 fCleanup(){
+	## A step still open here is the one that failed or was interrupted.
+	fStep_Fail
+	## Not inside the container: the outer run owns the folder and the docker side.
+	if ((! inContainer)); then
+		fContainer_Cleanup  ||  true
+		if [[ -n "${runDir}" && -d "${runDir}" ]]; then
+			if ((doKeepTemp)); then fEcho_Clean "Kept the run folder: ${runDir}"
+			else fSafeRm "${runDir}" > /dev/null  ||  true; fi
+		fi
+	fi
 	## Always leave a trailing blank line for breathing room before the prompt
 	## (fEcho_Clean collapses it if the last line was already blank).
 	fEcho_Clean
@@ -570,7 +851,7 @@ fEcho_Clean()        { local -r toEcho="${1:-}"; fEcho_Clean_byref toEcho; }
 fEcho()              { { [[ -z "${1:-}" ]] && fEcho_Clean ""; } || { local -r toEcho="[ ${1:-} ]"; fEcho_Clean_byref toEcho; }; }
 fEcho_Force()        { _wasLastEchoBlank=0; fEcho "${1:-}"; }
 fEcho_Clean_Force()  { _wasLastEchoBlank=0; local -r toEcho="${1:-}"; fEcho_Clean_byref toEcho; }
-declare -r _hr="••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
+declare -r _hr="•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"
 fEcho_Section()      { fEcho_Clean; fEcho_Clean_Force "${_hr}"; fEcho "${1:-}"; }
 
 ## Error-handling
@@ -668,8 +949,9 @@ fi
 ## Make sure relative paths work
 cd "${meDir}"
 
-## Cap every step to at most half the cores (exports GOMAXPROCS, so the go tools
-## spawned below - staticcheck/govulncheck/gosec - inherit it too).
+## Cap every step to at most half the cores, a quarter when busy (exports GOMAXPROCS,
+## so the go tools spawned below - staticcheck/govulncheck/gosec - inherit it too).
+## Also drops this run to nice 19 and idle I/O, which every step inherits.
 source "${meDir}/utility/include/cpu-limit.bash"
 
 ## GFS rotation for the run-log artifacts (gfs_rotate)
@@ -677,6 +959,12 @@ source "${meDir}/utility/include/gfs-rotate.bash"
 
 ## Pinned linter/scanner versions (NGDB_STATICCHECK/GOVULNCHECK/GOSEC)
 source "${meDir}/utility/include/tool-versions.bash"
+
+## Run folder and the safe removal guard (fTempRun_Make, fSafeRm)
+source "${meDir}/utility/include/temp-run.bash"
+
+## Step lines (fStep_Plan, fStep_Start, fStep_End, fStep_Fail)
+source "${meDir}/utility/include/steps.bash"
 
 ## Invoke main
 fMain  "${@}"
@@ -707,3 +995,7 @@ fMain  "${@}"
 ##		- 20260804 JC: Publish step skips its second y/n via the doPromptToContinue setting; the --no-prompt switch no longer exists in that script.
 ##		- 20261024 JC: Added --no-install, --no-hooks, --no-publish, --no-demo and --no-format, so a full run can leave the box and the tracked tree alone.
 ##		- 20261024 JC: Local hooks dir is two levels up, since the repo moved into nano-git-db-floss/repo.
+##		- 20261025 JC: Build through security run in the pinned container by default; --no-container keeps them here.
+##		- 20261025 JC: Tests on the other boxes (cicd/utility/remote-test.bash) after build and test; --no-remote skips them.
+##		- 20261025 JC: Each run gets its own temp folder, removed at the end along with its containers, dangling images and old image tags; --keep-temp keeps them.
+##		- 20261025 JC: Step lines with the count, time and PASS or FAIL, planned up front; the load is checked before each step.

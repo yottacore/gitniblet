@@ -76,6 +76,7 @@ func ddlSetup(t *testing.T, src string) (*crud.API, *ddl.Schema, *ddl.Schema) {
 	return api, sch, bs
 }
 
+// ID: d9e1n
 func TestViewsListedBeforeTables(t *testing.T) {
 	api, sch, bs := orgSetup(t)
 	a, err := NewApp(api, sch, bs)
@@ -101,6 +102,7 @@ func TestViewsListedBeforeTables(t *testing.T) {
 // no explicit default_view) auto-opens at boot; Esc back to the list, reopen
 // it with Enter, load the tree_grid with 'a', hop to the second block with
 // Tab and load it too, then back out and quit.
+// ID: d9e1p
 func TestViewOpensAndLoadsOnSimulationScreen(t *testing.T) {
 	api, sch, bs := orgSetup(t)
 	boss, err := api.Create("employees", map[string]string{"name": "Ann"})
@@ -158,6 +160,7 @@ func TestViewOpensAndLoadsOnSimulationScreen(t *testing.T) {
 
 // TestStartupQueryAndPicker checks that a view with startup_named_query loads that
 // query's dataset the moment it opens; 'p' offers the view's queries.
+// ID: d9e1q
 func TestStartupQueryAndPicker(t *testing.T) {
 	src := strings.Replace(orgDDL, "view: \"org\"\n",
 		"view: \"org\"\n\t\tstartup_named_query: \"Just Ann\"\n", 1)
@@ -242,6 +245,7 @@ views:
 
 // The comments pane follows the tree_grid selection and can append a comment;
 // none of it shows as a board column.
+// ID: da19z
 func TestCommentsPaneLinksAndAdds(t *testing.T) {
 	api, sch, bs := ddlSetup(t, boardDDL)
 	api.EnableFeatures(sch, bs)

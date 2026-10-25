@@ -8,6 +8,7 @@ import (
 	"testing"
 )
 
+// ID: dec93
 func TestSeedParse(t *testing.T) {
 	src := `database:
 	seed:
@@ -78,6 +79,7 @@ seed:
 	}
 }
 
+// ID: dec94
 func TestSeedParseExample(t *testing.T) {
 	s, err := ParseFile(findExample(t))
 	if err != nil {

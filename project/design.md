@@ -61,17 +61,33 @@ In spite of being a SQL backend, data is saved one-field at a time - as long as 
 
 Manually kicked off via `cicd/cicd.bash`. Stages, in order (each fails early and hard on a real problem, exit >0):
 
-- **Build** native size-optimized, then cross-compile (windows-amd64, linux-arm64, windows-arm64; pure Go, no extra toolchains), zip windows into `dist/`.
+- **Build** native size-optimized, then cross-compile (windows-amd64, linux-arm64, windows-arm64; pure Go, no extra toolchains), zip windows into `dist/`. Every build stamps the source commit's time, and `--version` shows it as the build number, `ngdb v<version> build <build>`: minutes since 2000-01-01 UTC in lowercase Crockford base 32, like the test IDs. A non-release build adds its build date.
+
 - **Lint + format**: `gofmt -w` rewrites Go in place (never Bash), then `staticcheck` gates. `go vet` runs in test.bash.
-- **Tests**: full regression suite (`go test`), which also runs every fuzz target's seed corpus.
+
+- **Tests**: full regression suite (`go test`), which also runs every fuzz target's seed corpus. Every test has an ID, whole minutes since 2000-01-01 UTC in lowercase Crockford base 32, from when it was written. A Go test carries it in an `// ID:` line right above its func. The run prints one `PASS`, `FAIL` or `SKIP` line per test with its ID, fuzz included, and fails on a test with no ID or an ID used twice. `cicd/utility/testid` does the check and the lines, and `testid next` gives a free ID.
+
 - **Fuzz**: `cicd/utility/fuzz.bash` auto-discovers each `FuzzXxx` and runs it a short budget; a crash fails the run.
+
 - **Security + supply-chain**: `go mod verify`, `govulncheck`, and `gosec` (with a documented exclude list justified for a local-first single-user git-synced tool).
+
+- **Remote tests**: the test binaries and the CLI smoke run natively on the test boxes, for Windows, FreeBSD, arm64 Linux and Intel macOS. Each box is held through the shared host lock for the whole time it is used, and a VM is put back the way it was found. A box that doesn't answer is a `SKIP`, never a failure. The boxes have no Go, so each test binary's raw output comes back here, and `testid remote` prints the same one line per test with its ID. `--no-remote` and `--quick` skip the stage.
+
 - **Profiler** (non-gating artifact): samples the CPU-hot tx-log replay path, renders an inferno flamegraph into `cicd/artifacts/profiling/` (GFS-rotated), and prints a hotspot summary (`flame-report.py`). Tooling misses warn and skip.
+
 - **Dogfood**: copy the native release to the local run path.
+
 - **Screenshots**: regenerate the README thumbnails.
+
 - **Publish**: `n8git_backup-and-publish`.
 
-The whole run is tee'd to a rotated `cicd/artifacts/lint/run_<ts>.log` so warnings from any stage can be reviewed after the fact (`lint-report.bash`). `--quick` skips the slow stages (cross-builds, fuzz, profiler, screenshots, govulncheck, gosec); lint + tests still run. Each stage that installs, commits, pushes or rewrites a tracked file has its own off flag: `--no-install` (dogfood), `--no-hooks` (local pre-publish hooks), `--no-publish`, `--no-demo` (rewrites `assets/demo.gif`), and `--no-format`, which checks with `gofmt -l` and fails on unformatted files instead of running `gofmt -w`. Every step is capped to at most half the cores (`cpu-limit.bash`: `GOMAXPROCS` + `-p`). `cicd/artifacts/` is gitignored.
+The whole run is tee'd to a rotated `cicd/artifacts/lint/run_<ts>.log` so warnings from any stage can be reviewed after the fact (`lint-report.bash`). `--quick` skips the slow stages (cross-builds, fuzz, profiler, screenshots, govulncheck, gosec); lint + tests still run. Each stage that installs, commits, pushes or rewrites a tracked file has its own off flag: `--no-install` (dogfood), `--no-hooks` (local pre-publish hooks), `--no-publish`, `--no-demo` (rewrites `assets/demo.gif`), and `--no-format`, which checks with `gofmt -l` and fails on unformatted files instead of running `gofmt -w`. Every step is capped to at most half the cores, or a quarter when the 1-minute load is over half the core count, checked again before each step. Fuzz gets a quarter either way. The count goes to every tool that runs in parallel: `GOMAXPROCS`, `go -p` and `-parallel`, goreleaser's `--parallelism` and gosec's `-concurrency` (`cpu-limit.bash`). The run sits at `nice` 19 and the idle I/O class, and the container gets `--cpus` at half the cores and `--cpu-shares 256`. The test boxes use the same rule with their own core count and load. `cicd/artifacts/` is gitignored.
+
+Each step opens under a rule with `[ <YYYYmmDD-HHMMSS.NN>: Step N of M; Starting <name> ]`, in local time, and closes with the same line saying `PASS` or `FAIL`. A step that's off isn't counted. The first section lists those, each with its flag or reason. The steps run in the container carry on the outer run's numbers.
+
+Build through security run in a container by default, so this project's toolchain pins can't clash with another project's on the same box. The image comes from `cicd/container/Dockerfile`: a digest-pinned Debian base, and Go from a checksummed tarball whose version has to match the `toolchain` line in `source/go.mod`. It's tagged by the recipe's git hash. The repo is mounted at its own path and the run uses the caller's uid, and module and build caches live in a named volume. Dogfood, profiler, demo, hooks and publish stay on the host, since they need its tools or its screen. `--no-container` runs everything on the host on purpose. No docker, or an image that won't build, does the same with one line saying so, and never fails the run. Test boxes for other OSes stay native, since their OS is what's under test.
+
+Each run works in its own folder, `${HOST_TEMP}/nano-git-db-floss/<YYYYmmDD-HHMMSS>_<NNN>/`, with a `run.pid` in it and `TMPDIR`, `TEMP` and `TMP` pointed at it. The helpers make their temp folders inside it, and the container gets it mounted at the same path. A trap removes it at the end, on failure and Ctrl+C too. The same pass removes the run's containers, then this project's dangling images, its image tags older than the one before the current one, and build cache older than a week, and prints one line on what that freed. Only docker objects with this project's `dev.project` label are touched. At the start, a run removes run folders older than 2 days whose `run.pid` names no live process. `--keep-temp` keeps the folder and the containers, and prints where they are. Every recursive removal goes through the guard in `cicd/utility/include/temp-run.bash`.
 
 ## Language and stack
 

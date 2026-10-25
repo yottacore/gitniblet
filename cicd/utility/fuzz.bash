@@ -27,8 +27,11 @@ while (($#)); do case "$1" in
 	*) echo "fuzz.bash: unknown option: $1" >&2; exit 2 ;;
 esac; done
 
-source "$(dirname "$0")/include/cpu-limit.bash"   ## NGDB_JOBS + GOMAXPROCS (<=half cores; caps fuzz workers)
-cd "$(dirname "$0")/../../source"   ## module root (go.mod)
+source "$(dirname "$0")/include/cpu-limit.bash"   ## NGDB_JOBS + GOMAXPROCS (caps fuzz workers)
+fCpuLimit heavy  ## a quarter of the cores, busy or not
+source "$(dirname "$0")/include/temp-run.bash"    ## fTempDir_Make + fSafeRm
+repoRoot="$(realpath -e "$(dirname "$0")/../..")"
+cd "${repoRoot}/source"   ## module root (go.mod)
 
 ## Discover "<import-path> <FuzzName>" pairs. `go test -list` prints the matching
 ## function names for a package first, then that package's "ok <import-path>" line,
@@ -48,10 +51,14 @@ if ((${#targets[@]} == 0)); then
 	echo "fuzz.bash: no fuzz targets found"; exit 0
 fi
 
-out="/tmp/ngdb-fuzz.$$"
+declare -A testID=()
+while read -r p n i; do testID["${p} ${n}"]="${i:------}"; done < <(GOFLAGS='' go -C "${repoRoot}/cicd/utility/testid" run . ids "${repoRoot}")
+
+tmp="$(fTempDir_Make fuzz)"; trap 'fSafeRm "${tmp}" > /dev/null' EXIT
+out="${tmp}/out"
 
 fRunTarget() {   ## $1 = import path, $2 = target name
-	go test -mod=vendor -p "${NGDB_JOBS}" -run '^$' -fuzz="^${2}\$" -fuzztime="${fuzzTime}" "$1" >"${out}" 2>&1
+	go test -mod=vendor -p "${NGDB_JOBS}" -parallel "${NGDB_JOBS}" -run '^$' -fuzz="^${2}\$" -fuzztime="${fuzzTime}" "$1" >"${out}" 2>&1
 }
 
 ## go1.26's fuzzing coordinator can report the -fuzztime deadline itself as the
@@ -67,22 +74,21 @@ fSpuriousDeadline() {
 fails=0
 for t in "${targets[@]}"; do
 	pkg="${t%% *}"; fn="${t##* }"
-	printf '  %-52s %-20s ' "${pkg#github.com/jim-collier/nano-git-db/}" "${fn} (${fuzzTime})"
 	note=""
 	rc=0; fRunTarget "${pkg}" "${fn}" || rc=$?
 	if ((rc != 0)) && fSpuriousDeadline; then
 		note=" (deadline flake, rerun)"
 		rc=0; fRunTarget "${pkg}" "${fn}" || rc=$?
 	fi
+	line="${testID["${t}"]:------} ${pkg#github.com/jim-collier/nano-git-db/} ${fn} (${fuzzTime})"
 	if ((rc == 0)); then
-		echo "ok${note}"
+		echo "PASS ${line}${note}"
 	else
-		echo "CRASH"
-		sed 's/^/      /' "${out}"
+		echo "FAIL ${line}"
+		sed 's/^/\t/' "${out}"
 		fails=$((fails + 1))
 	fi
 done
-rm -f "${out}"
 
 ((fails == 0)) || { echo "fuzz.bash: ${fails} target(s) crashed"; exit 1; }
 echo "fuzz.bash: all targets clean"
@@ -91,3 +97,6 @@ echo "fuzz.bash: all targets clean"
 ##	Script history:
 ##		- 20260709: Created.
 ##		- 20260804: Rerun a target once when the fuzz budget expires as a failure.
+##		- 20261025: Output goes in the run folder, not a fixed /tmp file.
+##		- 20261025: A quarter of the cores, and the worker count passed explicitly.
+##		- 20261025: One PASS or FAIL line per target, with its test ID.

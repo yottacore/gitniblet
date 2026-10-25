@@ -94,6 +94,7 @@ func do(t *testing.T, h http.Handler, method, path string, form url.Values) *htt
 	return w
 }
 
+// ID: d9e1v
 func TestIndexListsTables(t *testing.T) {
 	s, _ := newTestServer(t)
 	w := do(t, s.routes(), "GET", "/", nil)
@@ -111,6 +112,7 @@ func TestIndexListsTables(t *testing.T) {
 	}
 }
 
+// ID: d9e1w
 func TestRowsAndUnknownTable(t *testing.T) {
 	s, api := newTestServer(t)
 	if _, err := api.Create("person", map[string]string{"name": "Ann"}); err != nil {
@@ -129,6 +131,7 @@ func TestRowsAndUnknownTable(t *testing.T) {
 	}
 }
 
+// ID: d9e1x
 func TestCreateUpdateDeleteRoundTrip(t *testing.T) {
 	s, api := newTestServer(t)
 	h := s.routes()
@@ -175,6 +178,7 @@ func TestCreateUpdateDeleteRoundTrip(t *testing.T) {
 
 // The edit form of an opted-in table carries the comments and attachments
 // sections; posting to them returns to the refreshed form.
+// ID: d9e1y
 func TestRowExtrasCommentsAndAttachments(t *testing.T) {
 	s, api := newTestServer(t)
 	id, err := api.Create("person", map[string]string{"name": "Ann"})
@@ -207,6 +211,7 @@ func TestRowExtrasCommentsAndAttachments(t *testing.T) {
 	}
 }
 
+// ID: d9e1z
 func TestValuesAreHTMLEscaped(t *testing.T) {
 	s, api := newTestServer(t)
 	if _, err := api.Create("person", map[string]string{"name": `<script>alert(1)</script>`}); err != nil {
@@ -221,6 +226,7 @@ func TestValuesAreHTMLEscaped(t *testing.T) {
 	}
 }
 
+// ID: d9e20
 func TestAssetsServed(t *testing.T) {
 	s, _ := newTestServer(t)
 	for _, p := range []string{"/assets/htmx.min.js", "/assets/style.css"} {
@@ -232,6 +238,7 @@ func TestAssetsServed(t *testing.T) {
 
 // Hidden fields drop out of the list and the form, and saving the form
 // leaves a field it never showed alone.
+// ID: dec85
 func TestHiddenFieldsStayPut(t *testing.T) {
 	s, api := newTestServerFor(t, `
 tables:

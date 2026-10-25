@@ -137,7 +137,8 @@ function Get-InstallDirectory {
 function Get-InstalledVersion {
 	param([string] $ExePath)
 	if (-not (Test-Path -LiteralPath $ExePath)) { return $null }
-	try { return (& $ExePath --version).Split(' ')[1] } catch { return $null }
+	## "ngdb v1.0.0 build dedrq", or before that "ngdb 1.0.0 (abc1234)".
+	try { return @(& $ExePath --version)[0].Split(' ')[1].TrimStart('v') } catch { return $null }
 }
 
 function Confirm-Plan {
@@ -254,7 +255,13 @@ function Invoke-Install {
 		Write-Line
 	}
 	finally {
-		Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+		## Only the folder made above, under the temp folder, never a link.
+		$tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+		$item = Get-Item -LiteralPath $work -Force -ErrorAction SilentlyContinue
+		if ($item -and $item.PSIsContainer -and -not $item.LinkType -and $item.Name -like "$ExeName-install-*" `
+			-and $item.FullName.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+			Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+		}
 	}
 }
 

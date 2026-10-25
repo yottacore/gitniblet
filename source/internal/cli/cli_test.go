@@ -66,6 +66,7 @@ func regDB(t *testing.T) *config.DBConfig {
 	return cfg
 }
 
+// ID: d9dyk
 func TestCrudVerbsEndToEnd(t *testing.T) {
 	name := regDB(t).Name
 	run := func(args ...string) string {
@@ -110,6 +111,7 @@ func TestCrudVerbsEndToEnd(t *testing.T) {
 // The database and table may be spelled explicitly with --db/--table (in any
 // order) instead of positionally, and a name resolves with or without its
 // file extension.
+// ID: d9z0f
 func TestCrudSelectorForms(t *testing.T) {
 	name := regDB(t).Name
 	run := func(args ...string) string {
@@ -129,6 +131,7 @@ func TestCrudSelectorForms(t *testing.T) {
 }
 
 // An unregistered name is a clear error, not a crash.
+// ID: d9z0g
 func TestUnknownDatabase(t *testing.T) {
 	regDB(t) // isolates the registry; "nope" is not in it
 	err := Run([]string{"get", "nope", "person", "x"})
@@ -137,6 +140,7 @@ func TestUnknownDatabase(t *testing.T) {
 	}
 }
 
+// ID: d9dym
 func TestCreateRejectsBadAssign(t *testing.T) {
 	name := regDB(t).Name
 	err := Run([]string{"create", name, "person", "no-equals"})
@@ -148,6 +152,7 @@ func TestCreateRejectsBadAssign(t *testing.T) {
 // Rename ops end-to-end: rows written under the old names must survive the
 // rename in place AND a full rebuild-from-log into a fresh view (the alias
 // translation is what makes the second part work).
+// ID: d9dyn
 func TestRenameOpsEndToEnd(t *testing.T) {
 	cfg := regDB(t)
 	name := cfg.Name
@@ -191,6 +196,7 @@ func TestRenameOpsEndToEnd(t *testing.T) {
 
 // A command that could not run has to fail, or `ngdb ddl "$f" || die` in a
 // script never fires. Usage goes to stderr for the same reason.
+// ID: dava8
 func TestUnrunnableCommandsFail(t *testing.T) {
 	regDB(t) // isolate the registry
 	for _, args := range [][]string{
@@ -210,6 +216,7 @@ func TestUnrunnableCommandsFail(t *testing.T) {
 
 // --table without --db used to swallow the first assignment as the database
 // name, so the user was told their field value was a bad database.
+// ID: dava9
 func TestTableFlagWithoutDatabase(t *testing.T) {
 	regDB(t)
 	err := Run([]string{"create", "--table", "person", "name=Ann"})

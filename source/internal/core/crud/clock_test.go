@@ -13,6 +13,7 @@ import (
 
 // now() must be strictly increasing even under rapid calls or a wall clock
 // stepping backwards - replay order depends on it.
+// ID: d9dz7
 func TestNowIsStrictlyMonotonic(t *testing.T) {
 	a, _, _ := newAPI(t)
 	prev := a.now()
@@ -25,6 +26,7 @@ func TestNowIsStrictlyMonotonic(t *testing.T) {
 	}
 }
 
+// ID: d9dz8
 func TestNowSurvivesClockStepBack(t *testing.T) {
 	a, _, _ := newAPI(t)
 	future := time.Now().UTC().Add(time.Hour).Format(tsLayout)
@@ -39,6 +41,7 @@ func TestNowSurvivesClockStepBack(t *testing.T) {
 // has to climb to keep inserts at the b-tree tail. The text form deliberately
 // does not sort in time order - base64url is not ASCII-ordered - so decode
 // before comparing.
+// ID: d9dz9
 func TestNewIDIsTimeOrdered(t *testing.T) {
 	decode := func(id string) []byte {
 		t.Helper()

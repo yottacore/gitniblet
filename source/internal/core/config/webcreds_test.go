@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+// ID: d9hsm
 func TestWebCredsHashVerify(t *testing.T) {
 	c := &WebCreds{}
 	if err := c.Set("alice", "correct horse"); err != nil {
@@ -28,6 +29,7 @@ func TestWebCredsHashVerify(t *testing.T) {
 	}
 }
 
+// ID: d9hsn
 func TestWebCredsSaveLoad(t *testing.T) {
 	SetBaseOverride(t.TempDir())
 	t.Cleanup(func() { SetBaseOverride("") })
@@ -53,6 +55,7 @@ func TestWebCredsSaveLoad(t *testing.T) {
 // merge "Alice" into "alice" and hand one account the other's password. The
 // awkward names cover the other two ways a name meets the grammar: one that
 // needs quoting, and one a bare selector would read as an index.
+// ID: dah5k
 func TestWebCredsAwkwardNamesSurviveSaveLoad(t *testing.T) {
 	SetBaseOverride(t.TempDir())
 	t.Cleanup(func() { SetBaseOverride("") })
@@ -88,6 +91,7 @@ func TestWebCredsAwkwardNamesSurviveSaveLoad(t *testing.T) {
 	}
 }
 
+// ID: d9hsp
 func TestWebModeProxied(t *testing.T) {
 	if (&Settings{WebMode: "proxied"}).WebModeProxied() != true {
 		t.Fatal(`web_mode "proxied" should be proxied`)
@@ -101,6 +105,7 @@ func TestWebModeProxied(t *testing.T) {
 
 // An unknown user has no hash to compare, but it still has to cost the same as a
 // wrong password - otherwise the response time says which accounts exist.
+// ID: davaa
 func TestUnknownUserStillCostsAKDFRun(t *testing.T) {
 	creds := &WebCreds{}
 	if err := creds.Set("alice", "correct horse"); err != nil {

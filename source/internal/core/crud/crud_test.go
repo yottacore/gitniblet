@@ -47,6 +47,7 @@ func newAPI(t *testing.T) (*API, string, *ddl.Schema) {
 	return a, logDir, schema
 }
 
+// ID: d9dza
 func TestCreateGetUpdateDelete(t *testing.T) {
 	a, _, _ := newAPI(t)
 
@@ -87,6 +88,7 @@ func TestCreateGetUpdateDelete(t *testing.T) {
 	}
 }
 
+// ID: d9hhk
 func TestReadOnlyBlocksWrites(t *testing.T) {
 	a, _, _ := newAPI(t)
 	id, err := a.Create("person", map[string]string{"name": "Ann", "age": "30"})
@@ -129,6 +131,7 @@ func TestReadOnlyBlocksWrites(t *testing.T) {
 	}
 }
 
+// ID: d9dzb
 func TestWritesStampHost(t *testing.T) {
 	a, logDir, _ := newAPI(t)
 	a.HostID = "box-x"
@@ -153,6 +156,7 @@ func TestWritesStampHost(t *testing.T) {
 	}
 }
 
+// ID: d9dzc
 func TestSetFieldRejectsID(t *testing.T) {
 	a, _, _ := newAPI(t)
 	id, _ := a.Create("person", nil)
@@ -163,6 +167,7 @@ func TestSetFieldRejectsID(t *testing.T) {
 
 // The log alone must reconstruct the view: replay the API's log into a brand-new
 // store and confirm the rows match.
+// ID: d9dzd
 func TestLogIsSourceOfTruth(t *testing.T) {
 	a, logDir, schema := newAPI(t)
 

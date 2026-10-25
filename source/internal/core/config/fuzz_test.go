@@ -11,6 +11,7 @@ import (
 
 // parseHash reads an attacker-controllable stored credential string; it must
 // return a zero iteration count on any malformed input and never panic.
+// ID: d9nwh
 func FuzzParseHash(f *testing.F) {
 	for _, s := range []string{
 		"",
@@ -37,6 +38,7 @@ func FuzzParseHash(f *testing.F) {
 // Seeds cover a real record, the syntax a hand-edited one picks up (comments,
 // quoting, nesting, a raw block), and one input per error class the parser
 // reports.
+// ID: dav76
 func FuzzLoadRecord(f *testing.F) {
 	for _, s := range []string{
 		"",

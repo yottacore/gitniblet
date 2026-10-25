@@ -113,6 +113,7 @@ func runeIndex(line []rune, sub string) int {
 
 // A lookup field lists as its symbol, the double-width symbol keeps the next
 // column in line, and the edit form's picker shows the stored value.
+// ID: dec9z
 func TestLookupsShowInTUI(t *testing.T) {
 	screen, a, waitFor, done := runLookups(t, "UTF-8")
 	header, row := lineWith(screen, "status"), lineWith(screen, "t1")
@@ -156,6 +157,7 @@ func waitFormGone(t *testing.T, screen *simScreen, a *App) {
 }
 
 // Picking another value in the edit form saves its idx.
+// ID: decb0
 func TestLookupPickerInTUI(t *testing.T) {
 	screen, a, waitFor, done := runLookups(t, "UTF-8")
 	screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone) // edit t1
@@ -178,6 +180,7 @@ func TestLookupPickerInTUI(t *testing.T) {
 }
 
 // A terminal whose charset can't draw the symbol gets the title instead.
+// ID: deca0
 func TestLookupsFallBackToTitleInTUI(t *testing.T) {
 	screen, a, _, done := runLookups(t, "US-ASCII")
 	row := string(lineWith(screen, "t1"))
@@ -188,6 +191,7 @@ func TestLookupsFallBackToTitleInTUI(t *testing.T) {
 }
 
 // A literal field picks from its list_source.
+// ID: decb4
 func TestLiteralPickerInTUI(t *testing.T) {
 	api, sch, bs := ddlSetup(t, `
 tables:

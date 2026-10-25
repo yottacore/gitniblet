@@ -92,6 +92,7 @@ func viewSetup(t *testing.T) (*crud.API, *Catalog) {
 	return api, cat
 }
 
+// ID: d9e0h
 func TestViewResolution(t *testing.T) {
 	_, cat := viewSetup(t)
 
@@ -147,6 +148,7 @@ func TestViewResolution(t *testing.T) {
 
 // An explicit default_view wins when usable; one naming a dropped or unknown
 // view falls back to the first resolved view with a warning.
+// ID: d9e0j
 func TestDefaultViewResolution(t *testing.T) {
 	api, _ := viewSetup(t)
 	parse := func(dv string) *ddl.Schema {
@@ -182,6 +184,7 @@ func TestDefaultViewResolution(t *testing.T) {
 	}
 }
 
+// ID: d9e0k
 func TestTreeRows(t *testing.T) {
 	api, cat := viewSetup(t)
 	mk := func(name, boss string) string {
@@ -305,6 +308,7 @@ func catalogFrom(t *testing.T, src string) *Catalog {
 	return cat
 }
 
+// ID: da19y
 func TestResolveCommentsBlock(t *testing.T) {
 	cat := catalogFrom(t, commentsViewDDL)
 

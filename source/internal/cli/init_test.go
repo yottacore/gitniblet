@@ -41,6 +41,7 @@ func initEnv(t *testing.T) (workDir, base string) {
 
 // --init with an explicit dir registers a record naming the DDL, that dir, and
 // materializes the view.
+// ID: d9dyr
 func TestInitExplicitDir(t *testing.T) {
 	work, base := initEnv(t)
 	logDir := t.TempDir()
@@ -69,6 +70,7 @@ func TestInitExplicitDir(t *testing.T) {
 
 // --init with no arg in a non-git directory uses the current directory as the
 // tx-log location.
+// ID: d9dys
 func TestInitNoArgUsesPWD(t *testing.T) {
 	work, base := initEnv(t)
 	if err := Init(nil); err != nil {
@@ -83,6 +85,7 @@ func TestInitNoArgUsesPWD(t *testing.T) {
 	}
 }
 
+// ID: d9dyt
 func TestInitRefusesDuplicate(t *testing.T) {
 	_, _ = initEnv(t)
 	if err := Init(nil); err != nil {
@@ -93,6 +96,7 @@ func TestInitRefusesDuplicate(t *testing.T) {
 	}
 }
 
+// ID: d9dyv
 func TestInitNeedsDDL(t *testing.T) {
 	base := t.TempDir()
 	config.SetBaseOverride(base)

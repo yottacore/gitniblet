@@ -188,7 +188,8 @@ fInstallDir(){
 fInstalledVersion(){
 	local exe="$1"
 	[[ -x "${exe}" ]] || return 0
-	"${exe}" --version 2>/dev/null | awk '{print $2}'
+	## "ngdb v1.0.0 build dedrq", or before that "ngdb 1.0.0 (abc1234)".
+	"${exe}" --version 2>/dev/null | awk 'NR == 1 { sub(/^v/, "", $2); print $2 }'
 }
 
 fConfirm(){
@@ -219,7 +220,18 @@ fInstallFile(){
 	sudo install -m 0755 "${src}" "${dst}" || fDie "cannot write ${dst}"
 }
 
-fCleanup(){ [[ -n "${workDir}" && -d "${workDir}" ]] && rm -rf "${workDir}" ;:;}
+## Only the folder mktemp made, under the temp folder, never a link. Fetched on
+## its own, so it can't share the repo's guard.
+fCleanup(){
+	local real='' root=''
+	[[ -n "${workDir}" && "${workDir}" == /* && "${workDir}" != *..* && -d "${workDir}" && ! -L "${workDir}" ]] || return 0
+	real="$(cd -P -- "${workDir}" 2>/dev/null && pwd -P)" || return 0
+	root="$(cd -P -- "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)" || return 0
+	case "${real}" in "${root%/}"/?*) ;; *) return 0 ;; esac
+	case "$(uname -s)" in
+		Darwin|*BSD) rm -rf -x -- "${real}" ;;
+		*)           rm -rf --one-file-system -- "${real}" ;;
+	esac ;:;}
 
 #•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## Main
@@ -308,3 +320,4 @@ fMain "$@"
 #•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 ## History
 ##	20260805 JC: Created.
+##	20261025 JC: The cleanup removes only its own temp folder.

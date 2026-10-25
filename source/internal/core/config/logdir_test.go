@@ -19,6 +19,7 @@ func resolve(p string) string {
 }
 
 // A plain (non-repo) folder is used verbatim - no ngdb/<name> subfolder.
+// ID: d9ew9
 func TestLogDirForPlainFolder(t *testing.T) {
 	dir := t.TempDir()
 	got, err := LogDirFor(dir, "todo")
@@ -31,6 +32,7 @@ func TestLogDirForPlainFolder(t *testing.T) {
 }
 
 // Pointing at a git repo's top level derives <root>/ngdb/<name>.
+// ID: d9ewa
 func TestLogDirForRepoSubfolder(t *testing.T) {
 	repo := t.TempDir()
 	if out, err := exec.Command("git", "-C", repo, "init").CombinedOutput(); err != nil {
@@ -47,6 +49,7 @@ func TestLogDirForRepoSubfolder(t *testing.T) {
 }
 
 // An empty location falls back to the current directory (here, a non-repo temp).
+// ID: d9ewb
 func TestLogDirForEmptyUsesCwd(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)

@@ -80,6 +80,7 @@ func auditRows(t *testing.T, api *crud.API, table, id string) []map[string]strin
 	return rows
 }
 
+// ID: d9dzh
 func TestAuditCaptureAndCoalescing(t *testing.T) {
 	api := newFeatAPI(t)
 	id, err := api.Create("person", map[string]string{"name": "Ann", "age": "30"})
@@ -140,6 +141,7 @@ func TestAuditCaptureAndCoalescing(t *testing.T) {
 	}
 }
 
+// ID: d9dzj
 func TestAuditValuesQuoting(t *testing.T) {
 	api := newFeatAPI(t)
 	id, _ := api.Create("person", map[string]string{"name": `say "hi" now`})
@@ -153,6 +155,7 @@ func TestAuditValuesQuoting(t *testing.T) {
 	}
 }
 
+// ID: d9dzk
 func TestCommentsGatedAndOrdered(t *testing.T) {
 	api := newFeatAPI(t)
 	id, _ := api.Create("person", map[string]string{"name": "Ann"})
@@ -173,6 +176,7 @@ func TestCommentsGatedAndOrdered(t *testing.T) {
 	}
 }
 
+// ID: d9dzm
 func TestAttachments(t *testing.T) {
 	api := newFeatAPI(t)
 	id, _ := api.Create("person", map[string]string{"name": "Ann"})
@@ -222,6 +226,7 @@ func TestAttachments(t *testing.T) {
 	}
 }
 
+// ID: d9dzn
 func TestRowAccessGrants(t *testing.T) {
 	api := newFeatAPI(t)
 	id, _ := api.Create("person", map[string]string{"name": "Ann"})

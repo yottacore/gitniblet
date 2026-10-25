@@ -20,6 +20,7 @@ func (p *fakeProvider) Status() gate.Status {
 	return p.status
 }
 
+// ID: d9hhe
 func TestNoProviderIsFull(t *testing.T) {
 	// Default (open-source) build: nothing registered.
 	if gate.Available() {
@@ -30,6 +31,7 @@ func TestNoProviderIsFull(t *testing.T) {
 	}
 }
 
+// ID: d9hhf
 func TestProviderIsAskedOncePerEvaluate(t *testing.T) {
 	p := &fakeProvider{status: gate.Status{Posture: gate.Blocking, Message: "lapsed", WaitSeconds: 42}}
 	gate.Register(p)

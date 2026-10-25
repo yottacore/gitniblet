@@ -35,6 +35,7 @@ func idxOf(t *testing.T, api *crud.API, table, id string) string {
 }
 
 // The lookups idx is minted max+1, kept when given, and fixed.
+// ID: dec8d
 func TestLookupsIdx(t *testing.T) {
 	api, st, lg := lookupsAPI(t)
 	for _, table := range []string{"lookups", "lookup_values"} {
@@ -123,6 +124,7 @@ func TestLookupsIdx(t *testing.T) {
 }
 
 // Concurrent creates never mint the same idx.
+// ID: dec8e
 func TestLookupsIdxConcurrent(t *testing.T) {
 	api, st, _ := lookupsAPI(t)
 	const n = 24
@@ -155,6 +157,7 @@ func TestLookupsIdxConcurrent(t *testing.T) {
 
 // title and lookups_idx are null_ok: no. A row with them set reaches the view,
 // and one without is refused (backlog 2026102407331876).
+// ID: dec8w
 func TestLookupsNotNull(t *testing.T) {
 	api, _, _ := lookupsAPI(t)
 	builtins, err := Builtins()

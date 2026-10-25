@@ -64,6 +64,7 @@ func runPicker(t *testing.T) (*simScreen, chan *pickResult, func(string)) {
 }
 
 // A registered, openable database appears and selecting it returns its paths.
+// ID: d9e1g
 func TestPickerSelectsRegistered(t *testing.T) {
 	isolateConfig(t)
 	ddlPath := writeValidDDL(t)
@@ -95,6 +96,7 @@ func TestPickerSelectsRegistered(t *testing.T) {
 
 // Highlighting a blank spacer row hops to a real entry, in either direction, so
 // arrowing through the menu never rests on an empty line.
+// ID: d9ew5
 func TestPickerSkipsSpacers(t *testing.T) {
 	isolateConfig(t)
 	ddlPath := writeValidDDL(t)
@@ -127,6 +129,7 @@ func TestPickerSkipsSpacers(t *testing.T) {
 
 // Pressing d on a database, confirming Remove, then keeping its files,
 // deregisters it: it leaves the list and the registry, but its files stay.
+// ID: d9ex7
 func TestPickerRemovesDatabase(t *testing.T) {
 	isolateConfig(t)
 	ddlPath := writeValidDDL(t)
@@ -157,6 +160,7 @@ func TestPickerRemovesDatabase(t *testing.T) {
 
 // An unopenable record (its DDL is gone) shows with the [!] marker, cannot be
 // opened, and q quits the picker with no result.
+// ID: d9e1h
 func TestPickerFlagsBrokenAndQuits(t *testing.T) {
 	isolateConfig(t)
 	// register a db then delete its DDL

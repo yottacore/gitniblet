@@ -42,6 +42,7 @@ func writeDDL(t *testing.T, dir string) string {
 	return p
 }
 
+// ID: d9dyw
 func TestCreateLoadRoundTrip(t *testing.T) {
 	isolate(t)
 	ddlPath := writeDDL(t, t.TempDir())
@@ -71,6 +72,7 @@ func TestCreateLoadRoundTrip(t *testing.T) {
 	}
 }
 
+// ID: d9z0h
 func TestFindByName(t *testing.T) {
 	isolate(t)
 	ddlPath := writeDDL(t, t.TempDir())
@@ -91,6 +93,7 @@ func TestFindByName(t *testing.T) {
 	}
 }
 
+// ID: d9dyx
 func TestCreateRefusesDuplicate(t *testing.T) {
 	isolate(t)
 	ddlPath := writeDDL(t, t.TempDir())
@@ -102,6 +105,7 @@ func TestCreateRefusesDuplicate(t *testing.T) {
 	}
 }
 
+// ID: d9dyy
 func TestTouchStampsLastOpened(t *testing.T) {
 	isolate(t)
 	ddlPath := writeDDL(t, t.TempDir())
@@ -118,6 +122,7 @@ func TestTouchStampsLastOpened(t *testing.T) {
 	}
 }
 
+// ID: d9dyz
 func TestListValidatesRecords(t *testing.T) {
 	isolate(t)
 	ddlDir := t.TempDir()
@@ -158,6 +163,7 @@ func TestListValidatesRecords(t *testing.T) {
 	}
 }
 
+// ID: d9dz0
 func TestBaseOverride(t *testing.T) {
 	isolate(t)
 	def, err := UserBase()
@@ -183,6 +189,7 @@ func TestBaseOverride(t *testing.T) {
 	}
 }
 
+// ID: d9dz1
 func TestPWDDdl(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
@@ -220,6 +227,7 @@ func chdir(t *testing.T, dir string) {
 // silently. This is the far end of the DDL error count: a unique group naming
 // a field that does not exist used to list as fine and then fail to open with
 // a raw SQLite error.
+// ID: davcg
 func TestListFlagsASchemaWithErrors(t *testing.T) {
 	isolate(t)
 	dir := t.TempDir()
@@ -244,6 +252,7 @@ func TestListFlagsASchemaWithErrors(t *testing.T) {
 }
 
 // The control: a sound schema still lists clean.
+// ID: davch
 func TestListAcceptsASoundSchema(t *testing.T) {
 	isolate(t)
 	if _, err := Create("fine", writeDDL(t, t.TempDir()), t.TempDir()); err != nil {

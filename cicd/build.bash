@@ -23,14 +23,13 @@ elif ((debug)); then
 	out="ngdb-debug"
 fi
 
-# app.Version is authoritative in source; we only stamp app.Build with provenance
-# (short commit + -dirty), empty-safe so a release binary from a clean tree reads clean.
-build="$(git rev-parse --short HEAD 2>/dev/null || true)"
-[[ -n "${build}" && -n "$(git status --porcelain 2>/dev/null)" ]]  &&  build="${build}-dirty"
+# app.Version is authoritative in source. The build number comes from the
+# commit's time, not the clock, so one commit always gets one number.
+commitTime="$(git log -1 --format=%ct 2>/dev/null || true)"
 
 # Build time in UTC; --version shows it as a date in the viewer's own time zone.
 # goreleaser doesn't stamp it, so release binaries show no date.
-ldflags="-X github.com/jim-collier/nano-git-db/app.Build=${build} -X github.com/jim-collier/nano-git-db/app.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+ldflags="-X github.com/jim-collier/nano-git-db/app.CommitTime=${commitTime} -X github.com/jim-collier/nano-git-db/app.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 trim="-trimpath"
 if ((debug)); then
 	trim=""

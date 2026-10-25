@@ -105,6 +105,7 @@ func wantDenied(t *testing.T, err error, what string) {
 	}
 }
 
+// ID: d9dz4
 func TestTableAndFieldAccess(t *testing.T) {
 	api := newACLAPI(t)
 
@@ -136,6 +137,7 @@ func TestTableAndFieldAccess(t *testing.T) {
 	}
 }
 
+// ID: d9dz5
 func TestBuiltinGroupOverrides(t *testing.T) {
 	api := newACLAPI(t)
 	mkUser(t, api, "adm", "admins")
@@ -155,6 +157,7 @@ func TestBuiltinGroupOverrides(t *testing.T) {
 	}
 }
 
+// ID: d9dz6
 func TestRowLevelAccess(t *testing.T) {
 	api := newACLAPI(t)
 	mkUser(t, api, "alice", "editors", "hr")

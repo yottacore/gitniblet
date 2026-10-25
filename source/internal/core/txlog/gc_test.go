@@ -11,6 +11,7 @@ import (
 	"testing"
 )
 
+// ID: d9e0z
 func TestGCEligibility(t *testing.T) {
 	// dates are lexical; cutoff "5" means "older than 5"
 	entries := []Entry{
@@ -42,6 +43,7 @@ func TestGCEligibility(t *testing.T) {
 	}
 }
 
+// ID: d9e10
 func TestRotateAndMultiSegmentRead(t *testing.T) {
 	lg, err := Open(t.TempDir())
 	if err != nil {
@@ -105,6 +107,7 @@ func TestRotateAndMultiSegmentRead(t *testing.T) {
 
 // A GC rotation must reach other clients through the normal sync (the whole
 // dir is staged: new segment, deleted live file).
+// ID: d9e11
 func TestRotationSyncs(t *testing.T) {
 	base := t.TempDir()
 	remote := filepath.Join(base, "remote.git")
@@ -160,6 +163,7 @@ func TestRotationSyncs(t *testing.T) {
 // A rename splits one row's history across two table names. Grouped naively,
 // the half holding the delete is collected while the half holding the create
 // survives - and the row comes back on the next replay.
+// ID: davbr
 func TestGCGroupsARenamedTableAsOneRow(t *testing.T) {
 	entries := []Entry{
 		{TxID: "1", Date: "1", Table: "task", RowID: "rr", Op: "create"},
@@ -199,6 +203,7 @@ func TestGCGroupsARenamedTableAsOneRow(t *testing.T) {
 // Entries are copied through a pass untouched. A table name is part of what an
 // encrypted value is sealed against, so rewriting one to its current name here
 // would strand every encrypted value under it.
+// ID: davbs
 func TestGCNeverRewritesEntries(t *testing.T) {
 	entries := []Entry{
 		{TxID: "1", Date: "1", Table: "task", RowID: "aa", Op: "create"},
@@ -216,6 +221,7 @@ func TestGCNeverRewritesEntries(t *testing.T) {
 
 // Sealing is what makes a pass safe: once the live file is retired, an append
 // opens a fresh one that the pass never reads or removes.
+// ID: davbt
 func TestSealDivertsLaterAppends(t *testing.T) {
 	lg, err := Open(t.TempDir())
 	if err != nil {
@@ -259,6 +265,7 @@ func TestSealDivertsLaterAppends(t *testing.T) {
 
 // The bug this guards: a pass used to read the log, decide, then delete the
 // files it read - so anything written in between went with them.
+// ID: davbv
 func TestWriteDuringACollectionPassSurvives(t *testing.T) {
 	dir := t.TempDir()
 	lg, err := Open(dir)
@@ -310,6 +317,7 @@ func TestWriteDuringACollectionPassSurvives(t *testing.T) {
 // The one writer a seal cannot divert is an append that already had the file
 // open. If that lands in a segment the pass is retiring, the pass must back out
 // rather than take the write with it.
+// ID: davbw
 func TestRotateRefusesWhenASealedSegmentGrew(t *testing.T) {
 	dir := t.TempDir()
 	lg, err := Open(dir)
@@ -366,6 +374,7 @@ func TestRotateRefusesWhenASealedSegmentGrew(t *testing.T) {
 // A collection pass removes content, and a peer may have appended to the same
 // file meanwhile. Deleting the live file makes that a modify/delete conflict,
 // which no merge driver resolves - so the peer's sync fails, and keeps failing.
+// ID: davbx
 func TestRotationDoesNotWedgeAPeersSync(t *testing.T) {
 	base := t.TempDir()
 	remote := filepath.Join(base, "remote.git")

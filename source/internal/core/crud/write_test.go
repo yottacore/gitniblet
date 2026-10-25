@@ -51,6 +51,7 @@ func newUniqueAPI(t *testing.T) (*API, string, *ddl.Schema) {
 
 // A duplicate natural key used to print a new id and succeed, leaving the field
 // empty for good.
+// ID: davc7
 func TestCreateReportsAFieldTheViewRefused(t *testing.T) {
 	a, _, _ := newUniqueAPI(t)
 
@@ -77,6 +78,7 @@ func TestCreateReportsAFieldTheViewRefused(t *testing.T) {
 }
 
 // An ordinary write must not be mistaken for a refusal.
+// ID: davc8
 func TestCreateWithNoConflictIsNotReported(t *testing.T) {
 	a, _, _ := newUniqueAPI(t)
 
@@ -92,6 +94,7 @@ func TestCreateWithNoConflictIsNotReported(t *testing.T) {
 
 // Editing a hard-deleted id used to recreate it as a stub holding only the
 // edited field, which vanished again at the next rebuild.
+// ID: davc9
 func TestFieldWriteOnAHardDeletedRowIsRefused(t *testing.T) {
 	a, _, _ := newAPI(t)
 
@@ -123,6 +126,7 @@ func TestFieldWriteOnAHardDeletedRowIsRefused(t *testing.T) {
 }
 
 // A soft-deleted row is still there, so it stays writable.
+// ID: davca
 func TestFieldWriteOnASoftDeletedRowStillWorks(t *testing.T) {
 	a, _, _ := newAPI(t)
 
@@ -145,6 +149,7 @@ func TestFieldWriteOnASoftDeletedRowStillWorks(t *testing.T) {
 // The view and the log used to disagree about a value carrying a control
 // character: the view kept it, the log could not, and the next rebuild changed
 // the value with no warning.
+// ID: davcb
 func TestControlCharactersReadBackTheSameAfterARebuild(t *testing.T) {
 	a, logDir, schema := newAPI(t)
 
@@ -214,6 +219,7 @@ func rebuildValue(t *testing.T, logDir string, schema *ddl.Schema, id, field str
 // Replay takes the write lock, so a background sync's rebuild cannot interleave
 // with a write's log-then-view sequence. This exercises the two together (run
 // with -race); the guarantee itself is structural - Replay is the only way in.
+// ID: davcc
 func TestReplayRunsAlongsideWrites(t *testing.T) {
 	a, logDir, _ := newAPI(t)
 
