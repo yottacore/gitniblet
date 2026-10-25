@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `--version` on a non-release build shows the build date, in the local time zone of whoever runs it.
 
+### Changed
+
+- `--version` prints `ngdb v<version> build <build>`, then the copyright line. The build number is the commit's time as minutes since 2000, in Crockford base 32, so one commit always gets the same number. It replaces the short commit. Release notes start with the same line.
+
 ### Fixed
 
 - On macOS the test suite registered databases in the real `~/Library/Application Support/ngdb`.

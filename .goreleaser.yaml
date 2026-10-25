@@ -5,7 +5,8 @@
 # installer is built separately (cicd/utility/windows-installer.bash, NSIS).
 # Deferred (need the target OS's own tooling/signing host): macOS .dmg, Windows
 # .msi, FreeBSD .pkg - those ship as archives for now.
-# app.Version is authoritative in source; only app.Build (short commit) is stamped.
+# app.Version is authoritative in source; only app.CommitTime is stamped, which
+# gives the build number. No build date, so release binaries show none.
 version: 2
 project_name: ngdb
 
@@ -20,7 +21,7 @@ builds:
       - -mod=vendor
       - -trimpath
     ldflags:
-      - -s -w -X github.com/jim-collier/nano-git-db/app.Build={{ .ShortCommit }}
+      - -s -w -X github.com/jim-collier/nano-git-db/app.CommitTime={{ .CommitTimestamp }}
     goos: [linux, darwin, windows, freebsd]
     goarch: [amd64, arm64]  # flow-style so cicd.bash --no-arm can filter this line
 
@@ -52,6 +53,8 @@ checksum:
   name_template: checksums.txt
 
 release:
+  # The same first line as --version. release.yml sets NGDB_BUILD.
+  header: "ngdb v{{ .Version }} build {{ .Env.NGDB_BUILD }}"
   # -alpha/-beta/-rc tags land as a GitHub pre-release (not flagged Latest)
   prerelease: auto
   github:

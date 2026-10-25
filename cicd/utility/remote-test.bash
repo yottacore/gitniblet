@@ -70,7 +70,7 @@ fBuildBundle(){
 		## Name -> folder, since a test binary runs from its own package folder, and the import path its test IDs go by.
 		go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.Name}} {{.Dir}} {{.ImportPath}}{{end}}' ./... | sed "s#${PWD}#source#" > "${stage}/tests/manifest"
 	)
-	## build.bash stamps the commit and date, and names a cross build ngdb-<os>-<arch>.
+	## build.bash stamps the commit time and date, and names a cross build ngdb-<os>-<arch>.
 	GOOS="${os}" GOARCH="${arch}" nice -n 19 bash "${dirPath_Base}/cicd/build.bash" > /dev/null
 	if [[ "${os}" == "windows" ]]; then
 		cp "${dirPath_Base}/bin/ngdb-${os}-${arch}.exe" "${stage}/ngdb.exe"
@@ -80,7 +80,7 @@ fBuildBundle(){
 	fi
 	mkdir -p "${stage}/cicd/utility/include"
 	cp "${dirPath_Base}/cicd/utility/smoke-cli.bash" "${dirPath_Base}/cicd/utility/remote-unix.bash" "${stage}/cicd/utility/"
-	cp "${dirPath_Base}/cicd/utility/include/temp-run.bash" "${stage}/cicd/utility/include/"
+	cp "${dirPath_Base}/cicd/utility/include/temp-run.bash" "${dirPath_Base}/cicd/utility/include/build-number.bash" "${stage}/cicd/utility/include/"
 	## The ddl and seed tests parse project/example.shcl, from 4 levels up their package folder.
 	tar -C "${dirPath_Base}" --exclude=./source/vendor -cf - ./source ./demos ./project/example.shcl | tar -C "${stage}" -xf -
 	tar -C "${stage}" -czf "${runDir}/${tgt}/bundle.tgz" .

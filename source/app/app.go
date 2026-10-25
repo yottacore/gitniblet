@@ -9,6 +9,8 @@ package app
 
 import (
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,20 +26,47 @@ import (
 // cutting a release (the release tag and goreleaser both derive from it).
 var Version = "1.0.0-beta.2"
 
-// Build is extra provenance (short commit + dirty flag) stamped by cicd/build.bash
-// via -ldflags -X; empty for a plain `go build`, so a release binary reads clean.
-var Build = ""
+// CommitTime is the source commit's time in unix seconds, stamped through
+// -ldflags -X by cicd/build.bash and goreleaser. The build number comes from it,
+// not the clock, so one commit always builds to one number. Empty for a plain
+// `go build`, which then shows no build number at all.
+var CommitTime = ""
 
 // BuildTime is the UTC build time (RFC 3339), stamped by cicd/build.bash only.
 // Release builds leave it empty, so only non-release builds show a date.
 var BuildTime = ""
 
-// VersionLine is what --version prints. The build date is shown in the
-// viewer's local time zone, not the build machine's.
+// Copyright is the line --version prints under VersionLine.
+const Copyright = "Copyright © 2025-26 Jim Collier."
+
+const crockford = "0123456789abcdefghjkmnpqrstvwxyz"
+
+// BuildNumber is CommitTime as whole minutes since 2000-01-01 UTC, in lowercase
+// Crockford base 32, or "" when nothing usable was stamped.
+func BuildNumber() string {
+	const y2k = 946684800
+	secs, err := strconv.ParseInt(CommitTime, 10, 64)
+	if err != nil || secs < y2k {
+		return ""
+	}
+	n := (secs - y2k) / 60
+	if n == 0 {
+		return "0"
+	}
+	var b []byte
+	for ; n > 0; n /= 32 {
+		b = append(b, crockford[n%32])
+	}
+	slices.Reverse(b)
+	return string(b)
+}
+
+// VersionLine is what --version prints first: ngdb v<version> build <build>,
+// then the build date on a non-release build, in the viewer's own time zone.
 func VersionLine() string {
-	line := "ngdb " + Version
-	if Build != "" {
-		line += " (" + Build + ")"
+	line := "ngdb v" + Version
+	if b := BuildNumber(); b != "" {
+		line += " build " + b
 	}
 	if t, err := time.Parse(time.RFC3339, BuildTime); err == nil {
 		line += " (" + t.Local().Format("2006-01-02") + ")"
@@ -48,10 +77,11 @@ func VersionLine() string {
 // Run dispatches the given args (os.Args[1:]) to a front-end and returns its
 // error, if any.
 func Run(args []string) error {
-	// --version: print the build version and stop. A concise line the CI/CD
-	// pipeline can run to confirm the binary executes, without opening the TUI.
+	// --version: print the version and copyright lines and stop. Something the
+	// CI/CD pipeline can run to confirm the binary executes, without opening the TUI.
 	if len(args) > 0 && (args[0] == "--version" || args[0] == "-v") {
 		fmt.Println(VersionLine())
+		fmt.Println(Copyright)
 		return nil
 	}
 	// --help: the usage block on stdout, exit 0. Anything unrecognized still

@@ -457,7 +457,7 @@ fStages_BuildAndTest(){
 		## stages below compile their own debug/bench binaries via `go test`.
 		if fStep "Build (native debug)"; then
 			"${dirPath_Base}/cicd/build.bash" --debug
-			## Minimal execution test: --version prints one line and exits, never opening the
+			## Minimal execution test: --version prints two lines and exits, never opening the
 			## TUI. Running the app for real stays a separate manual step before the merge.
 			fEcho_Clean "version check (debug):"
 			"${dirPath_Base}/bin/ngdb-debug" --version

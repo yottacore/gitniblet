@@ -137,7 +137,8 @@ function Get-InstallDirectory {
 function Get-InstalledVersion {
 	param([string] $ExePath)
 	if (-not (Test-Path -LiteralPath $ExePath)) { return $null }
-	try { return (& $ExePath --version).Split(' ')[1] } catch { return $null }
+	## "ngdb v1.0.0 build dedrq", or before that "ngdb 1.0.0 (abc1234)".
+	try { return @(& $ExePath --version)[0].Split(' ')[1].TrimStart('v') } catch { return $null }
 }
 
 function Confirm-Plan {

@@ -61,7 +61,7 @@ In spite of being a SQL backend, data is saved one-field at a time - as long as 
 
 Manually kicked off via `cicd/cicd.bash`. Stages, in order (each fails early and hard on a real problem, exit >0):
 
-- **Build** native size-optimized, then cross-compile (windows-amd64, linux-arm64, windows-arm64; pure Go, no extra toolchains), zip windows into `dist/`.
+- **Build** native size-optimized, then cross-compile (windows-amd64, linux-arm64, windows-arm64; pure Go, no extra toolchains), zip windows into `dist/`. Every build stamps the source commit's time, and `--version` shows it as the build number, `ngdb v<version> build <build>`: minutes since 2000-01-01 UTC in lowercase Crockford base 32, like the test IDs. A non-release build adds its build date.
 
 - **Lint + format**: `gofmt -w` rewrites Go in place (never Bash), then `staticcheck` gates. `go vet` runs in test.bash.
 

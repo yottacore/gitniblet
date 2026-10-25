@@ -188,7 +188,8 @@ fInstallDir(){
 fInstalledVersion(){
 	local exe="$1"
 	[[ -x "${exe}" ]] || return 0
-	"${exe}" --version 2>/dev/null | awk '{print $2}'
+	## "ngdb v1.0.0 build dedrq", or before that "ngdb 1.0.0 (abc1234)".
+	"${exe}" --version 2>/dev/null | awk 'NR == 1 { sub(/^v/, "", $2); print $2 }'
 }
 
 fConfirm(){
