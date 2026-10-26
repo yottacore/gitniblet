@@ -46,8 +46,18 @@ try {
 
 	## Half the cores, a quarter when busy, never past the caller's cap.
 	$cores = [Environment]::ProcessorCount
-	## WMI refuses a non-admin ssh logon, so the load may be unknown.
-	$load = try { (Get-CimInstance Win32_Processor -ErrorAction Stop | Measure-Object LoadPercentage -Average).Average } catch { '?' }
+	## Busy percent over a second, from GetSystemTimes. WMI and the perf counters
+	## both refuse a non-admin ssh logon. Kernel time includes idle.
+	$load = try {
+		Add-Type -Namespace Ngdb -Name Cpu -MemberDefinition '[DllImport("kernel32.dll")] public static extern bool GetSystemTimes(out long idle, out long kernel, out long user);'
+		$i1 = $k1 = $u1 = $i2 = $k2 = $u2 = 0L
+		if (-not [Ngdb.Cpu]::GetSystemTimes([ref]$i1, [ref]$k1, [ref]$u1)) { throw 'GetSystemTimes' }
+		Start-Sleep -Seconds 1
+		if (-not [Ngdb.Cpu]::GetSystemTimes([ref]$i2, [ref]$k2, [ref]$u2)) { throw 'GetSystemTimes' }
+		$all = ($k2 - $k1) + ($u2 - $u1)
+		if ($all -le 0) { throw 'no ticks' }
+		[math]::Round(100 * ($all - ($i2 - $i1)) / $all)
+	} catch { '?' }
 	$jobs = [math]::Floor($cores / 2)
 	if ($load -ne '?' -and $load -gt 50) { $jobs = [math]::Floor($cores / 4) }
 	$jobs = [math]::Max(1, [math]::Min($jobs, $JobCap))
@@ -92,3 +102,4 @@ exit [int]($failed -ne 0)
 ##		- 20261025 JC: Created.
 ##		- 20261025 JC: -test.parallel passed.
 ##		- 20261025 JC: Raw test2json output per binary, for one line per test on the host.
+##		- 20261025 JC: Load from GetSystemTimes, which a non-admin logon can read.

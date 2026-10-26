@@ -19,6 +19,8 @@
 ##		  failure. Only a test that ran and failed fails the run.
 ##		- The wrap helper is NGDB_VM_WRAP, else the *_vm-state.bash in the synced
 ##		  util folder. Without one every target is skipped.
+##		- vmKt6m ignores the ACPI shutdown, so when it was found off it's halted
+##		  from inside, as collierjr, before the wrap puts it back.
 ##		- NGDB_REMOTE_WAIT is how long to wait in line for a box, default 900s.
 ##	History: At bottom of this file.
 
@@ -43,6 +45,8 @@ declare -ra targetTable=(
 	"macos       | darwin  | amd64 | mactest@b26 mactest@vmKt6m    | 4"
 )
 declare -ra sshOpts=(-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=4)
+## Guests that ignore the ACPI shutdown, and who can halt them from inside.
+declare -rA haltFromInside=([vmKt6m]="collierjr@vmKt6m")
 
 fEcho(){ printf '%s\n' "${*}"; }
 fWarn(){ printf 'WARNING: %s\n' "${*}" >&2; }
@@ -157,12 +161,33 @@ fOnBox_Windows(){
 }
 
 
+## Still inside the wrap. A guest that ignores ACPI and was found off is halted
+## from inside, so the wrap's put-back finds it going down rather than waiting
+## out its stop timeout.
+fHaltIfFoundOff(){
+	local -r tgt="${1}" host="${2#*@}"
+	local -r halter="${haltFromInside[${host}]:-}"
+	[[ -n "${halter}" ]]  ||  return 0
+	[[ "$(cat "${runDir}/${tgt}/status" 2> /dev/null)" != "noanswer" ]]  ||  return 0
+	[[ "$("${NGDB_VM_WRAP:?}" status "${host}" 2> /dev/null)" == *"put back to off"* ]]  ||  return 0
+	fEcho "${tgt}: halting ${host} from inside, since it ignores the ACPI shutdown"
+	local rc=0
+	## The link hangs as it goes down. ssh takes the first value given, so short keepalives go first.
+	timeout 60 ssh -o ServerAliveInterval=3 -o ServerAliveCountMax=2 "${sshOpts[@]}" "${halter}" sudo -n shutdown -h now < /dev/null &> /dev/null  ||  rc=$?
+	## 255 and 124 are the link dropping. sudo -n fails at once with 1.
+	((rc == 0 || rc == 255 || rc == 124))  ||  fWarn "${tgt}: couldn't halt ${host} as ${halter%@*} (exit ${rc})"
+}
+
 fMain(){
 	local -a want=()
 	local summaryFile=""
 	keepTemp=0
 	while (($#)); do case "${1}" in
-		--on-box)     shift; runDir="${1}"; keepTemp="${4}"; fOnBox "${2}" "${3}" "${5}"; return ;;
+		--on-box)
+			shift; runDir="${1}"; keepTemp="${4}"
+			local boxRc=0; fOnBox "${2}" "${3}" "${5}"  ||  boxRc=$?
+			fHaltIfFoundOff "${2}" "${3}"
+			return "${boxRc}" ;;
 		--keep-temp)  keepTemp=1; shift ;;
 		--summary)    summaryFile="${2:-}"; shift 2 ;;
 		-h|--help)    sed -n 's/^##\t\{0,1\}//p' "${meFile}" | sed -n '/^Purpose:/,/^History:/p' | sed '$d'; return 0 ;;
@@ -186,6 +211,7 @@ fMain(){
 		local -a found=("${HOME}"/synced/0-0/common/exec/util/linux/bash/*_vm-state.bash)
 		[[ -x "${found[0]}" ]]  &&  vmWrap="${found[0]}"
 	fi
+	export NGDB_VM_WRAP="${vmWrap}"  ## for the halt inside the wrap
 	if [[ -z "${vmWrap}" ]] || ! command -v go &> /dev/null; then
 		local why="no VM and host lock wrap helper here"; [[ -n "${vmWrap}" ]] && why="no go here"
 		for row in "${rows[@]}"; do fParseRow "${row}"; summary+=("SKIP ${target}: ${why}"); fWarn "${target}: ${why}"; done
@@ -253,3 +279,4 @@ fMain "${@}"
 ##		- 20261025 JC: Created. FreeBSD, Linux arm64 and Intel macOS.
 ##		- 20261025 JC: Run folders under nano-git-db-floss, here and on the boxes, through the shared guard.
 ##		- 20261025 JC: One line per test with its ID, through testid remote.
+##		- 20261025 JC: vmKt6m is halted from inside when it was found off.

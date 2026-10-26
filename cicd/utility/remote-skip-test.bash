@@ -10,6 +10,7 @@
 ##		- A box that answers and then fails is a FAIL, and the run exits 1.
 ##		- A box's test output becomes one line per test with its ID.
 ##		- The bundle carries project/example.shcl, which some tests parse.
+##		- vmKt6m is halted from inside only when it was found off.
 ##		- Each run removes its own run folder.
 ##	Syntax:
 ##		remote-skip-test.bash     ## about a minute, most of it the cross-builds
@@ -27,12 +28,21 @@ runDir="$(fTempDir_Make remote-skip)"  ||  exit 1
 trap 'fSafeRm "${runDir}" > /dev/null' EXIT
 
 ## wrap: WRAP_MODE=run runs what follows --, hold gives up before it, as a lock wait would.
+## A host in WRAP_HELD gives up the same way. status says vmKt6m goes back to VM_FOUND.
 ## ssh: SSH_MODE=dead never answers, half answers the probe and fails the rest,
 ## play is a box whose tests print BOX_OUT and exit 1, and that keeps the bundle it's sent in BUNDLE_OUT.
+## SSH_LOG lists every ssh call.
 mkdir "${runDir}/bin"
-printf '#!/bin/bash\n[[ "${WRAP_MODE}" == run ]] || exit 3\nwhile (($#)) && [[ "$1" != -- ]]; do shift; done; shift\nexec "$@"\n' > "${runDir}/wrap"
+cat > "${runDir}/wrap" << 'EOF'
+#!/bin/bash
+[[ "$1" != status ]] || { echo "host guest state note"; echo "$2 $2 running put back to ${VM_FOUND:-running}"; exit 0; }
+[[ "${WRAP_MODE}" == run && " ${WRAP_HELD:-} " != *" $2 "* ]] || exit 3
+while (($#)) && [[ "$1" != -- ]]; do shift; done; shift
+exec "$@"
+EOF
 cat > "${runDir}/bin/ssh" << 'EOF'
 #!/bin/bash
+[[ -z "${SSH_LOG:-}" ]] || echo "$*" >> "${SSH_LOG}"
 [[ "${SSH_MODE}" == half && "${*: -1}" == 0 ]] && exit 0
 [[ "${SSH_MODE}" == play ]] || exit 255
 case "${*: -1}" in
@@ -66,6 +76,14 @@ fCase dedn8 "box that can't be held is a SKIP"  0 "SKIP freebsd: no answer from 
 fCase dedn9 "no wrap helper is a SKIP"          0 "SKIP freebsd: no VM and host lock wrap helper here" NGDB_VM_WRAP= HOME=/nonexistent
 fCase dedna "box that fails is a FAIL"          1 "FAIL freebsd on vmFreeBSD"                          "${stand[@]}" WRAP_MODE=run  SSH_MODE=half
 fCase dedr4 "box's tests print one line each"   1 "FAIL dabew internal/core/guid TestDecodeAcceptsHex" "${stand[@]}" WRAP_MODE=run  SSH_MODE=play BOX_OUT="${runDir}/box.out" BUNDLE_OUT="${runDir}/bundle.tgz"
+## b26 is held, so macos falls back to vmKt6m.
+onKt6m=("${stand[@]}" WRAP_MODE=run WRAP_HELD=b26 SSH_MODE=play BOX_OUT="${runDir}/box.out")
+fCase deed6 "vmKt6m found off is halted from inside" 1 "macos: halting vmKt6m from inside" "${onKt6m[@]}" VM_FOUND=off     SSH_LOG="${runDir}/ssh-off.log"
+if ! grep -qE -- 'collierjr@vmKt6m sudo -n shutdown -h now$' "${runDir}/ssh-off.log"; then
+	echo "FAIL deed6 vmKt6m found off is halted from inside (no halt sent)"; fails+=1
+fi
+fCase deed7 "vmKt6m found running is left up"        1 "FAIL macos on vmKt6m"              "${onKt6m[@]}" VM_FOUND=running SSH_LOG="${runDir}/ssh-run.log"
+if grep -q shutdown "${runDir}/ssh-run.log"; then echo "FAIL deed7 vmKt6m found running is left up (halt sent)"; fails+=1; fi
 ## Listed first, since grep -q quits early and pipefail would count tar's SIGPIPE.
 if grep -qx './project/example.shcl' <<< "$(tar -tzf "${runDir}/bundle.tgz" 2> /dev/null)"; then echo "PASS dedrg bundle carries project/example.shcl"
 else echo "FAIL dedrg bundle carries project/example.shcl"; fails+=1; fi
@@ -82,3 +100,4 @@ exit $((fails > 0))
 ##		- 20261025 JC: The shared run folder and guard from include/temp-run.bash.
 ##		- 20261025 JC: A stand-in box's test output, for one line per test with its ID.
 ##		- 20261025 JC: The bundle carries project/example.shcl.
+##		- 20261025 JC: vmKt6m halted from inside only when found off.

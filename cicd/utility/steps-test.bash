@@ -143,7 +143,8 @@ fFailRun(){
 fCheck dedq8 "a failing step closes with FAIL and the run stops" fFailRun
 
 ## A docker stand-in that logs and passes, so only the run's arguments are checked.
-printf '#!/bin/bash\necho "$*" >> "%s"\n[[ "$1" != version ]] || echo 29\nexit 0\n' "${runDir}/docker.log" > "${runDir}/bin/docker"
+## Its run ends as the real run inside does, with a step's PASS line and a blank.
+printf '#!/bin/bash\necho "$*" >> "%s"\n[[ "$1" != version ]] || echo 29\n[[ "$1" != run ]] || printf "%%s\\n\\n" "[ 20261025-000000.00: Step 5 of 5; PASS Security + supply-chain ]"\nexit 0\n' "${runDir}/docker.log" > "${runDir}/bin/docker"
 chmod +x "${runDir}/bin/docker"
 fContainerArgs(){
 	local run
@@ -157,8 +158,16 @@ fContainerArgs(){
 }
 fCheck dedq9 "the container gets --cpus, --cpu-shares 256, the step list, the cap and nice" fContainerArgs
 
+## Uses dedq9's output. The next section on this host follows the run inside after one blank, not two.
+fOneBlank(){
+	grep -qF 'PASS Security + supply-chain ]' "${runDir}/ctr.out"  ||  { echo "  no output from the run inside"; return 1; }
+	! awk 'prev == "" && $0 == "" && NR > 1 { print "  2 blank lines at line " NR; bad = 1 } { prev = $0 } END { exit !bad }' "${runDir}/ctr.out"
+}
+fCheck deed8 "one blank line between the run in the container and the next section" fOneBlank
+
 exit $((fails > 0))
 
 
 ##	History:
 ##		- 20261025 JC: Created.
+##		- 20261025 JC: One blank after the run in the container.

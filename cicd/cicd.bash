@@ -803,6 +803,7 @@ fStage_Container(){
 	fEcho_Clean "Container: running ${projectName}-${runStamp}-pipeline"
 	"${containerEngine}" run "${runArgs[@]}" "${containerTag}" nice -n 19 bash "${dirPath_Base}/cicd/cicd.bash" "${innerArgs[@]}" &
 	wait "$!"  ||  fThrowError "The run in the container failed; its output is above."
+	fEcho_WasLastEchoBlank_Set 1  ## the run inside closed its last step with a blank line
 	imagePassed=1
 }
 

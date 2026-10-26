@@ -537,22 +537,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
 	- Related IDs: 2026101915293586
 
-- `remote-test.bash` leaves vmKt6m running after it's used.
-	- ID: 2026102510392387
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-103923
-	- Opened by: JC
-	- Related IDs: 2026102416210001
-	- Steps to reproduce [Bug]:
-		- Run `cicd/utility/remote-test.bash macos` while b26 is held, with vmKt6m off.
-	- Incorrect behavior [Bug]: vmKt6m stays running. The run waits 300 seconds for it to stop, then warns `vmKt6m may not be back as it was found`.
-	- Expected behavior [Bug]: vmKt6m goes back to off, as the other VMs do.
-	- Reproduced [Bug]: 20261025, in the full run on `cicd1025`.
-	- Possible cause [Bug]: vmKt6m ignores the ACPI shutdown. The machine notes shut it down from inside, with `sudo -n shutdown -h now` as `collierjr`, then run `restore` again.
-	- Estimated effort: Low
-
 - Lookup picker and write-time value check.
 	- ID: 2026102407295340
 	- Type: Enhancement
@@ -570,37 +554,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Progress log:
 		- 20261024: Split into 2026102408470107 (write check), 2026102408470113 (lookup picker) and 2026102408470118 (`literal` and `sql` pickers). This item closes with the last of them.
 		- 20261024: All 3 are in. The write check is Done, and the 2 pickers wait on a look by eye.
-
-- A run through the container prints 2 blank lines before the first step on this host.
-	- ID: 2026102510392392
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261025-103923
-	- Opened by: JC
-	- Related IDs: 2026102416210005
-	- Steps to reproduce [Bug]:
-		- Run `cicd/cicd.bash` with the container on and the remote tests on.
-	- Incorrect behavior [Bug]: 2 blank lines sit between `Step 7 of 9; PASS Security + supply-chain` and the rule above step 8.
-	- Expected behavior [Bug]: One blank line between sections.
-	- Reproduced [Bug]: 20261025, in the full run on `cicd1025`.
-	- Estimated effort: Low
-
-- b29w's load is unknown, so its tests never drop to a quarter when busy.
-	- ID: 2026102510392398
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261025-103923
-	- Opened by: JC
-	- Related IDs: 2026102416210003
-	- Steps to reproduce [Bug]:
-		- Run `cicd/utility/remote-test.bash windows`.
-	- Incorrect behavior [Bug]: It prints `load ?%`, since `remote-windows.ps1` reads the load through WMI, which refuses the `wintest` ssh logon.
-	- Expected behavior [Bug]: The box's load is read, and the job count drops to a quarter when it's over half, as on the other boxes.
-	- Reproduced [Bug]: 20261025, in the full run on `cicd1025`.
-	- Possible cause [Bug]: A source that doesn't need WMI, such as `Get-Counter` on the processor time, might work for a non-admin. Not tried.
-	- Estimated effort: Low
 
 - `cleanup-test.bash` dedpb can take 30s to stop after Ctrl+C under load.
 	- ID: 2026102520025738
@@ -842,6 +795,38 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Test case: The govulncheck gate. It failed under `go1.26.5` and passes under `go1.26.10`.
 	- Closed: 20261024-092700
 
+- `remote-test.bash` leaves vmKt6m running after it's used.
+	- ID: 2026102510392387
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-103923
+	- Opened by: JC
+	- Related IDs: 2026102416210001
+	- Steps to reproduce [Bug]:
+		- Run `cicd/utility/remote-test.bash macos` while b26 is held, with vmKt6m off.
+	- Incorrect behavior [Bug]: vmKt6m stays running. The run waits 300 seconds for it to stop, then warns `vmKt6m may not be back as it was found`.
+	- Expected behavior [Bug]: vmKt6m goes back to off, as the other VMs do.
+	- Reproduced [Bug]: 20261025, in the full run on `cicd1025`.
+	- Possible cause [Bug]: vmKt6m ignores the ACPI shutdown. The machine notes shut it down from inside, with `sudo -n shutdown -h now` as `collierjr`, then run `restore` again.
+	- Actual cause [Bug]: As guessed. The wrap's put-back sends only the ACPI request, which vmKt6m ignores.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: Still inside the wrap, `remote-test.bash` halts vmKt6m from inside, as `collierjr` with `sudo -n shutdown -h now`, when the wrap noted it was found off. The put-back then sees it going down. A VM found running is left up.
+		- The halt has short keepalives and a 60s cap, since its ssh can hang on the link going down. The first run hung there for 2 minutes.
+		- Verified: deed6 fails on the old `remote-test.bash` and passes on the new one. deed7 and the rest of `remote-skip-test.bash` pass.
+		- Verified: `remote-test.bash windows macos` with b26 held passed on vmKt6m, halted it, and the wrap put it back to off with no warning. The capped halt alone, inside the wrap, returned in 1s, and vmKt6m was off 27s after the wrap started.
+		- Swept: the only other VM-wrapped boxes are vmFreeBSD and vmDebARM64, which both went back to off by ACPI in earlier runs. b26 and b29w aren't VMs.
+	- Decisions:
+		- The fix sits in `remote-test.bash`, not the shared VM helper, which is outside this repo. The guest ignoring ACPI is the cause, and the halt from inside works around it.
+		- The found state comes from the helper's `status` note, so a VM someone left running stays running.
+		- The guests that need it are in one table, `haltFromInside`, with the account that can halt each.
+	- Actual fix [Bug]: `remote-test.bash` halts vmKt6m from inside before the put-back, when it was found off.
+	- Branch: r1025
+	- Test case: `cicd/utility/remote-skip-test.bash` deed6 and deed7.
+	- Closed: 20261025-204220
+
 - cicd's local hooks stopped running when the repo moved into `nano-git-db-floss/repo`.
 	- ID: 2026102409431176
 	- Type: Bug
@@ -970,6 +955,57 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: round1024
 	- Test case: `TestSeedParse` and `TestSeedParseExample` in `source/internal/core/ddl/seed_test.go`, `TestSeedRowsLogFirst` and `TestSeedRowsExample` in `source/internal/core/schema/seed_test.go`.
 	- Closed: 20261024-075842
+
+- A run through the container prints 2 blank lines before the first step on this host.
+	- ID: 2026102510392392
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261025-103923
+	- Opened by: JC
+	- Related IDs: 2026102416210005
+	- Steps to reproduce [Bug]:
+		- Run `cicd/cicd.bash` with the container on and the remote tests on.
+	- Incorrect behavior [Bug]: 2 blank lines sit between `Step 7 of 9; PASS Security + supply-chain` and the rule above step 8.
+	- Expected behavior [Bug]: One blank line between sections.
+	- Reproduced [Bug]: 20261025, in the full run on `cicd1025`.
+	- Actual cause [Bug]: The run inside and the one on this host each track their own last blank line. This host still saw `Container: running ...` as the last line, so its next section printed another blank. The closing section had the same 2 blanks when no host step followed.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: After the run in the container returns, `cicd.bash` notes that its last line was blank, since the run inside closed its last step with one. The next section on this host then adds no second blank.
+		- Verified: deed8 fails on the old `cicd.bash`, with 2 blanks, and passes on the new one, with the rest of `steps-test.bash`. A `--backlog-run-quick` run through the container had one blank between its last step and the closing section.
+		- Swept: the run in the container is the only nested run that prints sections. `remote-test.bash` prints plain lines inside its step.
+	- Actual fix [Bug]: `fStage_Container` marks the last line blank after a run in the container passes.
+	- Branch: r1025
+	- Test case: `cicd/utility/steps-test.bash` deed8.
+	- Closed: 20261025-204220
+
+- b29w's load is unknown, so its tests never drop to a quarter when busy.
+	- ID: 2026102510392398
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261025-103923
+	- Opened by: JC
+	- Related IDs: 2026102416210003
+	- Steps to reproduce [Bug]:
+		- Run `cicd/utility/remote-test.bash windows`.
+	- Incorrect behavior [Bug]: It prints `load ?%`, since `remote-windows.ps1` reads the load through WMI, which refuses the `wintest` ssh logon.
+	- Expected behavior [Bug]: The box's load is read, and the job count drops to a quarter when it's over half, as on the other boxes.
+	- Reproduced [Bug]: 20261025, in the full run on `cicd1025`.
+	- Possible cause [Bug]: A source that doesn't need WMI, such as `Get-Counter` on the processor time, might work for a non-admin. Not tried.
+	- Actual cause [Bug]: WMI and the performance counters both refuse a non-admin ssh logon.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: `remote-windows.ps1` reads the busy percent over one second from `GetSystemTimes`, which any logon can call. `Get-Counter`, `PerformanceCounter` and `typeperf` were all refused for `wintest` too, as WMI is.
+		- Verified: `remote-test.bash windows` on b29w printed `load 10%, 4 jobs` and passed 246 tests and the smoke. The drop to a quarter wasn't seen live, since the box wasn't busy. Its check is the same as before.
+		- Swept: `remote-unix.bash` reads the load average on the other 3 boxes, and printed it on each in the full run.
+	- Actual fix [Bug]: The load comes from `GetSystemTimes`, sampled over one second.
+	- Branch: r1025
+	- Test case: None in CI. It needs a Windows logon without admin rights, and was checked on b29w.
+	- Closed: 20261025-204220
 
 - Remote boxes skip the 3 tests that parse `project/example.shcl`.
 	- ID: 2026102509132812
