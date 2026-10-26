@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jim-collier/nano-git-db/internal/core/ddl"
+	"github.com/yottacore/gitniblet/internal/core/ddl"
 )
 
 // lookupGroup is the lookups idx a `list_type: lookup` field draws from, or 0

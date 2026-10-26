@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jim-collier/nano-git-db/internal/core/txlog"
+	"github.com/yottacore/gitniblet/internal/core/txlog"
 )
 
 // StartAutoSync begins the sync loop and returns its stop function. It is a

@@ -5,17 +5,17 @@
 <!-- markdownlint-disable MD041 -- First line in a file should be a top-level heading -->
 <div align="center">
 
-![Go](https://img.shields.io/github/go-mod/go-version/jim-collier/nano-git-db?filename=source/go.mod&logo=go&logoColor=white)
-[![CI](https://github.com/jim-collier/nano-git-db/actions/workflows/ci.yml/badge.svg)](https://github.com/jim-collier/nano-git-db/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/jim-collier/nano-git-db?include_prereleases)](https://github.com/jim-collier/nano-git-db/releases/latest)
+![Go](https://img.shields.io/github/go-mod/go-version/yottacore/gitniblet?filename=source/go.mod&logo=go&logoColor=white)
+[![CI](https://github.com/yottacore/gitniblet/actions/workflows/ci.yml/badge.svg)](https://github.com/yottacore/gitniblet/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/yottacore/gitniblet?include_prereleases)](https://github.com/yottacore/gitniblet/releases/latest)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](license.md)
 ![Lifecycle: Beta](https://img.shields.io/badge/Lifecycle-Beta-yellow)
 ![Support](https://img.shields.io/badge/Support-Maintained-brightgreen)
 
 <!-- TOC ignore:true -->
-# Nano Git DB
+# GitNiblet
 
-<img src="assets/logo.png" alt="Nano Git DB" width="140"/>
+<img src="assets/logo.png" alt="GitNiblet" width="140"/>
 
 A multi-user database you sync with `git`. No server, no SQL, and one static binary that gives you a command line, a terminal UI, and a local web UI.
 
@@ -49,7 +49,7 @@ It scales down to one person with no remote at all, and up to a team spread acro
 	- [Basic CLI](#basic-cli)
 - [Set up a development environment](#set-up-a-development-environment)
 - [Full syntax reference](#full-syntax-reference)
-- [Support nano-git-db](#support-nano-git-db)
+- [Support gitniblet](#support-gitniblet)
 - [Copyright and license](#copyright-and-license)
 
 <!-- /TOC -->
@@ -68,7 +68,7 @@ Plenty of tools each do some of these. None do all of them at once:
 
 - Changes to the schema are backwards and forwards compatible by definition. No data is ever lost.
 
-`nano-git-db` is all of them.
+`gitniblet` is all of them.
 
 ## Features
 
@@ -104,7 +104,7 @@ Plenty of tools each do some of these. None do all of them at once:
 
 ## Enterprise edition
 
-`nano-git-db` is open source and complete on its own. A separately licensed enterprise edition adds features some teams need, built into the same single binary.
+`gitniblet` is open source and complete on its own. A separately licensed enterprise edition adds features some teams need, built into the same single binary.
 
 - At-rest post-quantum encryption of field values in the synced log. The git host can't read your data, while your local database stays fully queryable. Each database has its own key, kept out of the repo, with a per-field, per-table, or per-database policy set by an `encryption: always|never|auto` DDL key.
 
@@ -126,34 +126,34 @@ The existing functionality and feature set in this open-source version will neve
 
 ## What a database is, on disk
 
-A database is just a few files. You register it once with `ngdb --init`, then refer to it by name - ngdb keeps track of the paths.
+A database is just a few files. You register it once with `gitniblet --init`, then refer to it by name - gitniblet keeps track of the paths.
 
 - `schema.shcl` - your schema. Keep it with your project, inside the git repo if you want syncing. Edit it anytime; the local database migrates itself.
 - `txlog.csv` - the append-only transaction log (a folder of segments). The source of truth, synced and auto-merged by git. For sharing, this *is* the database.
 - `<name>.queries.shcl` - optional saved queries, next to the schema.
 - `db.sqlite` - the local, rebuildable view of the log. Derived, never synced, kept outside the repo (next to the registry record, under your OS config dir).
-- `config.shcl` - ngdb's own registry record for the database, in your OS config dir. Written by `--init`; you won't normally touch it.
-- `ngdb` - the one binary, anywhere on your `PATH`.
+- `config.shcl` - gitniblet's own registry record for the database, in your OS config dir. Written by `--init`; you won't normally touch it.
+- `gitniblet` - the one binary, anywhere on your `PATH`.
 
 ## Example use cases
 
-- A team issue tracker, one per git repo, shared through the same repo the code lives in. Automate it from the command line, or let each person use the TUI (even over SSH), a shared web UI, or their own local-only web UI. A full one, built on ngdb, is [ngdb-issue-tracker](https://github.com/jim-collier/ngdb-issue-tracker).
+- A team issue tracker, one per git repo, shared through the same repo the code lives in. Automate it from the command line, or let each person use the TUI (even over SSH), a shared web UI, or their own local-only web UI. A full one, built on gitniblet, is [gitniblet-issue-tracker](https://github.com/jim-collier/gitniblet-issue-tracker).
 - Any small shared database a GitHub project wants its contributors to keep - they install one small binary to take part, and it rides along in the repo.
 
 ## Installation
 
-`ngdb` is a single static executable with nothing to configure and no runtime to install. Any of these gets you one.
+`gitniblet` is a single static executable with nothing to configure and no runtime to install. Any of these gets you one.
 
 ### Packages and installers
 
-Pick your platform from the [latest release](https://github.com/jim-collier/nano-git-db/releases/latest):
+Pick your platform from the [latest release](https://github.com/yottacore/gitniblet/releases/latest):
 
 | Platform | What to download
 | :--      | :--
-| Debian, Ubuntu | `ngdb_<version>_linux_<arch>.deb`
-| Fedora, RHEL, openSUSE | `ngdb_<version>_linux_<arch>.rpm`
-| Windows | `ngdb-<version>-windows-<arch>-setup.exe` (updates an existing install in place)
-| macOS, FreeBSD, other Linux | the matching `.tar.gz`, then copy `ngdb` onto your `PATH`
+| Debian, Ubuntu | `gitniblet_<version>_linux_<arch>.deb`
+| Fedora, RHEL, openSUSE | `gitniblet_<version>_linux_<arch>.rpm`
+| Windows | `gitniblet-<version>-windows-<arch>-setup.exe` (updates an existing install in place)
+| macOS, FreeBSD, other Linux | the matching `.tar.gz`, then copy `gitniblet` onto your `PATH`
 
 Every release also carries a `checksums.txt` if you'd like to verify what you downloaded.
 
@@ -164,13 +164,13 @@ The script picks the right build, checks it against the published checksum, tell
 Linux, macOS, FreeBSD, WSL:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/jim-collier/nano-git-db/main/install.bash)
+bash <(curl -fsSL https://raw.githubusercontent.com/yottacore/gitniblet/main/install.bash)
 ```
 
 Windows, or anywhere with PowerShell 7:
 
 ```powershell
-& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/jim-collier/nano-git-db/main/install.ps1')))
+& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/yottacore/gitniblet/main/install.ps1')))
 ```
 
 Both accept the same options:
@@ -189,8 +189,8 @@ Where it puts things:
 
 | OS | User install | System install
 | :-- | :-- | :--
-| Linux, macOS, FreeBSD | `~/.local/bin/ngdb` | `/usr/local/bin/ngdb`
-| Windows | `%LOCALAPPDATA%\Programs\ngdb\ngdb.exe` | `%ProgramFiles%\ngdb\ngdb.exe`
+| Linux, macOS, FreeBSD | `~/.local/bin/gitniblet` | `/usr/local/bin/gitniblet`
+| Windows | `%LOCALAPPDATA%\Programs\gitniblet\gitniblet.exe` | `%ProgramFiles%\gitniblet\gitniblet.exe`
 
 The Windows user install adds its directory to your `PATH`; the others assume the standard local `bin` is already there.
 
@@ -202,7 +202,7 @@ Copy the executable anywhere on your `PATH` - that is the whole install. To buil
 
 ## Quick start
 
-You define the database in a plain-text schema file (the DDL). No SQL, no migrations - you edit the file, and the local database migrates itself. Under the hood three things matter: your `schema.shcl`, a tx-log directory (the shared source of truth, git-syncable), and a local `.sqlite` (a rebuildable view - never synced). You register those once and then just refer to the database by name; ngdb keeps track of the paths (see [Startup discovery](syntax.md#startup-discovery-and-the-database-registry)).
+You define the database in a plain-text schema file (the DDL). No SQL, no migrations - you edit the file, and the local database migrates itself. Under the hood three things matter: your `schema.shcl`, a tx-log directory (the shared source of truth, git-syncable), and a local `.sqlite` (a rebuildable view - never synced). You register those once and then just refer to the database by name; gitniblet keeps track of the paths (see [Startup discovery](syntax.md#startup-discovery-and-the-database-registry)).
 
 ### A minimal schema
 
@@ -264,25 +264,25 @@ Register your schema once, then refer to the database by name - you never spell 
 
 ```
 # register the todo.shcl in this directory as the database "todo"
-ngdb --init
+gitniblet --init
 
 # add a top-level task; the command prints the new row's id
-ngdb create todo task title="Ship v1" status=open
+gitniblet create todo task title="Ship v1" status=open
 
 # add a subtask under it (paste the parent id from above)
-ngdb create todo task title="Write docs" parent_task=<parent-id>
+gitniblet create todo task title="Write docs" parent_task=<parent-id>
 
 # add a comment to a task, then list its comments
-ngdb comment  todo task <id> "kickoff notes"
-ngdb comments todo task <id>
+gitniblet comment  todo task <id> "kickoff notes"
+gitniblet comments todo task <id>
 
 # read it back
-ngdb query todo "SELECT title, status FROM task WHERE is_deleted = 0"
+gitniblet query todo "SELECT title, status FROM task WHERE is_deleted = 0"
 ```
 
-The database name is the first argument; if you'd rather be explicit, `--db=todo --table=task` flags work in any order too. Run a bare `ngdb` to see a picker of your registered databases.
+The database name is the first argument; if you'd rather be explicit, `--db=todo --table=task` flags work in any order too. Run a bare `gitniblet` to see a picker of your registered databases.
 
-Prefer a UI? `ngdb --tui todo` opens the terminal UI over that database, and `ngdb --serve todo` serves a local web UI on `127.0.0.1:8765`. Run `--init` inside a git repo to auto-place the synced tx-log under it. See [Startup discovery](syntax.md#startup-discovery-and-the-database-registry).
+Prefer a UI? `gitniblet --tui todo` opens the terminal UI over that database, and `gitniblet --serve todo` serves a local web UI on `127.0.0.1:8765`. Run `--init` inside a git repo to auto-place the synced tx-log under it. See [Startup discovery](syntax.md#startup-discovery-and-the-database-registry).
 
 ## Set up a development environment
 
@@ -296,10 +296,10 @@ Prerequisites:
 Build and test:
 
 ```bash
-git clone https://github.com/jim-collier/nano-git-db
-cd nano-git-db
+git clone https://github.com/yottacore/gitniblet
+cd gitniblet
 
-# size-optimized static binary at ./bin/ngdb
+# size-optimized static binary at ./bin/gitniblet
 ./cicd/build.bash
 
 # from source/, the module root
@@ -319,9 +319,9 @@ Contributions are welcome - see [contributing.md](contributing.md).
 
 The complete DDL, sidecar-file (named queries, triggers), CLI, run-mode, access-model, and registry reference lives in [syntax.md](syntax.md).
 
-## Support nano-git-db
+## Support gitniblet
 
-`nano-git-db` is written and maintained by one programmer in his spare time. If you use it often, or it saves you time, sponsoring it keeps it moving.
+`gitniblet` is written and maintained by one programmer in his spare time. If you use it often, or it saves you time, sponsoring it keeps it moving.
 
 Even a few dollars a month is meaningful. Or just buy me a coffee.
 
@@ -349,6 +349,6 @@ Tell other developers and teams about it wherever you hang out.
 > Copyright © 2025-26 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]<br />
 > Licensed under the [GNU Affero General Public License v3.0](license.md) (`AGPL-3.0-only`). No warranty.
 
-The AGPL's network-use "SaaS" clause (what specifically differentiates it from regular GPL) is deliberate. If you run a modified `nano-git-db` as a network service - which anyone is free and encouraged to do - you must offer users your source so that others can continue to build on your work, and so on.
+The AGPL's network-use "SaaS" clause (what specifically differentiates it from regular GPL) is deliberate. If you run a modified `gitniblet` as a network service - which anyone is free and encouraged to do - you must offer users your source so that others can continue to build on your work, and so on.
 
 Separately from that, a licensed enterprise edition is also available under different terms. Therefore, as with *all* "Community/Commercial" or "FLOSS/Enterprise" projects like this - including all the big ones you know like Red Hat, Kubernetes, VSCode, WordPress, MongoDB, GitLab - outside contributions must legally sign a [Contributor License Agreement](CLA.md) for the model to work, and therefore to be able to contribute code in the first place. See [contributing.md](contributing.md).

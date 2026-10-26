@@ -19,7 +19,7 @@ import (
 
 	sqlite "modernc.org/sqlite"
 
-	"github.com/jim-collier/nano-git-db/internal/core/guid"
+	"github.com/yottacore/gitniblet/internal/core/guid"
 )
 
 // Registration is driver-global and only reaches connections opened later, so

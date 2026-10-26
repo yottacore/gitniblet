@@ -42,8 +42,8 @@ func FuzzParseHash(f *testing.F) {
 func FuzzLoadRecord(f *testing.F) {
 	for _, s := range []string{
 		"",
-		"name: mydb\nddl_path: /p/mydb.shcl\nlog_dir: /p/ngdb/mydb\n",
-		"name: mydb\n\nddl_path: /p/mydb.shcl\n\nlog_dir: /p/ngdb/mydb\n\n" +
+		"name: mydb\nddl_path: /p/mydb.shcl\nlog_dir: /p/gitniblet/mydb\n",
+		"name: mydb\n\nddl_path: /p/mydb.shcl\n\nlog_dir: /p/gitniblet/mydb\n\n" +
 			"sqlite_path: /c/mydb.sqlite\n\nkey_file: /c/mydb.key\n\n" +
 			"encryption: auto\n\nlast_opened: \"2026-08-04T21:00:00Z\"\n",
 		"## registry record\nname: \"my db\"\n\nencryption: auto\t## local pref\n",

@@ -63,8 +63,8 @@ jobs:
       - name: Tag
         if: steps.v.outputs.skip != '1'
         run: |
-          git config user.name "nano-git-db"
-          git config user.email "release@nano-git-db.local"
+          git config user.name "gitniblet"
+          git config user.email "release@gitniblet.local"
           git tag -a "v${{ steps.v.outputs.version }}" -m "v${{ steps.v.outputs.version }}"
           git push origin "v${{ steps.v.outputs.version }}"
       # For the release notes' version line. The binaries work it out themselves.
@@ -73,7 +73,7 @@ jobs:
         run: |
           source cicd/utility/include/build-number.bash
           build="$(fBuildNumber)"
-          echo "NGDB_BUILD=${build}" >> "$GITHUB_ENV"
+          echo "GITNIBLET_BUILD=${build}" >> "$GITHUB_ENV"
       - name: goreleaser
         if: steps.v.outputs.skip != '1'
         uses: goreleaser/goreleaser-action@v7

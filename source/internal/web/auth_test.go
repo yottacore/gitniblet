@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jim-collier/nano-git-db/internal/core/config"
+	"github.com/yottacore/gitniblet/internal/core/config"
 )
 
 // proxiedServer returns a server in proxied mode with one known login.

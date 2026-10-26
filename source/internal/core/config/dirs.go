@@ -5,7 +5,7 @@
 // under a user (and optional system) config directory, plus the discovery that
 // startup uses to offer a "which database?" picker when no DDL was named.
 //
-// A registered database is a directory <base>/ngdb/<name>/ holding config.shcl.
+// A registered database is a directory <base>/gitniblet/<name>/ holding config.shcl.
 // The DDL, tx-log and attachments are the git-synced artifacts the record
 // points at; the SQLite view and encryption key are local, unsynced files that
 // default to living beside the record (both are rebuildable / re-fetchable).
@@ -19,7 +19,11 @@ import (
 )
 
 // appDir is the registry sub-directory under every config base.
-const appDir = "ngdb"
+const appDir = "gitniblet"
+
+// oldAppDir is the name before the rename. UserBase moves it to appDir once,
+// so a beta install keeps its databases.
+const oldAppDir = "ngdb"
 
 // baseOverride, when set (by the --config flag via SetBaseOverride), replaces
 // the OS-derived registry root entirely - used verbatim, no appDir appended.
@@ -30,7 +34,7 @@ var baseOverride string
 func SetBaseOverride(path string) { baseOverride = path }
 
 // UserBase is the writable registry root: the --config override if set, else
-// <os-user-config>/ngdb. On Linux the OS part honors $XDG_CONFIG_HOME (else
+// <os-user-config>/gitniblet. On Linux the OS part honors $XDG_CONFIG_HOME (else
 // ~/.config); on Windows it is %AppData%; on macOS ~/Library/Application
 // Support - os.UserConfigDir picks the per-OS location, we only append appDir.
 func UserBase() (string, error) {
@@ -41,7 +45,12 @@ func UserBase() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(base, appDir), nil
+	dir := filepath.Join(base, appDir)
+	if _, err := os.Lstat(dir); os.IsNotExist(err) {
+		// Best effort. On failure the old folder stays put and a fresh one is used.
+		_ = os.Rename(filepath.Join(base, oldAppDir), dir)
+	}
+	return dir, nil
 }
 
 // SystemBases are read-only registry roots shared across users, searched after

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jim-collier/nano-git-db/gate"
+	"github.com/yottacore/gitniblet/gate"
 )
 
 // applyGate configures the server from the startup posture. Nag sets a banner

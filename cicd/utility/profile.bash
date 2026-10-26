@@ -44,7 +44,7 @@ inferno="$(command -v inferno-flamegraph || true)"
 [[ -x "${inferno}" ]] || fSkip "inferno-flamegraph not found (cargo install inferno)"
 command -v python3 >/dev/null || fSkip "python3 not found"
 
-source "${meDir}/include/cpu-limit.bash"   ## NGDB_JOBS + GOMAXPROCS (<=half cores)
+source "${meDir}/include/cpu-limit.bash"   ## GITNIBLET_JOBS + GOMAXPROCS (<=half cores)
 source "${meDir}/include/gfs-rotate.bash"
 source "${meDir}/include/temp-run.bash"     ## fTempDir_Make + fSafeRm
 
@@ -55,7 +55,7 @@ tmp="$(fTempDir_Make profile)"; trap 'fSafeRm "${tmp}" > /dev/null' EXIT
 ## Sample the replay benchmark. A build/run failure here is an app problem, but
 ## the stage stays non-gating - it warns and skips so a profiler hiccup never
 ## blocks a publish (tests already gate correctness).
-if ! go test -mod=vendor -p "${NGDB_JOBS}" -run '^$' -bench '^BenchmarkReplay$' -benchtime="${iters}x" \
+if ! go test -mod=vendor -p "${GITNIBLET_JOBS}" -run '^$' -bench '^BenchmarkReplay$' -benchtime="${iters}x" \
 	-cpuprofile="${tmp}/cpu.prof" -o "${tmp}/bench.test" ./internal/core/crud/ >"${tmp}/bench.log" 2>&1; then
 	sed 's/^/  /' "${tmp}/bench.log"
 	fSkip "benchmark run failed"
@@ -65,7 +65,7 @@ mkdir -p "${profDir}"
 out="${profDir}/flame_${stamp}_frequent.svg"
 if ! go tool pprof -traces "${tmp}/bench.test" "${tmp}/cpu.prof" 2>/dev/null \
 	| python3 "${meDir}/pprof-to-folded.py" \
-	| "${inferno}" --title "nano-git-db tx-log replay (${iters}x)" >"${out}" 2>/dev/null; then
+	| "${inferno}" --title "gitniblet tx-log replay (${iters}x)" >"${out}" 2>/dev/null; then
 	rm -f "${out}"; fSkip "flamegraph render failed"
 fi
 [[ -s "${out}" ]] || { rm -f "${out}"; fSkip "empty flamegraph"; }

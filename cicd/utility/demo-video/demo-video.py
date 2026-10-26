@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 ##	Purpose:
-##		Record the nano-git-db README demo: drive a real ngdb (TUI first, then a
+##		Record the gitniblet README demo: drive a real gitniblet (TUI first, then a
 ##		few CLI verbs) inside a decorated xterm on a private Xvfb, type at a
 ##		realistic pace (variable wpm, occasional fixed typos, a beat before flags),
 ##		and encode two deliverables from one script:
@@ -11,16 +11,16 @@
 ##		The terminal is a plain faux window (Monaspace Argon SemiBold, dark-gray
 ##		bg, pale-green text, an anonymous colorized user@host prompt); nothing real
 ##		- fake user `demo`, host `workstation`, /tmp paths - ever reaches a frame.
-##		ngdb's TUI is tcell (CPU text), so no GPU/VirtualGL is needed: x11grab at
+##		gitniblet's TUI is tcell (CPU text), so no GPU/VirtualGL is needed: x11grab at
 ##		the delivery rate captures a clean, judder-free source.
 ##	Syntax:
 ##		demo-video.py [--profile video,gif] [--seed N] [--keep-work]
 ##		              [--no-rotate] [--display :97] [--no-build]
-##		Env: NGDB_BIN overrides the binary (default REPO/bin/ngdb).
+##		Env: GITNIBLET_BIN overrides the binary (default REPO/bin/gitniblet).
 ##	Notes:
 ##		Content start is anchored with a white root flash (found afterwards via
 ##		signalstats), so the lead-in trims exactly. Long CLI lines (e.g. --help)
-##		are truncated, never wrapped, via a tiny ngdb wrapper on PATH.
+##		are truncated, never wrapped, via a tiny gitniblet wrapper on PATH.
 ##	History: at bottom.
 
 ##	Copyright (c) 2026 Bubbles
@@ -112,7 +112,7 @@ class Rec:
 		self.display = args.display
 		self.num     = self.display.lstrip(":")
 		self.auth    = f"/tmp/rpd-gui-headless/Xauthority-{self.num}"
-		self.bin     = os.environ.get("NGDB_BIN", str(REPO / "bin/ngdb"))
+		self.bin     = os.environ.get("GITNIBLET_BIN", str(REPO / "bin/gitniblet"))
 		self.work    = make_work()
 		self.home    = self.work / "home"
 		self.cfg     = self.home / ".config"   # hermetic registry base (XDG_CONFIG_HOME)
@@ -301,12 +301,12 @@ class Rec:
 		u = self.rng_user
 		# a leading newline in PS1 keeps one blank line above every prompt, so any
 		# command whose output has no trailing blank still gets breathing room. The
-		# gray-flag tail grays whatever is typed next once ~/.ngdb-gray exists (the
+		# gray-flag tail grays whatever is typed next once ~/.gitniblet-gray exists (the
 		# outro comment), without a line-editor plugin.
 		gp = "\\[\\e[38;2;{};{};{}m\\]".format(*PROMPT)
 		uc = "\\[\\e[38;2;{};{};{}m\\]".format(*u["uc"])
 		hc = "\\[\\e[38;2;{};{};{}m\\]".format(*u["hc"])
-		gray_flag = ("\\[$(test -f \"$HOME/.ngdb-gray\" && printf '\\033[38;5;245m')\\]")
+		gray_flag = ("\\[$(test -f \"$HOME/.gitniblet-gray\" && printf '\\033[38;5;245m')\\]")
 		ps1 = ("\\n" + uc + u["user"] + gp + "@" + hc + u["host"] + gp + ":\\w$ "
 			+ "\\[\\e[0m\\]" + gray_flag)
 		e = self.env()
@@ -314,12 +314,12 @@ class Rec:
 			XDG_CONFIG_HOME=str(self.cfg),   # same registry the build-time populate used
 			PATH=f"{self.home}/bin:{os.environ['PATH']}",
 			PS1=ps1, HISTFILE="/dev/null",
-			NANOGITDB_USER="demo", NANOGITDB_HOST="workstation")
+			GITNIBLET_USER="demo", GITNIBLET_HOST="workstation")
 		self.app = subprocess.Popen(["xterm",
 			"-fa", "Monaspace Argon SemiBold", "-fs", str(font_pt),
 			"-geometry", f"{cols}x{rows}+{BORDER}+{BORDER}",
 			"-b", "0", "-bw", "0", "+sb", "+j", "-bc", "-bg", BG_HEX, "-fg", FG_HEX,
-			"-cr", CUR_HEX, "-title", "ngdb",
+			"-cr", CUR_HEX, "-title", "gitniblet",
 			"-xrm", "XTerm.vt100.allowTitleOps: false",
 			"-e", "/bin/bash", "--noprofile", "--norc", "-i"],
 			env=e, cwd=str(self.tracker),
@@ -458,16 +458,16 @@ class Typist:
 
 
 ##•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-##	Fake home: the ngdb wrapper (truncate-not-wrap for --help) + a build helper
+##	Fake home: the gitniblet wrapper (truncate-not-wrap for --help) + a build helper
 
 def prep_home(rec, rng):
 	home = rec.home
 	binx = home / "bin"
 	binx.mkdir(parents=True, exist_ok=True)
-	# the on-camera `ngdb` resolves here first. For -h/--help we truncate long
+	# the on-camera `gitniblet` resolves here first. For -h/--help we truncate long
 	# lines to the visible width instead of letting the terminal wrap them; every
 	# other invocation (TUI, verbs, feature output) execs the real binary untouched.
-	wrap = binx / "ngdb"
+	wrap = binx / "gitniblet"
 	wrap.write_text(
 		"#!/bin/dash\n"
 		f'real="{rec.bin}"\n'
@@ -512,7 +512,7 @@ def build_db(rec):
 ##	the closing `ls` shows the folder that database actually is.
 
 DB = "issues"
-# columns typed in the order ngdb prints them (it alphabetizes), so what you type
+# columns typed in the order gitniblet prints them (it alphabetizes), so what you type
 # is what you see - no confusing reorder on screen
 QUERY_OPEN = "select assignee, status, title from task where status = 'open'"
 
@@ -522,7 +522,7 @@ def seg_tui(r, t):
 	# add a comment - a 1:m detail the board list never shows as a column.
 	# two kinds of beat: waiting for a paint, and holding for something to be
 	# read. Trim them separately.
-	t.cmd(f"ngdb --tui {DB}", settle=1.5)
+	t.cmd(f"gitniblet --tui {DB}", settle=1.5)
 	t.key("a"); time.sleep(1.1)              # load the task list
 	t.keys("Down", 3, hz=2.6); time.sleep(1.3)  # onto a task with a comment thread
 	t.key("Tab"); time.sleep(0.5)            # focus the comments pane below
@@ -536,21 +536,21 @@ def seg_cli(r, t):
 	# the same data from the shell; a write shows up on the next read
 	t.cmd("# same data, from the shell",
 		settle=0.5, typos=0.0)
-	t.cmd(f'ngdb query --db={DB} "{QUERY_OPEN}"', settle=1.8)
-	t.cmd(f'ngdb create --db={DB} --table=task title="Screen flashing on refresh" '
+	t.cmd(f'gitniblet query --db={DB} "{QUERY_OPEN}"', settle=1.8)
+	t.cmd(f'gitniblet create --db={DB} --table=task title="Screen flashing on refresh" '
 		'status=open priority=high assignee=demo', settle=1.3)
 	# longer: this is where the new row has to be spotted in the re-read
-	t.cmd(f'ngdb query --db={DB} "{QUERY_OPEN}"', settle=1.9)
+	t.cmd(f'gitniblet query --db={DB} "{QUERY_OPEN}"', settle=1.9)
 	# the payoff: the whole database is this folder - schema, view, append-only log
 	t.cmd("ls -1", settle=1.9)
 
 def seg_outro(r, t):
-	(r.home / ".ngdb-gray").touch()
+	(r.home / ".gitniblet-gray").touch()
 	r.xdo("windowactivate", r.win)
 	time.sleep(0.3)
 	r.xdo("key", "--clearmodifiers", "Return")   # fresh prompt picks up the gray flag
 	time.sleep(0.5)
-	t.cmd("# nano-git-db.", settle=0.3, typos=0.0)
+	t.cmd("# gitniblet.", settle=0.3, typos=0.0)
 	time.sleep(1.8)                              # hold the closing line before the seam
 
 SCRIPT = [
@@ -629,7 +629,7 @@ def place(rec, out, no_rotate):
 	out_dir = PRIVATE / sub
 	out_dir.mkdir(parents=True, exist_ok=True)
 	stamp = time.strftime("%Y%m%d-%H%M%S")
-	dst = out_dir / f"ngdb-demo_{stamp}.{ext}"
+	dst = out_dir / f"gitniblet-demo_{stamp}.{ext}"
 	shutil.copy2(out, dst)
 	mb = dst.stat().st_size / (1 << 20)
 	# copy the README asset from the fresh render first: rotation below may rename
@@ -642,7 +642,7 @@ def place(rec, out, no_rotate):
 		else:
 			log(f"WARNING: gif is {mb:.1f} MiB (> {GIF_ASSET_MAX_MB}); "
 				"assets/demo.gif left untouched - trim the script or lower fps/colors")
-	rotate(out_dir, "ngdb-demo", ext, no_rotate)
+	rotate(out_dir, "gitniblet-demo", ext, no_rotate)
 	log(f"{sub}: {dst} ({mb:.1f} MiB)")
 
 
@@ -682,16 +682,16 @@ def record(args, name, seed):
 		rec.cleanup()
 
 def main():
-	ap = argparse.ArgumentParser(description="Record the nano-git-db README demo (mp4 + gif).")
-	ap.add_argument("--display", default=os.environ.get("NGDB_DEMO_DISPLAY", ":97"))
+	ap = argparse.ArgumentParser(description="Record the gitniblet README demo (mp4 + gif).")
+	ap.add_argument("--display", default=os.environ.get("GITNIBLET_DEMO_DISPLAY", ":97"))
 	ap.add_argument("--profile", default="video,gif", help="comma list: video,gif")
 	ap.add_argument("--seed", type=int, default=None)
 	ap.add_argument("--keep-work", action="store_true")
 	ap.add_argument("--no-rotate", action="store_true")
-	ap.add_argument("--no-build", action="store_true", help="use the existing bin/ngdb")
+	ap.add_argument("--no-build", action="store_true", help="use the existing bin/gitniblet")
 	args = ap.parse_args()
 
-	binp = Path(os.environ.get("NGDB_BIN", str(REPO / "bin/ngdb")))
+	binp = Path(os.environ.get("GITNIBLET_BIN", str(REPO / "bin/gitniblet")))
 	if not args.no_build or not binp.exists():
 		run([str(REPO / "cicd/build.bash")])
 	if not binp.exists():

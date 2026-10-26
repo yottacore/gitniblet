@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/jim-collier/nano-git-db/internal/core/config"
-	"github.com/jim-collier/nano-git-db/internal/core/schema"
-	"github.com/jim-collier/nano-git-db/script"
+	"github.com/yottacore/gitniblet/internal/core/config"
+	"github.com/yottacore/gitniblet/internal/core/schema"
+	"github.com/yottacore/gitniblet/script"
 )
 
 // Script is the --script front-end: standard client bring-up (build, bootstrap,
@@ -18,7 +18,7 @@ import (
 // registered) rejects the flag before doing any work.
 func Script(args []string) error {
 	if len(args) < 4 {
-		return fmt.Errorf("usage: ngdb --script <script.lua> <ddl> <sqlite> <logdir>")
+		return fmt.Errorf("usage: gitniblet --script <script.lua> <ddl> <sqlite> <logdir>")
 	}
 	if !script.Available() {
 		return fmt.Errorf("--script requires the enterprise build; the open-source build has no scripting host")

@@ -4,7 +4,7 @@
 <!-- markdownlint-disable MD041 -- First line in a file should be a top-level heading -->
 
 <!-- TOC ignore:true -->
-# Nano Git DB - full syntax reference
+# GitNiblet - full syntax reference
 
 The complete DDL, sidecar-file, CLI, and run-mode reference. For a five-minute introduction see the "Quick start" section of the [README](README.md); this file is the details behind it. Everything here is what the current build actually does - a few DDL keys shown in `project/example.shcl` are design placeholders whose behavior is still evolving; where that matters it is called out below.
 
@@ -37,7 +37,7 @@ The complete DDL, sidecar-file, CLI, and run-mode reference. For a five-minute i
 
 ## Schema file format
 
-The schema is an [SHCL](https://github.com/jim-collier/shcl) file (`*.shcl`) - a small indent-nested `key: value` language, also what ngdb writes its own config in. The grammar in brief:
+The schema is an [SHCL](https://github.com/jim-collier/shcl) file (`*.shcl`) - a small indent-nested `key: value` language, also what gitniblet writes its own config in. The grammar in brief:
 
 - **Indent to nest.** A line indented further than the line above is that line's child. Tabs are the convention here; what matters is that each level's indent is a prefix of its children's. A line whose indent matches no open level is reported and skipped, and the rest of the file still loads.
 - **`key: value`** on one line, or **`key:`** with indented children below it. Quote a value (`"like this"`) when it contains a comma or matters at the edges.
@@ -369,16 +369,16 @@ Trigger code gets the sandboxed `db.*` CRUD API (no `os`/`io`, no `dofile`). Wri
 
 ## Command-line interface
 
-Every verb names a registered database as its first argument - `<db>` below (extension optional). Register one with `--init`; ngdb looks up its schema, view, and log from the registry, so those paths never appear on the command line. Run `ngdb` with no matching verb to print this usage.
+Every verb names a registered database as its first argument - `<db>` below (extension optional). Register one with `--init`; gitniblet looks up its schema, view, and log from the registry, so those paths never appear on the command line. Run `gitniblet` with no matching verb to print this usage.
 
 Schema and log:
 
 ```
-ngdb ddl <file>       parse a DDL file and print a summary
-ngdb build <db>       build / migrate the SQLite view
-ngdb replay <db>      rebuild the view from the tx-log
-ngdb sync <db>        sync the tx-log via git, then migrate and replay
-ngdb gc <db>          collect entries of long-deleted rows (gc_age_days)
+gitniblet ddl <file>       parse a DDL file and print a summary
+gitniblet build <db>       build / migrate the SQLite view
+gitniblet replay <db>      rebuild the view from the tx-log
+gitniblet sync <db>        sync the tx-log via git, then migrate and replay
+gitniblet gc <db>          collect entries of long-deleted rows (gc_age_days)
 ```
 
 Data (each takes a `<db>`, then a `<table>`):
@@ -393,7 +393,7 @@ delete <db> <table> <id>               hard-delete
 query <db> <sql>                       read-only SQL against the view
 ```
 
-The database and table may also be given as flags in any order instead of positionally: `--db=<name>` / `-d <name>` and `--table=<name>` / `-t <name>` (e.g. `ngdb get --db=todo --table=task <id>`).
+The database and table may also be given as flags in any order instead of positionally: `--db=<name>` / `-d <name>` and `--table=<name>` / `-t <name>` (e.g. `gitniblet get --db=todo --table=task <id>`).
 
 #### Ids in a hand-written query
 
@@ -421,8 +421,8 @@ attachments <db> <table> <id>              list a row's attachments
 Schema ops (rewrite the DDL file and the SQLite view; the old name becomes an alias so existing log entries still replay):
 
 ```
-ngdb --rename-table <db> <old> <new>
-ngdb --rename-field <db> <table> <old> <new>
+gitniblet --rename-table <db> <old> <new>
+gitniblet --rename-field <db> <table> <old> <new>
 ```
 
 The low-level `build`/`replay`/`sync`/`gc` and rename verbs also accept an explicit-path form (`build <ddl> <sqlite>`, `replay <ddl> <sqlite> <dir>`, `sync <logdir>`, `gc <ddl> <logdir>`) for use before a database is registered; a bare `sync <logdir>` still just reconciles a log directory with git.
@@ -432,16 +432,16 @@ The low-level `build`/`replay`/`sync`/`gc` and rename verbs also accept an expli
 Setup flags:
 
 ```
-ngdb --init [path]              register the $PWD .shcl as a database (name = its base name)
-ngdb --config <dir> ...         use <dir> as the registry root, then run the rest
-ngdb --encrypt[=on|off|auto] .. set the local encryption preference, then run
-ngdb webuser <username>        set a proxied-mode web login (password from
-                               NGDB_WEB_PASSWORD or a prompt); see Run modes
+gitniblet --init [path]              register the $PWD .shcl as a database (name = its base name)
+gitniblet --config <dir> ...         use <dir> as the registry root, then run the rest
+gitniblet --encrypt[=on|off|auto] .. set the local encryption preference, then run
+gitniblet webuser <username>        set a proxied-mode web login (password from
+                               GITNIBLET_WEB_PASSWORD or a prompt); see Run modes
 ```
 
 `--init` is the command-line equivalent of the picker's "Create new database": it registers the lone `*.shcl` in the current directory and materializes its view (build + seed), so it opens cleanly next time.
 
-- `--init` with no arg: inside a git repo it places the tx-log at `<repo-root>/ngdb/<name>`; otherwise it uses the current directory.
+- `--init` with no arg: inside a git repo it places the tx-log at `<repo-root>/gitniblet/<name>`; otherwise it uses the current directory.
 - `--init <repo-root>`: same auto-placement under the given repo root.
 - `--init <dir>`: uses `<dir>` verbatim as the tx-log location.
 
@@ -454,30 +454,30 @@ ngdb webuser <username>        set a proxied-mode web login (password from
 The first argument selects the front-end; the default is the CLI.
 
 ```
-ngdb <verb> ...            CLI (above)
-ngdb --tui  [<db>]                           terminal UI (no name: pick / create a db)
-ngdb --serve [<db>]                          local web UI on 127.0.0.1:8765
-ngdb --script <file.lua> <ddl> <sqlite> <logdir>   run a Lua script (enterprise build)
-ngdb --donate                                ways to support the project
-ngdb --version                               print the version and exit (also -v)
+gitniblet <verb> ...            CLI (above)
+gitniblet --tui  [<db>]                           terminal UI (no name: pick / create a db)
+gitniblet --serve [<db>]                          local web UI on 127.0.0.1:8765
+gitniblet --script <file.lua> <ddl> <sqlite> <logdir>   run a Lua script (enterprise build)
+gitniblet --donate                                ways to support the project
+gitniblet --version                               print the version and exit (also -v)
 ```
 
 The web UI binds to `127.0.0.1` only - that binding is the access control for a single-user local UI. All four front-ends share one core CRUD API, so they behave identically.
 
-Web login: the `web_mode` setting (in `settings.shcl`, default `local`) picks how the web UI authenticates. `local` identifies the single user with no password - the git account of the log dir's repo, else the OS user - and refuses to serve if a reverse-proxy header ever appears (so an accidentally exposed box can't run passwordless). `proxied` requires a username and password for every request: add logins with `ngdb webuser <username>` (hashed into `webusers.shcl` in the config dir, outside the synced tree), and the signed-in user's group permissions then apply to the web view. Stronger methods are an enterprise feature.
+Web login: the `web_mode` setting (in `settings.shcl`, default `local`) picks how the web UI authenticates. `local` identifies the single user with no password - the git account of the log dir's repo, else the OS user - and refuses to serve if a reverse-proxy header ever appears (so an accidentally exposed box can't run passwordless). `proxied` requires a username and password for every request: add logins with `gitniblet webuser <username>` (hashed into `webusers.shcl` in the config dir, outside the synced tree), and the signed-in user's group permissions then apply to the web view. Stronger methods are an enterprise feature.
 
 In the TUI, press `T` to pick a color theme (three dark, three light; the default is dark). Themes use fixed colors for readability regardless of your terminal palette, and the choice is remembered for next time.
 
 ## Startup discovery and the database registry
 
-When `--tui` or a bare `ngdb` is run without a database name, it finds one instead of erroring:
+When `--tui` or a bare `gitniblet` is run without a database name, it finds one instead of erroring:
 
 - A lone `*.shcl` in the current directory is opened directly (its view defaults beside it, the tx-log dir is that directory).
 - Otherwise the TUI shows a picker of registered databases (unopenable ones flagged with the reason), plus "Create new database" and "Open existing ...".
 
 `--serve` has no picker, so with no name it uses a `$PWD` DDL if present, else asks for one.
 
-Registered databases are per-database records at `<user-config>/ngdb/<name>/config.shcl`, where `<user-config>` is `$XDG_CONFIG_HOME` (else `~/.config`) on Linux, `%AppData%` on Windows, `~/Library/Application Support` on macOS. Read-only system locations (`$XDG_CONFIG_DIRS`, `%ProgramData%`) are also searched. Records are SHCL, the same language as the schema. One holds:
+Registered databases are per-database records at `<user-config>/gitniblet/<name>/config.shcl`, where `<user-config>` is `$XDG_CONFIG_HOME` (else `~/.config`) on Linux, `%AppData%` on Windows, `~/Library/Application Support` on macOS. Read-only system locations (`$XDG_CONFIG_DIRS`, `%ProgramData%`) are also searched. Records are SHCL, the same language as the schema. One holds:
 
 ```
 name: todo
@@ -493,5 +493,5 @@ last_opened: ...                  ## RFC3339, refreshed on open
 
 ## Environment variables
 
-- `NANOGITDB_USER` - stamps the `user_id` of writes; defaults to the OS username.
-- `NANOGITDB_HOST` - stamps the `host_name` of writes; defaults to the OS hostname. (One user writing from several machines stays distinguishable in the log.)
+- `GITNIBLET_USER` - stamps the `user_id` of writes; defaults to the OS username.
+- `GITNIBLET_HOST` - stamps the `host_name` of writes; defaults to the OS hostname. (One user writing from several machines stays distinguishable in the log.)

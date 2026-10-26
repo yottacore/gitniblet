@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jim-collier/nano-git-db/internal/core/config"
+	"github.com/yottacore/gitniblet/internal/core/config"
 )
 
 const encInitDDL = `database:

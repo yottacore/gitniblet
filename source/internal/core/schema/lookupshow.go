@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jim-collier/nano-git-db/internal/core/crud"
+	"github.com/yottacore/gitniblet/internal/core/crud"
 )
 
 // Display modes for lookup_in_lists and lookup_in_forms.

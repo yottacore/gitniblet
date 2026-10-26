@@ -32,7 +32,7 @@ if [[ -z "${doQuietly+x}" ]]; then
 
 	## Settings (relative paths defined here will be verified and resolved later)
 	declare -ri isCompileProject=1  ## 1: E.g. C++, Rust, Go, etc.  0: E.g. Python, Bash, etc.
-	declare -r  exeName="ngdb"
+	declare -r  exeName="gitniblet"
 	declare     dirPath_Base=".."
 	declare     dirPath_Source="${dirPath_Base}/source"
 	declare     filePath_ExecToTestAndInstall_BuildLocation="${dirPath_Base}/bin/${exeName}"  ## cicd/build.bash outputs straight to bin/
@@ -69,11 +69,11 @@ if [[ -z "${doQuietly+x}" ]]; then
 	)
 	## Under -race. Its own step on this host, since -race needs cgo and the container has no C compiler.
 	declare -ra racePkgs=("./internal/tui/...")
-	declare  -i inContainer=0; [[ "${NGDB_IN_CONTAINER:-}" == "1" ]] && inContainer=1  ## Set for the run started inside
-	declare -r  projectName="nano-git-db"
-	declare -r  containerImage="nano-git-db-cicd"
-	declare -r  containerVolume="nano-git-db-cicd-cache"
-	declare -r  containerEngine="${NGDB_DOCKER:-docker}"  ## Anything that takes docker's arguments
+	declare  -i inContainer=0; [[ "${GITNIBLET_IN_CONTAINER:-}" == "1" ]] && inContainer=1  ## Set for the run started inside
+	declare -r  projectName="gitniblet"
+	declare -r  containerImage="gitniblet-cicd"
+	declare -r  containerVolume="gitniblet-cicd-cache"
+	declare -r  containerEngine="${GITNIBLET_DOCKER:-docker}"  ## Anything that takes docker's arguments
 	declare  -i doPromptToContinue=1
 	declare -r  thisVersion="1.0.0-beta3"         ## Put you script's semantic version here.
 	declare -r  thisBuild="1mzfd9c"
@@ -177,10 +177,10 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "with Go pinned, built from cicd/container/Dockerfile the first time it's"
 	fEcho_Clean "needed and tagged by that file's hash. The repo is mounted at its own path."
 	fEcho_Clean "Dogfood, profiler, demo, hooks and publish stay on this host. No docker, or an"
-	fEcho_Clean "image that won't build, runs it all here instead. NGDB_DOCKER names another"
+	fEcho_Clean "image that won't build, runs it all here instead. GITNIBLET_DOCKER names another"
 	fEcho_Clean "program that takes docker's arguments."
 	fEcho_Clean ""
-	fEcho_Clean "Each run works in \${HOST_TEMP}/nano-git-db-floss/<stamp>_<NNN>/, with TMPDIR"
+	fEcho_Clean "Each run works in \${HOST_TEMP}/gitniblet-floss/<stamp>_<NNN>/, with TMPDIR"
 	fEcho_Clean "pointed at it, and removes it at the end, on failure and Ctrl+C too. It also"
 	fEcho_Clean "removes run folders older than 2 days whose run.pid is gone. At the end the"
 	fEcho_Clean "run's containers go, then this project's dangling images, its image tags older"
@@ -190,8 +190,8 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "fuzz and -race or when the 1-minute load is over half of them, checked before"
 	fEcho_Clean "each step."
 	fEcho_Clean ""
-	fEcho_Clean "The run log goes to cicd/artifacts/lint/, or to NGDB_LOG_DIR when it's set,"
-	fEcho_Clean "as the pipeline's own tests do for the runs they start. NGDB_HOOKS_DIR stands in"
+	fEcho_Clean "The run log goes to cicd/artifacts/lint/, or to GITNIBLET_LOG_DIR when it's set,"
+	fEcho_Clean "as the pipeline's own tests do for the runs they start. GITNIBLET_HOOKS_DIR stands in"
 	fEcho_Clean "for ../private/cicd-hooks the same way."
 	fEcho_Clean ""
 	fEcho_Clean "cicd/utility/git-hooks/pre-push runs --merge-gate before a push to main, unless"
@@ -281,7 +281,7 @@ fMain(){
 	[[ -f "${filePath_CICD_TestExec}"  ]]  ||  fThrowError "File not found: '${filePath_CICD_TestExec}'"
 	[[ -n "${gitAutomationScript}"     ]]  ||  fThrowError "Git automation script not found where specified or in path: '${gitAutomationScript}'."
 
-	declare hooksDir="${NGDB_HOOKS_DIR:-${dirPath_Base}/../private/cicd-hooks}"
+	declare hooksDir="${GITNIBLET_HOOKS_DIR:-${dirPath_Base}/../private/cicd-hooks}"
 	if ((doList)); then fList; return 0; fi
 
 	## Prompt to continue
@@ -344,19 +344,19 @@ fMain(){
 	if ((! inContainer)); then
 		fTempRun_Sweep
 		runDir="$(fTempRun_Make)"  ||  fThrowError "Couldn't make a run folder under '${HOST_TEMP}/${tempProject}'."
-		export NGDB_RUN_DIR="${runDir}"
+		export GITNIBLET_RUN_DIR="${runDir}"
 	else
-		export NGDB_RUN_DIR="${NGDB_RUN_DIR:-${TMPDIR:-/tmp}}"
+		export GITNIBLET_RUN_DIR="${GITNIBLET_RUN_DIR:-${TMPDIR:-/tmp}}"
 	fi
-	runStamp="${NGDB_RUN_DIR##*/}"
-	export TMPDIR="${NGDB_RUN_DIR}" TEMP="${NGDB_RUN_DIR}" TMP="${NGDB_RUN_DIR}"
+	runStamp="${GITNIBLET_RUN_DIR##*/}"
+	export TMPDIR="${GITNIBLET_RUN_DIR}" TEMP="${GITNIBLET_RUN_DIR}" TMP="${GITNIBLET_RUN_DIR}"
 
 	## Capture the whole run to a rotated log so warnings from any stage (build,
 	## vet, staticcheck, govulncheck) can be reviewed after the fact - lint-report.bash
 	## reads the newest. Rotate the dir first, then tee. Best-effort: if the log can't
 	## be created the run just goes uncaptured.
 	## Inside the container the outer run already logs all of this.
-	declare dirPath_ArtifactsLint="${NGDB_LOG_DIR:-${dirPath_Base}/cicd/artifacts/lint}"
+	declare dirPath_ArtifactsLint="${GITNIBLET_LOG_DIR:-${dirPath_Base}/cicd/artifacts/lint}"
 	if ((! inContainer))  &&  mkdir -p "${dirPath_ArtifactsLint}" 2>/dev/null; then
 		gfs_rotate "${dirPath_ArtifactsLint}" run log >/dev/null 2>&1 || true
 		## tee ignores Ctrl+C, or the cleanup at exit writes into a dead pipe and dies.
@@ -365,7 +365,7 @@ fMain(){
 
 	## Every step is counted before the first one runs. The run in the container
 	## takes the outer run's list, so its numbers carry on.
-	if ((inContainer)) && [[ -n "${NGDB_STEPS:-}" ]]; then fSteps_Import
+	if ((inContainer)) && [[ -n "${GITNIBLET_STEPS:-}" ]]; then fSteps_Import
 	else fSteps_PlanAll; fi
 
 	local -i useContainer=0
@@ -375,7 +375,7 @@ fMain(){
 			if fContainer_Check; then
 				useContainer=1
 				fInnerArgs
-				containerLine="Container: ${containerTag} for build through security, at --cpus ${NGDB_JOBS_MAX}, as cicd.bash ${innerArgs[*]}"
+				containerLine="Container: ${containerTag} for build through security, at --cpus ${GITNIBLET_JOBS_MAX}, as cicd.bash ${innerArgs[*]}"
 			else
 				containerLine="Container: ${containerWhy}, so build and test run on this host."
 			fi
@@ -384,7 +384,7 @@ fMain(){
 		[[ -z "${aliasNote}" ]]  ||  headerLines+=("${aliasNote}")
 		((${#testAreas[@]} == 0))  ||  headerLines+=("Test areas: ${testAreas[*]}")
 		[[ -z "${leakOpt}" ]]  ||  headerLines+=("${leakOpt}: there are no leak checks yet.")
-		fSteps_Header "${exeName} CI/CD, ${runMode}" "${headerLines[@]}" "${containerLine}" "CPUs: ${NGDB_CORES}, load ${NGDB_LOAD}. A step gets half, or a quarter for fuzz or when the load is over half."
+		fSteps_Header "${exeName} CI/CD, ${runMode}" "${headerLines[@]}" "${containerLine}" "CPUs: ${GITNIBLET_CORES}, load ${GITNIBLET_LOAD}. A step gets half, or a quarter for fuzz or when the load is over half."
 	fi
 
 	## First, so the rest tests what publish will push. Publish keeps its own pull.
@@ -404,7 +404,7 @@ fMain(){
 
 	if fStep "Race tests"; then
 		fEcho_Clean "go test -race ${racePkgs[*]}"
-		( cd "${dirPath_Source}"  &&  CGO_ENABLED=1 go test -race -json -mod=vendor -p "${NGDB_JOBS}" -parallel "${NGDB_JOBS}" "${racePkgs[@]}" ) \
+		( cd "${dirPath_Source}"  &&  CGO_ENABLED=1 go test -race -json -mod=vendor -p "${GITNIBLET_JOBS}" -parallel "${GITNIBLET_JOBS}" "${racePkgs[@]}" ) \
 			| GOFLAGS='' go -C "${dirPath_Base}/cicd/utility/testid" run . report "${dirPath_Base}"
 		fStep_End
 	fi
@@ -594,7 +594,7 @@ fList(){
 	command -v go &> /dev/null  ||  { fEcho_Clean "No go here, so no test IDs."; return 0; }
 	ids="$(GOFLAGS='' go -C "${dirPath_Base}/cicd/utility/testid" run . ids "${dirPath_Base}")"  ||  fThrowError "Couldn't read the test IDs."
 
-	## The areas as import path prefixes. ngdb-testid is its own module, run only with no areas.
+	## The areas as import path prefixes. gitniblet-testid is its own module, run only with no areas.
 	local -r modPath="$(sed -n 's/^module //p' "${dirPath_Source}/go.mod")"
 	local -a prefixes=()
 	for area in "${testAreas[@]}"; do
@@ -653,8 +653,8 @@ fStep(){
 	fStep_Start "${1}"  ||  return 1
 	local busy=""
 	if [[ "${1}" == "Fuzz" || "${1}" == "Race tests" ]]; then fCpuLimit heavy; else fCpuLimit; fi
-	((! NGDB_BUSY))  ||  busy=", busy"
-	fEcho_Clean "Jobs: ${NGDB_JOBS} of ${NGDB_CORES} CPUs, load ${NGDB_LOAD}${busy}"
+	((! GITNIBLET_BUSY))  ||  busy=", busy"
+	fEcho_Clean "Jobs: ${GITNIBLET_JOBS} of ${GITNIBLET_CORES} CPUs, load ${GITNIBLET_LOAD}${busy}"
 }
 
 
@@ -675,7 +675,7 @@ fStages_BuildAndTest(){
 			## Minimal execution test: --version prints two lines and exits, never opening the
 			## TUI. Running the app for real stays a separate manual step before the merge.
 			fEcho_Clean "version check (debug):"
-			"${dirPath_Base}/bin/ngdb-debug" --version
+			"${dirPath_Base}/bin/gitniblet-debug" --version
 			fStep_End
 		fi
 
@@ -687,7 +687,7 @@ fStages_BuildAndTest(){
 		fEcho_Clean "version check (release):"
 		"${filePath_ExecToTestAndInstall_BuildLocation}" --version
 		fEcho_Clean "Built ${filePath_ExecToTestAndInstall_BuildLocation}"
-		NGDB_SMOKE_EXPECT_DATE=1 "${dirPath_Base}/cicd/utility/smoke-cli.bash" "${filePath_ExecToTestAndInstall_BuildLocation}"
+		GITNIBLET_SMOKE_EXPECT_DATE=1 "${dirPath_Base}/cicd/utility/smoke-cli.bash" "${filePath_ExecToTestAndInstall_BuildLocation}"
 
 		## Bump guard: app.Version is authoritative in source; a release tags v<Version>.
 		## If that tag already exists the version wasn't bumped since the last release -
@@ -721,7 +721,7 @@ fStages_BuildAndTest(){
 				sed 's/\[amd64, arm64\]/[amd64]/' "${dirPath_Base}/.goreleaser.yaml" > "${grConfig}"
 				fEcho_Clean "arm64 skipped (--no-arm): amd64-only matrix"
 			fi
-			( cd "${dirPath_Base}"  &&  GOFLAGS=  go run "${NGDB_GORELEASER}" release --snapshot --clean --parallelism "${NGDB_JOBS}" --config "${grConfig}" )
+			( cd "${dirPath_Base}"  &&  GOFLAGS=  go run "${GITNIBLET_GORELEASER}" release --snapshot --clean --parallelism "${GITNIBLET_JOBS}" --config "${grConfig}" )
 			fEcho_Clean "Packaged into ${dirPath_Base}/dist/ (binaries, .deb/.rpm, archives, checksums)"
 			## Windows single-file .exe installer(s) from the just-built binaries (NSIS).
 			( cd "${dirPath_Base}"  &&  "${dirPath_Base}/cicd/utility/windows-installer.bash" "${srcVersion:-0.0.0}" )
@@ -748,7 +748,7 @@ fStages_BuildAndTest(){
 	else
 		fThrowError "gofmt needed (--no-format and the hands-off modes leave them as is):\n${unformatted}"
 	fi
-	( cd "${dirPath_Source}"  &&  GOFLAGS=  go run "${NGDB_STATICCHECK}" ./... )
+	( cd "${dirPath_Source}"  &&  GOFLAGS=  go run "${GITNIBLET_STATICCHECK}" ./... )
 	fEcho_Clean "staticcheck: clean"
 	fStep_End
 
@@ -795,9 +795,9 @@ fStages_BuildAndTest(){
 	if fStep "Security + supply-chain"; then
 		fEcho_Clean "go mod verify, govulncheck and gosec"
 		( cd "${dirPath_Source}"  &&  go mod verify )
-		( cd "${dirPath_Source}"  &&  GOFLAGS=  go run "${NGDB_GOVULNCHECK}" ./... )
+		( cd "${dirPath_Source}"  &&  GOFLAGS=  go run "${GITNIBLET_GOVULNCHECK}" ./... )
 		fEcho_Clean "No known vulnerabilities (govulncheck)"
-		( cd "${dirPath_Source}"  &&  GOFLAGS=  go run "${NGDB_GOSEC}" -concurrency "${NGDB_JOBS}" \
+		( cd "${dirPath_Source}"  &&  GOFLAGS=  go run "${GITNIBLET_GOSEC}" -concurrency "${GITNIBLET_JOBS}" \
 			-exclude=G101,G104,G124,G202,G203,G204,G301,G302,G304,G306,G703 -quiet ./... )
 		fEcho_Clean "No security findings (gosec)"
 		fStep_End
@@ -874,10 +874,10 @@ fStage_Container(){
 	fSteps_Export
 	local -a runArgs=(--init
 		--name "${projectName}-${runStamp}-pipeline" --label "dev.project=${projectName}" --label "dev.run=${runStamp}"
-		--cpus "${NGDB_JOBS_MAX}" --cpu-shares 256 --user "$(id -u):$(id -g)"
+		--cpus "${GITNIBLET_JOBS_MAX}" --cpu-shares 256 --user "$(id -u):$(id -g)"
 		-v "${dirPath_Base}:${dirPath_Base}" -v "${containerVolume}:/cache" -w "${dirPath_Base}"
-		-v "${runDir}:${runDir}" -e NGDB_RUN_DIR -e HOST_TEMP -e TMPDIR -e TEMP -e TMP -e NGDB_IN_CONTAINER=1
-		-e NGDB_STEPS -e "NGDB_JOBS_CAP=${NGDB_JOBS_MAX}")
+		-v "${runDir}:${runDir}" -e GITNIBLET_RUN_DIR -e HOST_TEMP -e TMPDIR -e TEMP -e TMP -e GITNIBLET_IN_CONTAINER=1
+		-e GITNIBLET_STEPS -e "GITNIBLET_JOBS_CAP=${GITNIBLET_JOBS_MAX}")
 	((doKeepTemp))  ||  runArgs+=(--rm)
 	## The host's time zone, for the step lines' local time.
 	[[ ! -f /etc/localtime ]]  ||  runArgs+=(-v /etc/localtime:/etc/localtime:ro)
@@ -1185,7 +1185,7 @@ source "${meDir}/utility/include/cpu-limit.bash"
 ## GFS rotation for the run-log artifacts (gfs_rotate)
 source "${meDir}/utility/include/gfs-rotate.bash"
 
-## Pinned linter/scanner versions (NGDB_STATICCHECK/GOVULNCHECK/GOSEC)
+## Pinned linter/scanner versions (GITNIBLET_STATICCHECK/GOVULNCHECK/GOSEC)
 source "${meDir}/utility/include/tool-versions.bash"
 
 ## Run folder and the safe removal guard (fTempRun_Make, fSafeRm)
@@ -1212,26 +1212,26 @@ fMain  "${@}"
 ##			- Better cp args.
 ##			- Updated fEcho functions.
 ##			- Changed license from GPL2 to MIT.
-##		- 20260701 JC: Adapted from the convert-base-v2 template: ngdb name/paths, build.bash instead of make; cross-compile deferred to the CI/CD backlog item.
+##		- 20260701 JC: Adapted from the convert-base-v2 template: gitniblet name/paths, build.bash instead of make; cross-compile deferred to the CI/CD backlog item.
 ##		- 20260701 JC: build.bash moved into cicd/ and now outputs straight to bin/; dropped the staging copy.
 ##		- 20260701 JC: Wired cross-compile (win-amd64, linux-arm64, win-arm64), the windows zip, and govulncheck.
 ##		- 20260703 JC: Replaced the post-build bare launch (which opened the TUI) with a --version check. Fixed the git-automation script path - it was missing the base prefix and doubled the cicd/ segment.
 ##		- 20260703 JC: Blank line between major stages for readability.
 ##		- 20260704 JC: Added -q/--quiet (unattended, flows to publish) and -m/--message (auto-generated under -q); stage headers use fEcho.
-##		- 20260704 JC: Renamed the built executable nanogitdb -> ngdb.
+##		- 20260704 JC: Renamed the built executable gitniblet -> gitniblet.
 ##		- 20260704 JC: Added --quick (skip cross-builds and govulncheck).
 ##		- 20260704 JC: --quick also skips screenshots; screenshots.bash moved to github/utility/; run screenshots as a stage before publish; always leave a trailing blank line.
 ##		- 20260704 JC: Preflight now captures the commit message up front (Ctrl+C aborts) instead of a y/n gate; section headers get the letterbox rule; passes --no-prompt to the publish step so it doesn't re-ask.
 ##		- 20260711 JC: Full cross-platform packaging via goreleaser (binaries for linux/darwin/windows/freebsd amd64+arm64, .deb/.rpm, archives, checksums) plus a Windows .exe installer; split native debug (test/profile) from release (dogfood/package) builds; added --no-arm.
 ##		- 20260804 JC: Publish step skips its second y/n via the doPromptToContinue setting; the --no-prompt switch no longer exists in that script.
 ##		- 20261024 JC: Added --no-install, --no-hooks, --no-publish, --no-demo and --no-format, so a full run can leave the box and the tracked tree alone.
-##		- 20261024 JC: Local hooks dir is two levels up, since the repo moved into nano-git-db-floss/repo.
+##		- 20261024 JC: Local hooks dir is two levels up, since the repo moved into gitniblet-floss/repo.
 ##		- 20261025 JC: Build through security run in the pinned container by default; --no-container keeps them here.
 ##		- 20261025 JC: Tests on the other boxes (cicd/utility/remote-test.bash) after build and test; --no-remote skips them.
 ##		- 20261025 JC: Each run gets its own temp folder, removed at the end along with its containers, dangling images and old image tags; --keep-temp keeps them.
 ##		- 20261025 JC: Step lines with the count, time and PASS or FAIL, planned up front; the load is checked before each step.
 ##		- 20261025 JC: The shared flags: --backlog-run-quick with areas, --backlog-run-full, --merge-gate, --long, --list, and the taken ones. --quick keeps fuzz and security. The CLI smoke after the release build.
 ##		- 20261025 JC: Remote sync first: fetch and fast-forward before the build, stop when diverged; --no-sync skips it.
-##		- 20261025 JC: Race tests (the TUI under -race) and Pipeline tests (cicd/utility/*-test.bash) on this host; NGDB_LOG_DIR; the container is polled, not waited on.
-##		- 20261025 JC: NGDB_HOOKS_DIR, so the plan's tests pass where ../../private/cicd-hooks is missing.
+##		- 20261025 JC: Race tests (the TUI under -race) and Pipeline tests (cicd/utility/*-test.bash) on this host; GITNIBLET_LOG_DIR; the container is polled, not waited on.
+##		- 20261025 JC: GITNIBLET_HOOKS_DIR, so the plan's tests pass where ../../private/cicd-hooks is missing.
 ##		- 20261026 JC: Local hooks dir is ../private/cicd-hooks again, now that the project folder has its own private/.

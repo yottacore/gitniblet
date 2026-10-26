@@ -8,7 +8,7 @@ import (
 
 	"github.com/rivo/tview"
 
-	"github.com/jim-collier/nano-git-db/internal/core/config"
+	"github.com/yottacore/gitniblet/internal/core/config"
 )
 
 // The default (index 0) must be a dark theme, per the requirement.

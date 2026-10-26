@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jim-collier/nano-git-db/internal/core/config"
+	"github.com/yottacore/gitniblet/internal/core/config"
 )
 
 // initEnv isolates the registry base and switches to a fresh working directory

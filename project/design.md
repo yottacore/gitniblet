@@ -63,7 +63,7 @@ Manually kicked off via `cicd/cicd.bash`. Stages, in order (each fails early and
 
 - **Remote sync**: fetch, and fast-forward when the branch is only behind its upstream, so the run tests what publish will push. A diverged branch stops the run, and so do uncommitted edits that clash with the fast-forward. No upstream, or a remote that can't be reached, warns and goes on. A fast-forward that changes `cicd.bash`, its includes or the container recipe stops the run too, since the run has already read them. `--no-sync` skips it (`cicd/utility/include/sync.bash`).
 
-- **Build** native size-optimized, then cross-compile (windows-amd64, linux-arm64, windows-arm64; pure Go, no extra toolchains), zip windows into `dist/`. Every build stamps the source commit's time, and `--version` shows it as the build number, `ngdb v<version> build <build>`: minutes since 2000-01-01 UTC in lowercase Crockford base 32, like the test IDs. A non-release build adds its build date. The release build then gets the CLI smoke, `cicd/utility/smoke-cli.bash`.
+- **Build** native size-optimized, then cross-compile (windows-amd64, linux-arm64, windows-arm64; pure Go, no extra toolchains), zip windows into `dist/`. Every build stamps the source commit's time, and `--version` shows it as the build number, `gitniblet v<version> build <build>`: minutes since 2000-01-01 UTC in lowercase Crockford base 32, like the test IDs. A non-release build adds its build date. The release build then gets the CLI smoke, `cicd/utility/smoke-cli.bash`.
 
 - **Lint + format**: `gofmt -w` rewrites Go in place (never Bash), across the module but `vendor/`, then `staticcheck` gates. `go vet` runs in test.bash.
 
@@ -75,7 +75,7 @@ Manually kicked off via `cicd/cicd.bash`. Stages, in order (each fails early and
 
 - **Race tests**: the TUI tests again under `go test -race`, since they share a simulation screen with the app's own goroutine. `-race` needs cgo and a C compiler, which the container and the builds leave out, so this runs on the host at a quarter of the cores. A host with no C compiler lists it as off.
 
-- **Pipeline tests**: every `cicd/utility/*-test.bash` but `remote-test.bash`, which is the remote tests' own script. They check the pipeline itself: the flags, step lines, cleanup, container fallbacks, remote sync and the remote skip paths. Some start `cicd.bash` itself with docker and ssh stand-ins, so they run on the host one at a time, after the build. Each keeps the run logs of the runs it starts in its own temp folder, through `NGDB_LOG_DIR`, so that way `lint-report.bash` never reads one of them as the newest run. `--quick` skips them.
+- **Pipeline tests**: every `cicd/utility/*-test.bash` but `remote-test.bash`, which is the remote tests' own script. They check the pipeline itself: the flags, step lines, cleanup, container fallbacks, remote sync and the remote skip paths. Some start `cicd.bash` itself with docker and ssh stand-ins, so they run on the host one at a time, after the build. Each keeps the run logs of the runs it starts in its own temp folder, through `GITNIBLET_LOG_DIR`, so that way `lint-report.bash` never reads one of them as the newest run. `--quick` skips them.
 
 - **Remote tests**: the test binaries and the CLI smoke run natively on the test boxes, for Windows, FreeBSD, arm64 Linux and Intel macOS. Each box is held through the shared host lock for the whole time it is used, and a VM is put back the way it was found. A box that doesn't answer is a `SKIP`, never a failure. The boxes have no Go, so each test binary's raw output comes back here, and `testid remote` prints the same one line per test with its ID. `--no-remote` and `--quick` skip the stage.
 
@@ -97,7 +97,7 @@ Each step opens under a rule with `[ <YYYYmmDD-HHMMSS.NN>: Step N of M; Starting
 
 Build through security run in a container by default, so this project's toolchain pins can't clash with another project's on the same box. The image comes from `cicd/container/Dockerfile`: a digest-pinned Debian base, and Go from a checksummed tarball whose version has to match the `toolchain` line in `source/go.mod`. It's tagged by the recipe's git hash. The repo is mounted at its own path and the run uses the caller's uid, and module and build caches live in a named volume. Dogfood, profiler, demo, hooks and publish stay on the host, since they need its tools or its screen. `--no-container` runs everything on the host on purpose. No docker, or an image that won't build, does the same with one line saying so, and never fails the run. Test boxes for other OSes stay native, since their OS is what's under test.
 
-Each run works in its own folder, `${HOST_TEMP}/nano-git-db-floss/<YYYYmmDD-HHMMSS>_<NNN>/`, with a `run.pid` in it and `TMPDIR`, `TEMP` and `TMP` pointed at it. The helpers make their temp folders inside it, and the container gets it mounted at the same path. A trap removes it at the end, on failure and Ctrl+C too. The same pass removes the run's containers, then this project's dangling images, its image tags older than the one before the current one, and build cache older than a week, and prints one line on what that freed. Only docker objects with this project's `dev.project` label are touched. At the start, a run removes run folders older than 2 days whose `run.pid` names no live process. `--keep-temp` keeps the folder and the containers, and prints where they are. Every recursive removal goes through the guard in `cicd/utility/include/temp-run.bash`.
+Each run works in its own folder, `${HOST_TEMP}/gitniblet-floss/<YYYYmmDD-HHMMSS>_<NNN>/`, with a `run.pid` in it and `TMPDIR`, `TEMP` and `TMP` pointed at it. The helpers make their temp folders inside it, and the container gets it mounted at the same path. A trap removes it at the end, on failure and Ctrl+C too. The same pass removes the run's containers, then this project's dangling images, its image tags older than the one before the current one, and build cache older than a week, and prints one line on what that freed. Only docker objects with this project's `dev.project` label are touched. At the start, a run removes run folders older than 2 days whose `run.pid` names no live process. `--keep-temp` keeps the folder and the containers, and prints where they are. Every recursive removal goes through the guard in `cicd/utility/include/temp-run.bash`.
 
 ## Language and stack
 
@@ -140,12 +140,12 @@ Supply-chain hardening (from day one): vendor everything (`go mod vendor`, commi
 
 ## Logical code organization
 
-Standard Go layout, with the **module root under `source/`** so all source - including vendored deps - lives there. Core is a library; `main` is a thin dispatcher. Import paths are `github.com/jim-collier/nano-git-db/internal/...` (no `source` segment); run `go` from `source/`.
+Standard Go layout, with the **module root under `source/`** so all source - including vendored deps - lives there. Core is a library; `main` is a thin dispatcher. Import paths are `github.com/yottacore/gitniblet/internal/...` (no `source` segment); run `go` from `source/`.
 
 ~~~text
-source/go.mod, go.sum         - module root (module github.com/jim-collier/nano-git-db)
+source/go.mod, go.sum         - module root (module github.com/yottacore/gitniblet)
 source/vendor/                - committed third-party deps; build uses -mod=vendor
-source/cmd/ngdb/main.go  - arg dispatch -> one of the four modes
+source/cmd/gitniblet/main.go  - arg dispatch -> one of the four modes
 source/internal/core/         - engine: the single source of truth for all logic
 	ddl/                      - DDL parser + schema model
 	store/                    - SQLite view (modernc.org/sqlite), migrations
@@ -170,7 +170,7 @@ The language decision, and what it bought:
 
 - SHCL replaced a hand-rolled indent parser once it reached v1.0.0 and put its grammar, APIs and diagnostic codes under semver. The two grammars had converged on nearly the same shape, so existing schemas needed only four mechanical corrections - which is what made the swap cheap enough to be worth doing.
 
-- It is one language for the whole product: the schema, the queries sidecar, and ngdb's own registry, settings and web-credential files. That retired the TOML dependency, so a user reads and edits one syntax everywhere.
+- It is one language for the whole product: the schema, the queries sidecar, and gitniblet's own registry, settings and web-credential files. That retired the TOML dependency, so a user reads and edits one syntax everywhere.
 
 - Its Go binding is a single dependency-free pure-Go file, so `CGO_ENABLED=0` and the one-static-binary rule are untouched (the reference implementation being Rust is irrelevant to us - we never link it).
 
@@ -270,7 +270,7 @@ Reads map columns by the header row's names, not by position, so field order doe
 
 `ok_to_garbage_collect` is populated automatically, when the original record (or table) referred to no longer exists. Only log records N-days old are garbage collected (by any client). Default is 90 days.
 
-`host_name` is stamped automatically from the OS hostname (override with `NANOGITDB_HOST`), the machine analogue of `user_id`'s `NANOGITDB_USER`. It is txlog metadata only - replay does not apply it to the view.
+`host_name` is stamped automatically from the OS hostname (override with `GITNIBLET_HOST`), the machine analogue of `user_id`'s `GITNIBLET_USER`. It is txlog metadata only - replay does not apply it to the view.
 
 A create logs the bare row id and then each of the row's starting values, all as `create` entries. Later edits are `update` entries. That split is how replay settles two clients that created the same unique value before syncing: the row created later in log order is dropped whole, with a warning, instead of kept with the clashing field empty. A view kept from an earlier pass can already hold the later row, so replay drops whichever one a fresh rebuild would. Logs from before the split carry starting values as updates, and a clash there still skips only the field.
 
@@ -320,9 +320,9 @@ A database is addressed by the name it was registered under: every CLI verb and 
 How a run finds a database when it was not handed a name:
 
 - A lone `*.shcl` in the current directory is used directly (the sqlite view defaults beside it, the tx-log dir is that directory). Zero or several schema files are ambiguous, so discovery falls through - as is a directory holding both a `.shcl` and a legacy `.ddl`. The queries sidecar is excluded from that count by its `.queries.shcl` suffix, so a schema and its sidecar are not mistaken for two candidates.
-- Otherwise the interactive front-end (bare `ngdb` or `--tui`) shows a registry picker; the non-interactive ones (`--serve`, CLI verbs) require a name and error otherwise (no picker).
+- Otherwise the interactive front-end (bare `gitniblet` or `--tui`) shows a registry picker; the non-interactive ones (`--serve`, CLI verbs) require a name and error otherwise (no picker).
 
-The registry is per-database SHCL records under a config base: `<os-user-config>/ngdb/<name>/config.shcl`, where the base is `$XDG_CONFIG_HOME` (else `~/.config`) on Linux, `%AppData%` on Windows, `~/Library/Application Support` on macOS - whatever `os.UserConfigDir` returns. Read-only system bases (`$XDG_CONFIG_DIRS`, default `/etc/xdg`; `%ProgramData%` on Windows) are also searched, after the user base. A record holds: `name`, `ddl_path`, `log_dir` (the git-synced artifacts), `sqlite_path`, `key_file` (local, unsynced; both default beside the record and are rebuildable / re-fetchable), `encryption` and `last_opened`. `key_file`/`encryption` are stored for a stable format ahead of the encryption feature.
+The registry is per-database SHCL records under a config base: `<os-user-config>/gitniblet/<name>/config.shcl`, where the base is `$XDG_CONFIG_HOME` (else `~/.config`) on Linux, `%AppData%` on Windows, `~/Library/Application Support` on macOS - whatever `os.UserConfigDir` returns. Read-only system bases (`$XDG_CONFIG_DIRS`, default `/etc/xdg`; `%ProgramData%` on Windows) are also searched, after the user base. A record holds: `name`, `ddl_path`, `log_dir` (the git-synced artifacts), `sqlite_path`, `key_file` (local, unsynced; both default beside the record and are rebuildable / re-fetchable), `encryption` and `last_opened`. `key_file`/`encryption` are stored for a stable format ahead of the encryption feature.
 
 Discovery lists every record across the bases, name-sorted, and lightly validates each: its DDL must exist and parse. A record that fails still appears in the picker, flagged `[!] <name>` with the reason (missing/corrupt DDL), so a broken database is visible rather than silently dropped. A missing sqlite view is never an error - it rebuilds from the log on open. The picker always offers "Create new database" (register a new record pointing at a DDL + tx-log, then open) and "Open existing ..." (open a DDL + tx-log ad-hoc, without registering). Opening a registered database stamps its `last_opened`.
 
@@ -372,7 +372,7 @@ Hierarchical access: View -> View's main table -> table -> { field | record }
 
 v1 semantics (everything is open until a DDL populates a list):
 
-- Identity: the write-stamp user (NANOGITDB_USER / OS username) resolved to a live users row by screen_name or github_name; group membership comes from the users<->groups m:m. No user row = no memberships, which with empty lists keeps a userless setup fully working.
+- Identity: the write-stamp user (GITNIBLET_USER / OS username) resolved to a live users row by screen_name or github_name; group membership comes from the users<->groups m:m. No user row = no memberships, which with empty lists keeps a userless setup fully working.
 - Rule evaluation: blacklist wins over whitelist; an empty whitelist means everyone. Built-in overrides per the DDL comments: owners always pass, admins pass read/write (delete still needs the rule). `mark_delete` and `delete` use the delete rule; create/update use write.
 - Write enforcement is in the core CRUD API (all front-ends inherit it): table write/delete rules, field write rules on the touched fields, and - for row_level_access tables - the row's access_rows grants (a granted row needs a shared group; ungranted rows are open).
 - Read enforcement is UI-level, computed at catalog build since a process serves one user: unreadable tables vanish from the UIs (with a warning), unreadable fields drop out of grids and forms silently, a view is hidden when its flat access rule fails or its main (first) table is unreadable, and row-granted rows the user lacks are filtered from grids. Raw `query` (CLI/Lua/SQL) is not row/table-gated - the local file is the trust boundary; the write path is the hard gate.
@@ -393,7 +393,7 @@ The web tier binds `127.0.0.1` only, so on a single machine the loopback binding
 - Local mode identifies the one user with no password - the git account of the log dir's repo, else the OS user (the same default-user resolution the other front-ends use) - and stamps every request as them. Safety-net: if a request ever carries a reverse-proxy header (`X-Forwarded-For` / `X-Real-Ip` / `Forwarded`) while in local mode, the server refuses to serve. A box accidentally exposed behind a proxy can never run passwordless; the operator must opt into `proxied` and add a login.
 - Proxied mode requires a session for every path but the login endpoints and static assets. A login checks a username and password against a local credentials file, then sets a random session cookie (HttpOnly, SameSite=Lax, Secure when the request arrived over TLS); the session table is in memory, so a restart just re-prompts. The logged-in user is set as the acting user for that request, so the existing user/group access model applies to the web view exactly as it would elsewhere. Because that acting user is shared state, proxied requests are serialized - this is a local UI lightly extended to multi-user, not a high-throughput service.
 - Login throttling: checking a password is meant to be expensive, which makes an open login endpoint a way to spend the machine's CPU for free. Two limits cover the two halves of that. A failure count per username and per source address refuses a run of wrong guesses before any hashing happens, which bounds the sustained rate; it cannot bound a burst, since attempts arriving together all pass the count before any of them has failed. A cap on how many passwords are checked at once bounds the burst instead. Counts age out on their own, so nothing locks an account - a fumbled password costs a minute, not an administrator. The address limit is the looser of the two on purpose: a reverse proxy puts every user behind one address, so it has to stay clear of ordinary shared use and only catch a flood. Both keys are counted whether or not the username exists, so the throttle cannot be used to tell a real account from an invented one.
-- Credentials: a `webusers.shcl` of PBKDF2-HMAC-SHA256 hashes (stdlib `crypto/pbkdf2`, so no new dependency; random per-password salt, constant-time compare), kept in the config dir OUTSIDE any git-synced tree - password hashes must never ride along in the shared log repo. The `webuser` CLI verb adds or replaces a login (password from `NGDB_WEB_PASSWORD` or a prompt). Stronger methods - 2FA, passkeys, SSO - are an enterprise concern; this is the open-source baseline that makes the server safe to put behind a proxy at all.
+- Credentials: a `webusers.shcl` of PBKDF2-HMAC-SHA256 hashes (stdlib `crypto/pbkdf2`, so no new dependency; random per-password salt, constant-time compare), kept in the config dir OUTSIDE any git-synced tree - password hashes must never ride along in the shared log repo. The `webuser` CLI verb adds or replaces a login (password from `GITNIBLET_WEB_PASSWORD` or a prompt). Stronger methods - 2FA, passkeys, SSO - are an enterprise concern; this is the open-source baseline that makes the server safe to put behind a proxy at all.
 
 ### Donations
 
@@ -591,7 +591,7 @@ If external scripting files can be hosted in-executable, then it stands to reaso
 
 An external file stores functions for DDL-definable triggers, events, methods, etc.
 
-Decided: **Lua** via pure-Go `gopher-lua`, hosted in-executable. Scripts get a `db` global bound to the core CRUD API - `db.create/get/update/setfield/markdelete/delete/query` - so scripting shares the exact code path as every other front-end. The host is sandboxed: only base/table/string/math/coroutine are opened (no os, io, package, or debug). Reachable now via `ngdb --script <script.lua> <ddl> <sqlite> <logdir>`; DDL-wired triggers/methods build on this later.
+Decided: **Lua** via pure-Go `gopher-lua`, hosted in-executable. Scripts get a `db` global bound to the core CRUD API - `db.create/get/update/setfield/markdelete/delete/query` - so scripting shares the exact code path as every other front-end. The host is sandboxed: only base/table/string/math/coroutine are opened (no os, io, package, or debug). Reachable now via `gitniblet --script <script.lua> <ddl> <sqlite> <logdir>`; DDL-wired triggers/methods build on this later.
 
 Original requirements (all met):
 

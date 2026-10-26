@@ -8,8 +8,8 @@
 package schema
 
 import (
-	"github.com/jim-collier/nano-git-db/internal/core/ddl"
-	"github.com/jim-collier/nano-git-db/internal/core/txlog"
+	"github.com/yottacore/gitniblet/internal/core/ddl"
+	"github.com/yottacore/gitniblet/internal/core/txlog"
 )
 
 // TableCanon returns a lookup from a table's former name to its current one,

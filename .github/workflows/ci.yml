@@ -55,4 +55,4 @@ jobs:
         working-directory: .
         run: |
           bash cicd/build.bash
-          NGDB_SMOKE_EXPECT_DATE=1 bash cicd/utility/smoke-cli.bash bin/ngdb
+          GITNIBLET_SMOKE_EXPECT_DATE=1 bash cicd/utility/smoke-cli.bash bin/gitniblet

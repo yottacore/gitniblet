@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/jim-collier/nano-git-db/internal/core/schema"
+	"github.com/yottacore/gitniblet/internal/core/schema"
 )
 
 // blockVM is one block ready for the recursive template.

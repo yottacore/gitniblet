@@ -26,7 +26,7 @@
 
 ## Introduction
 
-Going forward, new issues in the new template at the bottom of this file, will go in the '## New format' section only. No more status emojis. Refer to '## Reference' for sort order. Issues in the old format (with status emojis) won't be refactored, but will continue to be worked until moved to closed, canceled, or deferred sections, and emojis updated. (Eventually this will all be moved to nano-git-db anyway. This new template is an intermediate effort to make issues going forward more structured and importable.)
+Going forward, new issues in the new template at the bottom of this file, will go in the '## New format' section only. No more status emojis. Refer to '## Reference' for sort order. Issues in the old format (with status emojis) won't be refactored, but will continue to be worked until moved to closed, canceled, or deferred sections, and emojis updated. (Eventually this will all be moved to gitniblet anyway. This new template is an intermediate effort to make issues going forward more structured and importable.)
 
 This is a product backlog just for pre-v1.0.0 release. After that, bugs, features, and enhancements will be managed in Github Issues, and/or [todo.md](../todo.md)
 
@@ -102,9 +102,9 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Progress log:
 		- 20261025: `cicd.bash` has 2 new steps on the host, after build and test: Race tests runs the TUI tests under `go test -race` at a quarter of the CPUs, and Pipeline tests runs every `cicd/utility/*-test.bash` but `remote-test.bash`, `sync-test.bash` included. `--list` names the IDs of both.
 		- A host with no C compiler lists Race tests as off, with the reason.
-		- `container-fallback-test.bash` dedme now edits a copy of `cicd/` and `go.mod`, so the tracked Dockerfile is never touched. The runs that the tests start keep their logs in the test's temp folder, through a new `NGDB_LOG_DIR`, so `lint-report.bash` never takes one for the newest run.
+		- `container-fallback-test.bash` dedme now edits a copy of `cicd/` and `go.mod`, so the tracked Dockerfile is never touched. The runs that the tests start keep their logs in the test's temp folder, through a new `GITNIBLET_LOG_DIR`, so `lint-report.bash` never takes one for the newest run.
 		- `--help`, design.md's CI/CD pipeline and the README say so.
-		- Verified: `flags-test.bash` deef1 passes, and fails on the old `cicd.bash` and with `remote-test.bash` left in the step. `steps-test.bash` deef2 passes, and the old `cicd.bash` writes its log to `cicd/artifacts/lint` with `NGDB_LOG_DIR` set. `container-fallback-test.bash` deef3 passes, and fails with the old dedme.
+		- Verified: `flags-test.bash` deef1 passes, and fails on the old `cicd.bash` and with `remote-test.bash` left in the step. `steps-test.bash` deef2 passes, and the old `cicd.bash` writes its log to `cicd/artifacts/lint` with `GITNIBLET_LOG_DIR` set. `container-fallback-test.bash` deef3 passes, and fails with the old dedme.
 		- Verified: all 6 scripts pass, alone and under the environment the step gives them. The TUI tests passed under `-race` in 26s wall at load 2. A quick host run passed with Race tests in it. `--backlog-run-quick`, `testid check` and shellcheck pass.
 		- 20261025: `flags-test.bash` deecd's `--backlog-run-full` plan went from `...|Security + supply-chain|Remote tests|Profiler` to `...|Security + supply-chain|Race tests|Pipeline tests|Remote tests|Profiler`. deece's `--quick` plan went from `|Fuzz|Security + supply-chain|Dogfood|` to `|Fuzz|Security + supply-chain|Race tests|Dogfood|`, and its off list gained `Pipeline tests (--quick)` after `Cross-compile + package (--quick)`. The rest of both is the same.
 		- Swept: every `cicd.bash` run the 6 scripts start, for the run log and tracked edits. `flags-test.bash` runs only `--list`, and `sync-test.bash` runs in a copy, so both already wrote nothing. `remote-skip-test.bash` starts `remote-test.bash`, which writes no run log.
@@ -191,23 +191,23 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
 		- Per the shared CICD rules, the build number in Branches and releases.
 		- The date on non-release builds is already in. What's left is below.
-		- `--version` prints `ngdb v<version> build <build>`, then the copyright line, and `--about` and the release notes show the same.
+		- `--version` prints `gitniblet v<version> build <build>`, then the copyright line, and `--about` and the release notes show the same.
 		- The build number is the commit's time in minutes since 2000, in lowercase Crockford base 32. It comes from the commit, not the wall clock. Today that spot shows the short commit and a dirty flag.
 		- Release builds from goreleaser stamp the build number too, and leave the date off.
-		- Overrides the `ngdb <version> (<commit>) (<date>)` form in 2026102318473518, and the commit stamp in the private notes, under cicd-branch-model.
+		- Overrides the `gitniblet <version> (<commit>) (<date>)` form in 2026102318473518, and the commit stamp in the private notes, under cicd-branch-model.
 	- Estimated effort: Low
 	- Actual effort: Low
 	- Progress log:
-		- 20261025: `--version` prints `ngdb v1.0.0-beta.2 build dedrq (2026-10-25)`, then `Copyright © 2025-26 Jim Collier.` A release build leaves the date off.
+		- 20261025: `--version` prints `gitniblet v1.0.0-beta.2 build dedrq (2026-10-25)`, then `Copyright © 2025-26 Jim Collier.` A release build leaves the date off.
 		- `app.Build` is gone. Builds stamp `app.CommitTime`, the commit's unix time, and `app.BuildNumber` turns it into the number. `build.bash` takes it from `git log`, goreleaser from `.CommitTimestamp`. A plain `go build` shows no build number.
 		- The release notes start with the same line, through goreleaser's `release.header`. `release.yml` works the number out with `cicd/utility/include/build-number.bash`.
 		- The smoke checks the new form, the copyright line, and that the number is HEAD's. It also checks `install.bash` still reads the installed version. Both installers read only the first line now and drop the `v`, so old binaries still parse.
-		- 20261025: `TestVersionLine` (debg5) changed for the new form. Old: `ngdb 1.0.0-beta.2 (abc1234) (2026-10-24)`. New: `ngdb v1.0.0-beta.2 build decp8 (2026-10-24)`. The date and time zone cases are as they were.
+		- 20261025: `TestVersionLine` (debg5) changed for the new form. Old: `gitniblet 1.0.0-beta.2 (abc1234) (2026-10-24)`. New: `gitniblet v1.0.0-beta.2 build decp8 (2026-10-24)`. The date and time zone cases are as they were.
 		- Verified: `TestBuildNumber` (dedrs) and `TestVersionLine` pass, and fail to build on the old `app.go`. The smoke passes, and fails on a binary with no commit time, one with the wrong commit time, the installed b23 build, and the old `install.bash`. The new installer code reads both forms, in bash and pwsh. A goreleaser release run without publish stamped the same number as `build-number.bash`. `test.bash`, the wide gofmt, staticcheck, `remote-skip-test.bash` and goreleaser's check pass.
 		- Not verified: the notes header, since goreleaser renders it only when it publishes.
 		- `--about` isn't in the FLOSS build yet. 2026101915293585 adds it, and can print `app.VersionLine` and `app.Copyright`.
 		- Swept: every `--version` reader in the repo (both installers, the smoke, `cicd.bash`, `remote-unix.bash`, `remote-windows.ps1`), every `app.Build` stamp (`build.bash`, goreleaser), and the docs.
-		- 20261025: Verified: the full run's goreleaser packaging passed, and the smoke passed on all 4 boxes. `ci.yml` run 40212963323 passed the smoke on Linux and arm64 macOS, with `ngdb v1.0.0-beta.2 build deds3 (2026-10-25)`.
+		- 20261025: Verified: the full run's goreleaser packaging passed, and the smoke passed on all 4 boxes. `ci.yml` run 40212963323 passed the smoke on Linux and arm64 macOS, with `gitniblet v1.0.0-beta.2 build deds3 (2026-10-25)`.
 	- Decisions:
 		- The binary works the number out from the stamped commit time, so goreleaser needs no help for it. Only the notes use the bash copy, and the smoke checks the two agree.
 		- The dirty flag is dropped with the short commit, per the requirements.
@@ -328,7 +328,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Remote sync first: fetch and fast-forward before building, and stop early when diverged.
 		- The CLI smoke test runs in `cicd.bash` too, not only in hosted CI.
 		- Dogfood goes to `~/synced/0-0/common/exec/app/linux/` and its Windows and macOS siblings, and skips the copy when the binary is in use.
-		- A `dogfood_ngdb.ps1` script with its launchers, per Dogfood script.
+		- A `dogfood_gitniblet.ps1` script with its launchers, per Dogfood script.
 		- Release archives are reproducible: goreleaser sets `mod_timestamp` from the commit.
 		- A FreeBSD `.pkg`.
 		- The hosted workflows read the Go and tool pins from the same place `cicd.bash` does. Today they pin Go on their own, and the release takes any goreleaser v2.
@@ -392,7 +392,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Skip the copy, with one line, when the binary there is in use.
 		- Today it goes to `exec/util/linux/bin/`, with a `/usr/local/sbin/` fallback through sudo.
 
-- A `dogfood_ngdb.ps1` script with its launchers.
+- A `dogfood_gitniblet.ps1` script with its launchers.
 	- ID: 2026102520521029
 	- Type: Task
 	- Status: Queued
@@ -493,15 +493,15 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Actual effort: Low
 	- Progress log:
 		- 20261025: Reproduced from an export of 22bd94f with no private folder beside it: deece and deee3 fail.
-		- `cicd.bash` reads the hooks folder from `NGDB_HOOKS_DIR` when it's set, as it does the run log from `NGDB_LOG_DIR`. `flags-test.bash` points it at an empty folder it makes, so the plans are the same everywhere.
+		- `cicd.bash` reads the hooks folder from `GITNIBLET_HOOKS_DIR` when it's set, as it does the run log from `GITNIBLET_LOG_DIR`. `flags-test.bash` points it at an empty folder it makes, so the plans are the same everywhere.
 		- New deehh checks that a missing hooks folder turns off only Local hooks, listed as `Local hooks (no <dir>)`, so the missing-folder path is still covered.
-		- `--help` names `NGDB_HOOKS_DIR`, and its `--no-hooks` line had the path one level short, from before the folder rename.
+		- `--help` names `GITNIBLET_HOOKS_DIR`, and its `--no-hooks` line had the path one level short, from before the folder rename.
 		- Verified: in the export, the old `cicd.bash` fails deece, deee3 and deehh, and the new one passes all 10. With a private folder beside the export, the old one fails only deehh. `flags-test.bash` passes in the checkout, and so do `--backlog-run-quick` and `testid check`. shellcheck finds nothing new.
 		- Swept: the other `cicd.bash` runs in `cicd/utility/*-test.bash` all pass `--no-hooks`, so the folder doesn't change their plans. `ci.yml` and `smoke-cli.bash` don't read it. Enterprise and vendor have no Local hooks step.
 		- Not verified here: hosted CI. The `ci.yml` rerun is on 2026102416210004 and 2026102520474880.
 	- Decisions:
 		- An override in `cicd.bash` rather than leaving Local hooks out of the compared lists, so deee3 still checks `--no-hooks` on a hosted runner.
-	- Actual fix [Bug]: `NGDB_HOOKS_DIR` in `cicd.bash`, set by `flags-test.bash` to a folder it makes.
+	- Actual fix [Bug]: `GITNIBLET_HOOKS_DIR` in `cicd.bash`, set by `flags-test.bash` to a folder it makes.
 	- Branch: r1025
 	- Test case: `cicd/utility/flags-test.bash` deece and deee3, and deehh, new here.
 	- Closed: 20261025-223913
@@ -564,11 +564,11 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Estimated effort: High
 	- Actual effort: Avg
 	- Progress log:
-		- 20261025: New `cicd/utility/remote-test.bash`. It cross-builds the Go test binaries and ngdb per target, then on each box runs them and the CLI smoke in a work folder of its own under the box's temp root, and removes it after. `remote-windows.ps1` is the Windows side, `remote-unix.bash` the rest.
+		- 20261025: New `cicd/utility/remote-test.bash`. It cross-builds the Go test binaries and gitniblet per target, then on each box runs them and the CLI smoke in a work folder of its own under the box's temp root, and removes it after. `remote-windows.ps1` is the Windows side, `remote-unix.bash` the rest.
 		- 20261025: `cicd.bash` runs it on the host after build and test, before dogfood. `--no-remote` skips it.
 		- 20261025: Verified: the full run's Remote tests stage passed windows on b29w, freebsd on vmFreeBSD and macos on vmKt6m, and showed SKIP for linux-arm64, since another session held vmDebARM64, in the stage and in the summary at the end. b26 was held too, so macos fell back to vmKt6m. A linux-arm64 run alone then passed on vmDebARM64, which went back to off.
 		- Departs from the requirements: vmKt6m stayed running after the run, with a warning, since it ignores the ACPI shutdown. It was shut down from inside afterwards. That's 2026102510392387.
-		- 20261025: Verified: the full run on 21bc082 passed windows on b29w, freebsd on vmFreeBSD, linux-arm64 on vmDebARM64 and macos on b26, each in a `nano-git-db-floss` work folder under the box's temp root. Both VMs were started from off and put back to off. b26 was free, so vmKt6m wasn't used, and its shutdown was fixed in 2026102510392387. remote-skip-test dedn7 to dednb passed in the Pipeline tests step.
+		- 20261025: Verified: the full run on 21bc082 passed windows on b29w, freebsd on vmFreeBSD, linux-arm64 on vmDebARM64 and macos on b26, each in a `gitniblet-floss` work folder under the box's temp root. Both VMs were started from off and put back to off. b26 was free, so vmKt6m wasn't used, and its shutdown was fixed in 2026102510392387. remote-skip-test dedn7 to dednb passed in the Pipeline tests step.
 	- Decisions:
 		- Intel macOS tries b26 first, then vmKt6m. b26 is real hardware, and vmKt6m ignores the ACPI shutdown, so it doesn't go back to off by itself.
 		- Windows runs as `wintest`, which isn't an admin.
@@ -661,11 +661,11 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Opened: 20261023-184735
 	- Opened by: JC
 	- Target OS: macOS
-	- Incorrect behavior [Bug]: The config and TUI tests set `XDG_CONFIG_HOME` and `AppData` to a temp dir, but macOS reads neither, so the tests registered databases under the real `~/Library/Application Support/ngdb`. The cli init tests also failed there, since `/var` is a link to `/private/var`.
+	- Incorrect behavior [Bug]: The config and TUI tests set `XDG_CONFIG_HOME` and `AppData` to a temp dir, but macOS reads neither, so the tests registered databases under the real `~/Library/Application Support/gitniblet`. The cli init tests also failed there, since `/var` is a link to `/private/var`.
 	- Expected behavior [Bug]: Tests never touch the real registry on any OS.
 	- Reproduced [Bug]: 20261023, on the first arm64 macOS CI run.
 	- Progress log:
-		- 20261025: Verified: the tests passed on b26, Intel macOS, in the full run on 21bc082, and on arm64 macOS in hosted CI run 40272702133. b26 had no `~/Library/Application Support/ngdb` afterwards.
+		- 20261025: Verified: the tests passed on b26, Intel macOS, in the full run on 21bc082, and on arm64 macOS in hosted CI run 40272702133. b26 had no `~/Library/Application Support/gitniblet` afterwards.
 	- Actual fix [Bug]: The test helpers set `HOME` too, and the init tests compare against the resolved temp dir.
 	- Test case: The same tests, now passing on the macOS CI job. Checked on Intel macOS too, where the real registry folder never appeared.
 	- Related IDs: 2026102318473519
@@ -724,7 +724,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Build, run the tests, and smoke-test the CLI on the built binary.
 	- Progress log:
 		- 20261023: New `macos` job in `ci.yml`. It checks it's on arm64, runs the tests, builds with `cicd/build.bash`, then runs `cicd/utility/smoke-cli.bash`. The Linux job runs the smoke test too. Only floss gets it, since macOS minutes on the private repos aren't free.
-		- 20261025: Verified: hosted CI run 40272702133's macos job ran on `macos-26-arm64`, passed the tests, built `ngdb v1.0.0-beta.2 build deeg3 (2026-10-26)`, and passed `smoke-cli.bash`, in 1m41s.
+		- 20261025: Verified: hosted CI run 40272702133's macos job ran on `macos-26-arm64`, passed the tests, built `gitniblet v1.0.0-beta.2 build deeg3 (2026-10-26)`, and passed `smoke-cli.bash`, in 1m41s.
 	- Test case: `cicd/utility/smoke-cli.bash`, also passing under stock bash 3.2 on Intel macOS.
 	- Branch: macci
 	- Closed: 20261025-223453
@@ -740,9 +740,9 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Add " (YYYY-mm-DD)" after the build number.
 		- Show the date in the local time zone of whoever views the version.
 	- Progress log:
-		- 20261023: `cicd/build.bash` stamps the UTC build time, and `--version` shows it as a local date, as in `ngdb 1.0.0-beta.2 (c6cc12b) (2026-10-23)`. Release builds from goreleaser don't stamp it, so they show no date. The enterprise build doesn't stamp it yet.
+		- 20261023: `cicd/build.bash` stamps the UTC build time, and `--version` shows it as a local date, as in `gitniblet 1.0.0-beta.2 (c6cc12b) (2026-10-23)`. Release builds from goreleaser don't stamp it, so they show no date. The enterprise build doesn't stamp it yet.
 		- 20261024: The version line's form here is superseded by 2026102416210007.
-		- 20261025: Verified: the full run's builds print `ngdb v1.0.0-beta.2 build deefv (2026-10-25)` here, on Pacific time. Hosted CI's macos job, on UTC, printed `(2026-10-26)` at 22:10 Pacific on 2026-10-25, so the date follows the viewer's zone. TestVersionLine and the smoke's date check passed.
+		- 20261025: Verified: the full run's builds print `gitniblet v1.0.0-beta.2 build deefv (2026-10-25)` here, on Pacific time. Hosted CI's macos job, on UTC, printed `(2026-10-26)` at 22:10 Pacific on 2026-10-25, so the date follows the viewer's zone. TestVersionLine and the smoke's date check passed.
 	- Test case: `TestVersionLine` in `source/app/app_test.go`, and the date check in `smoke-cli.bash`.
 	- Branch: macci
 	- Closed: 20261025-223453
@@ -757,7 +757,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Requirements [Feature]:
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
 		- Per the shared CICD rules, Temp files and Safe removal.
-		- Each run makes its own folder, `${HOST_TEMP}/nano-git-db-floss/<YYYYmmDD-HHMMSS>_<NNN>/`, writes `run.pid` there, and points `TMPDIR`, `TEMP`, and `TMP` at it. Today the fuzz, profile, smoke, and demo helpers each pick their own spot under `/tmp` or `TMPDIR`, and the demo and seed scripts use fixed `/tmp` paths.
+		- Each run makes its own folder, `${HOST_TEMP}/gitniblet-floss/<YYYYmmDD-HHMMSS>_<NNN>/`, writes `run.pid` there, and points `TMPDIR`, `TEMP`, and `TMP` at it. Today the fuzz, profile, smoke, and demo helpers each pick their own spot under `/tmp` or `TMPDIR`, and the demo and seed scripts use fixed `/tmp` paths.
 		- A trap removes the folder at the end, on failure and Ctrl+C too. `--keep-temp` keeps it and prints its path.
 		- Each run also removes this project's own stale run folders, older than 2 days with no live process from their `run.pid`.
 		- Every recursive removal goes through the repo's own copy of the safe removal guard. 9 are unguarded today, in 8 scripts, with the file list in the private notes.
@@ -767,19 +767,19 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Actual effort: Avg
 	- Progress log:
 		- 20261025: `cicd/utility/include/temp-run.bash` holds the run folder, the stale sweep, and the repo's copy of the safe removal guard, which also runs on macOS and the BSDs. cicd.bash, fuzz, profile, the smoke, the demo recorder and `demo-db.bash`, the remote, skip and fallback tests, `seed.bash` and `screenshots.bash` use it.
-		- Each `cicd.bash` run makes `${HOST_TEMP}/nano-git-db-floss/<stamp>_<NNN>/` with `run.pid`, points `TMPDIR`, `TEMP` and `TMP` at it, and mounts it into the container. A helper makes its folder inside it, or a run folder of its own when run alone.
+		- Each `cicd.bash` run makes `${HOST_TEMP}/gitniblet-floss/<stamp>_<NNN>/` with `run.pid`, points `TMPDIR`, `TEMP` and `TMP` at it, and mounts it into the container. A helper makes its folder inside it, or a run folder of its own when run alone.
 		- A trap removes it at the end, on failure and Ctrl+C too, and `--keep-temp` keeps it and prints its path. Run folders older than 2 days with no live `run.pid` process go at the start.
 		- The run log's `tee` ignores Ctrl+C. Without that, the cleanup wrote into a closed pipe and died.
 		- The installers are fetched on their own, so each got its own check: only its own temp folder, never a link.
 		- The demo recorder stops every process still running with its fake HOME, which covers what `dbus-run-session` started.
-		- The remote boxes' work folders moved to `nano-git-db-floss` too, in all 4 places that name them.
+		- The remote boxes' work folders moved to `gitniblet-floss` too, in all 4 places that name them.
 		- Verified: `cleanup-test.bash` dedp4 to dedpb pass. The run-twice check, with one run stopped by Ctrl+C, left nothing new. A `dbus-daemon` outlived a stopped `dbus-run-session`, and the recorder's cleanup stopped it. fuzz, profile, `demo-db.bash`, `seed.bash`, the CLI smoke, the remote skip test and the fallback test ran and left no folder.
 		- Swept: every `rm -r`, `rmtree`, `Remove-Item -Recurse` and `mktemp` outside `vendor/`.
 		- 20261025: Verified: the full run ran fuzz, the profiler and the remote tests, and left no run folder of its own. The demo check recorded with `--no-build`, and afterwards `:97` was gone, no `dbus-daemon`, `gvfsd` or at-spi process outside the desktop's was left, and no run folder. `assets/demo.gif` was restored by copy.
 		- Departs from the requirements: `seed.bash` and `screenshots.bash` keep their fixed `/tmp` paths, per the decisions below.
-		- 20261025: Verified: after the full run on 21bc082, which ran fuzz, the profiler, the pipeline tests and the remote tests, `${HOST_TEMP}/nano-git-db-floss/` was empty and no labeled container was left. b26 had no work folder left. cleanup-test dedp4 to dedpd passed there, and in 10 runs in a row at load 24 to 37.
+		- 20261025: Verified: after the full run on 21bc082, which ran fuzz, the profiler, the pipeline tests and the remote tests, `${HOST_TEMP}/gitniblet-floss/` was empty and no labeled container was left. b26 had no work folder left. cleanup-test dedp4 to dedpd passed there, and in 10 runs in a row at load 24 to 37.
 	- Decisions:
-		- The temp root is `nano-git-db-floss`, as asked, while the docker labels stay `nano-git-db`.
+		- The temp root is `gitniblet-floss`, as asked, while the docker labels stay `gitniblet`.
 		- `seed.bash` and `screenshots.bash` keep their fixed `/tmp` paths, since the walkthrough and the screenshots show them, and the folder outlives the run. Their wipe goes through the guard, so a stray argument can't remove anything outside a tmp folder.
 		- `gui-headless.bash` keeps its state at `/tmp/rpd-gui-headless` across its start and stop calls, so it stays.
 		- `walkthrough.md` still tells the presenter to `rm -rf` the two demo folders by hand. It's a user doc, so it was left alone.
@@ -791,7 +791,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- ID: 2026102407295324
 	- Type: Enhancement
 	- Status: Done
-	- Test environment: b23 runs `ngdb 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
+	- Test environment: b23 runs `gitniblet 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
 	- Stand-in: In place of a look on b23: build deefv, from the frozen commit 21bc082, on a scratch database. The TUI's table list and the web index both list `lookups` and `lookup_values` last, after the user's table and the system tables.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-072953
@@ -822,7 +822,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- ID: 2026102407295335
 	- Type: Enhancement
 	- Status: Done
-	- Test environment: b23 runs `ngdb 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
+	- Test environment: b23 runs `gitniblet 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
 	- Stand-in: In place of a look in the usual terminal: build deefv on a scratch database with 🔘, ✅, 🚫 and 🛠 symbols, in a 140-column UTF-8 terminal and the web UI. Lists showed the symbol, or the title with `lookup_in_lists: title`, and forms the symbol then the title. Columns after a double-width symbol stayed in line. A soft-deleted value still showed on its row.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-072953
@@ -859,7 +859,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- ID: 2026102408470113
 	- Type: Enhancement
 	- Status: Done
-	- Test environment: b23 runs `ngdb 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
+	- Test environment: b23 runs `gitniblet 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
 	- Stand-in: Build deefv on the same scratch database, in the TUI and web. Both pickers listed none, then 🔘 Open, ✅ Done and 🚫 Blocked in sort order, with the held value selected. After 🚫 Blocked was soft-deleted, a row holding it listed it second, still selected, ahead of the active values.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-084701
@@ -889,7 +889,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- ID: 2026102408470118
 	- Type: Enhancement
 	- Status: Done
-	- Test environment: b23 runs `ngdb 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
+	- Test environment: b23 runs `gitniblet 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
 	- Stand-in: Build deefv on the same scratch database, in the TUI and web. The `lookup_values` form's group picker listed none, Size and Status, with the row's group selected. A literal picker listed `Chore, misc` whole, and an sql picker showed its query's titles and saved the picked idx.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261024-084701
@@ -1043,7 +1043,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Test case: `cicd/utility/flags-test.bash` deee3, new here. The rest are named on each item.
 	- Closed: 20261025-204921
 
-- Remove the issue-tracker demo. ngdb-issue-tracker takes its place, in its own repo.
+- Remove the issue-tracker demo. gitniblet-issue-tracker takes its place, in its own repo.
 	- ID: 2026102513390812
 	- Type: Task
 	- Status: Done
@@ -1051,7 +1051,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Opened: 20261025-133908
 	- Opened by: JC
 	- Progress log:
-		- 20261025: `demos/` is gone, walkthrough and `seed.bash` included. The CLI smoke still needs a schema, so `issues.shcl` moved to `cicd/utility/smoke/`, and the remote test bundle takes that folder. The README points at ngdb-issue-tracker.
+		- 20261025: `demos/` is gone, walkthrough and `seed.bash` included. The CLI smoke still needs a schema, so `issues.shcl` moved to `cicd/utility/smoke/`, and the remote test bundle takes that folder. The README points at gitniblet-issue-tracker.
 		- Verified: the CLI smoke passes on the new path.
 	- Test case: None, since it's a removal. The CLI smoke reads the schema from its new path on every run.
 
@@ -1073,13 +1073,13 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Estimated effort: Avg
 	- Actual effort: Avg
 	- Progress log:
-		- 20261025: Containers are named `nano-git-db-<run folder>-pipeline`, labelled `dev.project` and `dev.run`, and run with `--rm` unless `--keep-temp` is given. The image and the cache volume get `dev.run` too, from the run that made them.
+		- 20261025: Containers are named `gitniblet-<run folder>-pipeline`, labelled `dev.project` and `dev.run`, and run with `--rm` unless `--keep-temp` is given. The image and the cache volume get `dev.run` too, from the run that made them.
 		- At exit, on failure and Ctrl+C too, the run's containers go by label. Then this project's dangling images go, and its image tags older than the one before the current one, but only once the current one has passed. Then `docker builder prune -f --filter until=168h`, and one line from `docker system df` before and after.
 		- The docker client runs in the background with a `wait`, so Ctrl+C reaches the cleanup at once. In the foreground the signal only reached the container's init, and the run inside finished its current step first.
 		- `--keep-temp` keeps the containers, stopping a running one, and says so.
 		- Verified: `cleanup-test.bash` passes, and fails with the folder removal or the background `wait` taken out. Two real quick runs, the second stopped by Ctrl+C 8 seconds after its container started, left no container, image, volume or run folder behind, and the stopped one ended 6 seconds after the signal. The fallback test, the remote skip test, `test.bash`, the wide gofmt, the build and the CLI smoke pass.
 		- Swept: every `docker` call in `cicd/`. The fallback test's stand-ins pass through the new cleanup.
-		- 20261025: Verified: the full run's container ran as `nano-git-db-20261025-094223_001-pipeline` and left no container behind, only the current image and the cache volume, both labelled. The end line said what was removed. The smoke, which sources the include, passed on vmKt6m under its stock bash 3.2, on the other 3 boxes, and in `ci.yml` run 40212963323 on Linux and arm64 macOS.
+		- 20261025: Verified: the full run's container ran as `gitniblet-20261025-094223_001-pipeline` and left no container behind, only the current image and the cache volume, both labelled. The end line said what was removed. The smoke, which sources the include, passed on vmKt6m under its stock bash 3.2, on the other 3 boxes, and in `ci.yml` run 40212963323 on Linux and arm64 macOS.
 	- Decisions:
 		- The run's own containers go with `docker rm -f`, since a Ctrl+C can leave one running. Images are never forced.
 		- The builder prune runs whenever docker answered, as the shared rule says, though build cache carries no project label.
@@ -1142,7 +1142,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- 20261025: Added `cicd/container/Dockerfile`: Debian trixie-slim by digest, Go 1.26.10 from its tarball by sha256, plus git and nsis. `cicd.bash` runs build, cross-compile and packaging, lint, tests, fuzz and security in it by default. Dogfood, profiler, demo, hooks and publish stay on the host.
 		- 20261025: `--no-container` keeps it all on the host. No docker, a docker that doesn't answer, a box that isn't x86_64, or an image that won't build prints one line and runs on the host.
 		- 20261025: The image is tagged by the recipe's git hash. A `GO_VER` that doesn't match the `toolchain` line in `source/go.mod` fails the run.
-		- 20261025: For 2026102416210002, containers are named `nano-git-db-<run stamp>-pipeline` and labelled `dev.project` and `dev.run`, and the image and the `nano-git-db-cicd-cache` volume get `dev.project`. The run stamp is the run log's `YYYYmmDD-HHMMSS`, since `cicd.bash` makes no run folder yet.
+		- 20261025: For 2026102416210002, containers are named `gitniblet-<run stamp>-pipeline` and labelled `dev.project` and `dev.run`, and the image and the `gitniblet-cicd-cache` volume get `dev.project`. The run stamp is the run log's `YYYYmmDD-HHMMSS`, since `cicd.bash` makes no run folder yet.
 		- Verified: a quick run and a full run (`--no-install --no-hooks --no-publish --no-demo --no-format`) passed in the container, packages and Windows installers included, with the profiler after it on the host. The fallback test passes, and its stale pin case failed until the check exited the run.
 	- Decisions:
 		- `--container` is still taken, and does nothing, since it's the default now.
@@ -1209,7 +1209,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Test case: `cicd/utility/remote-skip-test.bash` deed6 and deed7.
 	- Closed: 20261025-204220
 
-- cicd's local hooks stopped running when the repo moved into `nano-git-db-floss/repo`.
+- cicd's local hooks stopped running when the repo moved into `gitniblet-floss/repo`.
 	- ID: 2026102409431176
 	- Type: Bug
 	- Status: Done
@@ -1577,7 +1577,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Item 4: the read-only flag and the notice state were changed from one request while others read them, with no synchronization.
 	- Item 5: the name of an attachment's working copy came from a record and was used as written, so it could point outside the temporary directory.
 	- Item 6: a second process writing at the same time failed straight away instead of waiting its turn for the database file.
-	- Item 7: an unknown verb, or one missing its arguments, printed usage on standard output and exited 0, so `ngdb ddl "$f" || ...` in a script never fired. Usage now goes to standard error with a failing status, and `--help` prints it on standard output and succeeds.
+	- Item 7: an unknown verb, or one missing its arguments, printed usage on standard output and exited 0, so `gitniblet ddl "$f" || ...` in a script never fired. Usage now goes to standard error with a failing status, and `--help` prints it on standard output and succeeds.
 	- Item 8: `--table` without a database took the first `field=value` as the database name and reported the field value as a bad database.
 	- Item 9: `--tui` with two arguments matched neither accepted form and silently opened the picker instead of saying so.
 	- Item 10: the password typed at the `webuser` prompt was echoed, leaving it in terminal scrollback. A piped password still reads as a plain line, so setup scripts are unaffected.
@@ -1642,7 +1642,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Test case: none. A type change the compiler checks. `TestCrudVerbsEndToEnd` (d9dyk) covers the verbs.
 
 - ✅ Use sister project 'SHCL' as the engine for config and DDL files.
-	- Done: one language now covers the schema, the queries sidecar, and ngdb's own registry, settings and web-credential files. The TOML dependency is gone, and so is the hand-rolled indent parser.
+	- Done: one language now covers the schema, the queries sidecar, and gitniblet's own registry, settings and web-credential files. The TOML dependency is gone, and so is the hand-rolled indent parser.
 	- Done: schema files are `.shcl`, queries are `.queries.shcl`. A directory holding a pre-rename `.ddl` still opens.
 	- Done: the schema's own key vocabulary is a validation file inside the binary, so a mistyped key is named with its line number instead of being ignored. A schema with errors marks its database unopenable, as before.
 	- Done: renames go through the writer rather than editing lines of text, so comments survive by construction. The file comes back canonical, which does reflow hand-tuned column alignment once.
@@ -1684,7 +1684,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 - ✅ Demo gif polish.
 	- Done: theme beat dropped; in its place a real TUI action - a task with an existing comment thread is selected and a comment is added in the board's comments pane (a linked detail the list view never shows).
-	- Done: CLI part opens with a comment line, uses `--db=`/`--table=` explicitly, and the closing line is `# nano-git-db.`
+	- Done: CLI part opens with a comment line, uses `--db=`/`--table=` explicitly, and the closing line is `# gitniblet.`
 	- Done: the faux window has square corners and fills the frame except a 4px black outline; terminal scrolls smooth (no jump scroll) with a blinking cursor.
 	- Done: the gif runs at 50fps, where 30 could not hold a steady frame delay. The brisk typing pace is now asked for directly rather than falling out of a fixed per-key subtraction, so its jitter scales with it and the cursor stops stuttering.
 	- Done: fixed beats trimmed to ~50s, keeping the longer holds where there is output to read.
@@ -1695,13 +1695,13 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Test case: none here. Only the scheme was settled in this repo. The check is in enterprise, behind the `gate` seam, which d9hhe and d9hhf cover.
 
 - ✅ Address a database by name on the CLI and in the UIs, not by its file paths.
-	- Done: every CRUD verb now names a registered database (`ngdb create issues task ...`) and looks up its ddl/sqlite/log from the registry; the old three-path form is gone for data verbs. The name is the first positional, or `--db`/`--table` flags (both accepted, in any order), and resolves with or without a file extension.
+	- Done: every CRUD verb now names a registered database (`gitniblet create issues task ...`) and looks up its ddl/sqlite/log from the registry; the old three-path form is gone for data verbs. The name is the first positional, or `--db`/`--table` flags (both accepted, in any order), and resolves with or without a file extension.
 	- Done: `build`/`replay`/`sync`/`gc` and the rename verbs take a name too, keeping an explicit-path form for pre-registration use; `--tui <db>` and `--serve <db>` open a registered database directly.
 	- Done: demo recorder, `demos/` walkthrough + `seed.bash`, README, and syntax.md all switched to the name-based form; the recorder's TUI beat uses a standard dark theme instead of high-contrast.
 	- Test case: cli d9z0f and d9z0g, and `TestFindByName` (d9z0h) in config.
 
 - ✅ Animated README demo (faux terminal, in cicd, skippable with `--quick`).
-	- Done: `cicd/utility/demo-video/demo-video.py` drives a real ngdb (TUI first, then the same data from the CLI) inside a decorated xterm on a private Xvfb, typing at a realistic pace with the odd fixed typo. It renders a 1920x1080 mp4 and a looping 960x540 50fps gif with a hard black loop seam.
+	- Done: `cicd/utility/demo-video/demo-video.py` drives a real gitniblet (TUI first, then the same data from the CLI) inside a decorated xterm on a private Xvfb, typing at a realistic pace with the odd fixed typo. It renders a 1920x1080 mp4 and a looping 960x540 50fps gif with a hard black loop seam.
 	- Done: the mp4 and full gif go to `../private/demo-video/{video,gif}` and GFS-rotate; the latest gif is copied to `assets/demo.gif` for the README. All content is anonymous (fake user/host, /tmp paths).
 	- Note: adapted from the sister silkterm recorder, minus its GPU and audio work; deps are python3 stdlib + ffmpeg + xterm/xdotool/Xvfb/xfwm4. A web-UI leg can be added later.
 	- Test case: none. It makes a gif, checked by eye. The demo step runs it.
@@ -1716,7 +1716,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Test case: none. Pipeline and release setup, and the hosted CI runs are the check.
 
 - ✅ Donations model.
-	- Done: a "Support nano-git-db" entry in Help/About and `--donate` shows one blurb and one link (DONATE.md). The CLI prints it, the TUI shows a dialog, and the web UI shows a Support page. Open-source build only.
+	- Done: a "Support gitniblet" entry in Help/About and `--donate` shows one blurb and one link (DONATE.md). The CLI prints it, the TUI shows a dialog, and the web UI shows a Support page. Open-source build only.
 	- Done: a Support section in README.md, a DONATE.md, and a `.github/FUNDING.yml`.
 	- Done: the donate files and package are locked to the maintainer via `.github/CODEOWNERS`.
 	- Note: to finish going live, enable a GitHub Sponsors profile and fill in the FUNDING.yml handles.
@@ -1728,9 +1728,9 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Note: stronger sign-in methods stay an enterprise concern.
 	- Test case: config d9hsm, d9hsn, d9hsp and dah5k, and web d9hsr to d9hsx and d9hsy.
 
-- ✅ Exe name should be 'ngdb'.
-	- Done: the built binary and all user-facing references (CLI/TUI/web usage, version line, web title) are now `ngdb`; `cmd/nanogitdb` renamed to `cmd/ngdb`. The module path `nano-git-db` and the `NANOGITDB_USER`/`NANOGITDB_HOST` env vars are unchanged.
-	- Test case: `TestVersionLine` (debg5) checks the name in the version line, and `smoke-cli.bash` runs `bin/ngdb`, with no ID yet (2026102521481107).
+- ✅ Exe name should be 'gitniblet'.
+	- Done: the built binary and all user-facing references (CLI/TUI/web usage, version line, web title) are now `gitniblet`; `cmd/gitniblet` renamed to `cmd/gitniblet`. The module path `gitniblet` and the `GITNIBLET_USER`/`GITNIBLET_HOST` env vars are unchanged.
+	- Test case: `TestVersionLine` (debg5) checks the name in the version line, and `smoke-cli.bash` runs `bin/gitniblet`, with no ID yet (2026102521481107).
 
 - ✅ Order of fields in txlog should NOT affect backward or forward schema compatibility.
 	- Done: the reader maps columns by the header row's names instead of fixed positions. A column can be reordered, added, or dropped - an unknown extra column is ignored, a missing one defaults to empty (this subsumes the old host_name legacy-width special-case). Header rows are detected by their reserved column names, so even the header order can change. A record just needs enough fields to carry the required columns, else it's flagged torn.
@@ -1744,8 +1744,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Done: the startup picker is now a centered, bordered panel with margins instead of a full-screen list, and blank spacer rows sit between entries. Up/Down skip the spacers so the highlight only stops on real entries.
 	- Test case: `TestPickerSkipsSpacers` (d9ew5).
 
-- ✅ When defining a db in the TUI or CLI, allow just pointing to a top-level repo - then figure everything else out (i.e. "[repo dir]/ngdb/[short spaceless db name]/") If the dir is not a github repo, use the directory exactly as entered (assuming it's empty or nonexistent). Don't ask for txlog or config files, just create them in the dir.
-	- Done: the CLI `--init` already derived this; pulled the logic into shared `config.LogDirFor(location, name)` and switched the TUI create form to a single "location (repo or folder)" field. Point at a repo top level -> `<repo>/ngdb/<name>`; any other folder is used as-is (created if missing). No separate tx-log path to enter; config still auto-places in the user config dir.
+- ✅ When defining a db in the TUI or CLI, allow just pointing to a top-level repo - then figure everything else out (i.e. "[repo dir]/gitniblet/[short spaceless db name]/") If the dir is not a github repo, use the directory exactly as entered (assuming it's empty or nonexistent). Don't ask for txlog or config files, just create them in the dir.
+	- Done: the CLI `--init` already derived this; pulled the logic into shared `config.LogDirFor(location, name)` and switched the TUI create form to a single "location (repo or folder)" field. Point at a repo top level -> `<repo>/gitniblet/<name>`; any other folder is used as-is (created if missing). No separate tx-log path to enter; config still auto-places in the user config dir.
 	- Test case: config d9ew9, d9ewa and d9ewb.
 
 - ✅ Ability to delete entries from TUI (e.g. invalid ones).
@@ -1775,10 +1775,10 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Test case: none. Docs. A check that the README's schema blocks still parse is in 2026102521481107.
 
 - ✅ Partial flag list:
-	- ✅ `--init[=]["git repo root to auto-calculate subfolders for (e.g. 'ngdb/dbname/'), or override default with specific 'git-repo-root-path/subfolder(s)/'"]`  ## If no arg specified, and already in a git root or DDL is in $PWD, use it. Otherwise error.
-	- ✅ `--config[=]"Alternate user config file folder, name, and/or full filespec"`  ## Default = "~/.config/ngdb/dbname/" (or Windows analogue).
+	- ✅ `--init[=]["git repo root to auto-calculate subfolders for (e.g. 'gitniblet/dbname/'), or override default with specific 'git-repo-root-path/subfolder(s)/'"]`  ## If no arg specified, and already in a git root or DDL is in $PWD, use it. Otherwise error.
+	- ✅ `--config[=]"Alternate user config file folder, name, and/or full filespec"`  ## Default = "~/.config/gitniblet/dbname/" (or Windows analogue).
 	- ✅ `--[en]crypt[ion][=]on|off|auto[matic]|yes|no|true|false|y|n|t|f|enable[d]|disable[d]`  ## If on, may be overridden by DDL values of 'never'. If off, may be overridden by DDL values of 'always'. Default=auto.
-	- Done (`--init`, `--config`): `--init [path]` registers the lone current-dir DDL as a database and materializes its view. It picks the tx-log dir automatically: inside a git repo it goes under `<repo-root>/ngdb/<name>`, an explicit path is taken verbatim, and outside a repo it uses the current dir. `--config <dir>` is a global prefix that repoints the registry. Both accept the `=` form.
+	- Done (`--init`, `--config`): `--init [path]` registers the lone current-dir DDL as a database and materializes its view. It picks the tx-log dir automatically: inside a git repo it goes under `<repo-root>/gitniblet/<name>`, an explicit path is taken verbatim, and outside a repo it uses the current dir. `--config <dir>` is a global prefix that repoints the registry. Both accept the `=` form.
 	- Done (`--encrypt`): built with the encryption item below. `--encrypt[=on|off|auto]` is a global prefix (bare means on). Paired with `--init` it mints the per-db key and persists the preference.
 	- Test case: cli d9dyr to d9dyv for `--init`, `TestBaseOverride` (d9dz0) for `--config`, and d9dz2 and d9dz3 for `--encrypt`.
 
@@ -1787,7 +1787,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Test case: tui d9e74, d9e75 and d9e76.
 
 - ✅ Add "host_name" to the transaction log, in addition to user. (Because the same user might use multiple hosts, and that might be useful info.)
-	- Done: `host_name` appended as the last tx-log column, so older logs without it still parse as an empty host and both widths survive a union merge. It's stamped automatically from the OS hostname, overridable with `NANOGITDB_HOST`, the machine analogue of `NANOGITDB_USER`. Metadata only, so replay ignores it. All four front-ends inherit it.
+	- Done: `host_name` appended as the last tx-log column, so older logs without it still parse as an empty host and both widths survive a union merge. It's stamped automatically from the OS hostname, overridable with `GITNIBLET_HOST`, the machine analogue of `GITNIBLET_USER`. Metadata only, so replay ignores it. All four front-ends inherit it.
 	- Test case: `TestHostNameRoundTripAndLegacy` (d9e1b) and `TestWritesStampHost` (d9dzb).
 
 - ✅ Tx-log garbage collection: mark + collect records older than N days
@@ -1874,35 +1874,35 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - ✅ Repo scaffold: `go.mod`, package skeleton, arg-dispatch `main`, size-optimized build script, `.gitignore`. Compiles, vets, and gofmt-clean; all four front-ends stubbed and the web server serves its embedded asset.
 	- Test case: none of its own. The build and vet steps, and `TestAssetsServed` (d9e20) for the embedded asset.
 
-- ✅ DDL parser: `example.ddl` parses into an in-memory schema model through three layers (indent tree, type-directed values, semantic map). Tested, wired to `nanogitdb ddl <file>`.
+- ✅ DDL parser: `example.ddl` parses into an in-memory schema model through three layers (indent tree, type-directed values, semantic map). Tested, wired to `gitniblet ddl <file>`.
 	- Test case: ddl d9dzp, d9dzq, d9dzr and d9dzs, and fuzz d9nwj.
 
-- ✅ SQLite view: builds and migrates the local `.sqlite` from the schema using pure-Go `modernc.org/sqlite`, with system columns and uniques/indexes, idempotent. Tested, wired to `nanogitdb build`. On-the-fly migration of existing data is a separate item below.
+- ✅ SQLite view: builds and migrates the local `.sqlite` from the schema using pure-Go `modernc.org/sqlite`, with system columns and uniques/indexes, idempotent. Tested, wired to `gitniblet build`. On-the-fly migration of existing data is a separate item below.
 	- Test case: store d9e0m, d9e0p and d9e0q.
 
-- ✅ Transaction log: CSV read/write plus apply log to the SQLite view, with the log as source of truth. Append-only, field-granular replay (create/update/mark_delete/delete) in one tx. Tested, wired to `nanogitdb replay`. Added `row_id` to the entry (see design).
+- ✅ Transaction log: CSV read/write plus apply log to the SQLite view, with the log as source of truth. Append-only, field-granular replay (create/update/mark_delete/delete) in one tx. Tested, wired to `gitniblet replay`. Added `row_id` to the entry (see design).
 	- Test case: txlog d9e1a, d9e1e and d9e1f.
 
 - ✅ Core CRUD API: the single internal API every front-end and Lua calls, covering Create/Update/SetField/MarkDelete/Delete/Get/Query. Writes are log-first (append to truth, then apply to view), and it owns id, timestamp, and user stamping. Tested including a full rebuild from log. Validation, access, and triggers are separate items.
 	- Test case: crud d9dza, d9dzc and d9dzd, and d9dz7 to d9dz9 for ids and time stamps.
 
-- ✅ CLI front-end: full arg-based CRUD over the core, with verbs create/get/update/setnull/markdelete/delete/query each taking the same `<ddl> <sqlite> <logdir>` triple as replay and sync. Stateless and script-friendly until the registry existed. Writes stamp NANOGITDB_USER or the OS username, and `setnull` is its own verb so a literal "NULL" string stays expressible. Schema-op flags are their own backlog item.
+- ✅ CLI front-end: full arg-based CRUD over the core, with verbs create/get/update/setnull/markdelete/delete/query each taking the same `<ddl> <sqlite> <logdir>` triple as replay and sync. Stateless and script-friendly until the registry existed. Writes stamp GITNIBLET_USER or the OS username, and `setnull` is its own verb so a literal "NULL" string stays expressible. Schema-op flags are their own backlog item.
 	- Test case: `TestCrudVerbsEndToEnd` (d9dyk) and `TestCreateRejectsBadAssign` (d9dym).
 
-- ✅ Git sync: pull/merge/commit/push of the tx-log dir with a background loop, shelling out to `git`. Append conflicts auto-resolve via `merge=union`, and replay sorts by (date, tx_id) so clients converge. Tested including two-client convergence, wired to `nanogitdb sync`.
+- ✅ Git sync: pull/merge/commit/push of the tx-log dir with a background loop, shelling out to `git`. Append conflicts auto-resolve via `merge=union`, and replay sorts by (date, tx_id) so clients converge. Tested including two-client convergence, wired to `gitniblet sync`.
 	- Test case: txlog d9e17, d9e18 and d9e19.
 
-- ✅ Lua host: `gopher-lua` bound to the same core CRUD as `db.{create,get,update,setfield,markdelete,delete,query}`, sandboxed to base/table/string/math/coroutine only with no os/io. Tested, wired to `nanogitdb --script`.
+- ✅ Lua host: `gopher-lua` bound to the same core CRUD as `db.{create,get,update,setfield,markdelete,delete,query}`, sandboxed to base/table/string/math/coroutine only with no os/io. Tested, wired to `gitniblet --script`.
 	- Note: now an enterprise-edition feature. The host moved behind the script seam, so the open-source build has no scripting host and drops the gopher-lua dependency.
 	- Test case: none here. The host is in enterprise. `TestNoProviderDisablesScripting` (d9e21) checks the open-source build has none.
 
 - ✅ Auto tables: users, groups, and the opt-in feature tables (m:m, comments, audit, access, attachments), defined in the same DDL users write and embedded in one source file. Built idempotently at startup, with default groups (owners/admins/users/guests) seeded log-first so they replicate. audit_trail opts out of the universal system columns via the new `system_fields: no` key, and access_rows only appears when a table opts in to row_level_access. First-user membership in owners/admins is deferred until user rows exist.
 	- Test case: schema d9e0c to d9e0g.
 
-- ✅ TUI front-end: `tview`/`tcell`, both pure Go with the cross-compile intact. Table list (user tables first, then built-ins), a rows grid that stays empty until a table is opened, a create/edit form that writes only changed fields, and soft/hard delete behind a confirm modal, all through the shared CRUD API. `nanogitdb --tui <ddl> <sqlite> <logdir>`.
+- ✅ TUI front-end: `tview`/`tcell`, both pure Go with the cross-compile intact. Table list (user tables first, then built-ins), a rows grid that stays empty until a table is opened, a create/edit form that writes only changed fields, and soft/hard delete behind a confirm modal, all through the shared CRUD API. `gitniblet --tui <ddl> <sqlite> <logdir>`.
 	- Test case: tui d9e1j, d9e1k and d9e1m.
 
-- ✅ Web UI: stdlib `net/http` + `html/template` + `embed` with vendored, pinned htmx (2.0.4). Table sidebar, a rows grid that renders nothing until a table is asked for, a create/edit form writing only changed fields, and soft/hard delete behind hx-confirm; the 127.0.0.1-only binding is the access control. Front-end bring-up and table metadata live in shared `schema.OpenClient`/`schema.Catalog`, so the four front-ends can't drift. `nanogitdb --serve <ddl> <sqlite> <logdir>`.
+- ✅ Web UI: stdlib `net/http` + `html/template` + `embed` with vendored, pinned htmx (2.0.4). Table sidebar, a rows grid that renders nothing until a table is asked for, a create/edit form writing only changed fields, and soft/hard delete behind hx-confirm; the 127.0.0.1-only binding is the access control. Front-end bring-up and table metadata live in shared `schema.OpenClient`/`schema.Catalog`, so the four front-ends can't drift. `gitniblet --serve <ddl> <sqlite> <logdir>`.
 	- Test case: web d9e1v to d9e1z.
 
 - ✅ CI/CD: a manual pipeline in `cicd/cicd.bash` that builds native (size-reported), cross-compiles windows-amd64/linux-arm64/windows-arm64 (pure Go, no extra toolchains; macOS stays deferred), zips windows into `dist/`, runs test.bash (vet, gofmt, tests, smoke), verifies the module and runs govulncheck, then dogfoods and publishes. Profiling beyond the size report waits until there's something worth profiling.

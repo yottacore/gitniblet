@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jim-collier/nano-git-db/internal/core/crud"
+	"github.com/yottacore/gitniblet/internal/core/crud"
 )
 
 // pickSpec is a `list_type: literal` or `sql` field's list_source.

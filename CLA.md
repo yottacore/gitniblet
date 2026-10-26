@@ -1,6 +1,6 @@
 # Contributor License Agreement
 
-Thank you for contributing to nano-git-db (the "Project"). To keep the Project's licensing clean and to allow the maintainer to offer a separately licensed edition, every contributor must agree to this Contributor License Agreement (the "Agreement") before their contribution can be merged. This Agreement protects you, the maintainer, and everyone who relies on the Project. It does not change your rights to use your own contributions for any other purpose.
+Thank you for contributing to gitniblet (the "Project"). To keep the Project's licensing clean and to allow the maintainer to offer a separately licensed edition, every contributor must agree to this Contributor License Agreement (the "Agreement") before their contribution can be merged. This Agreement protects you, the maintainer, and everyone who relies on the Project. It does not change your rights to use your own contributions for any other purpose.
 
 You accept and agree to these terms for your present and future contributions to the Project. Except for the licenses granted here, you retain all right, title, and interest in and to your contributions.
 

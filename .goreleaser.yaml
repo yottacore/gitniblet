@@ -8,55 +8,55 @@
 # app.Version is authoritative in source; only app.CommitTime is stamped, which
 # gives the build number. No build date, so release binaries show none.
 version: 2
-project_name: ngdb
+project_name: gitniblet
 
 builds:
-  - id: ngdb
+  - id: gitniblet
     dir: source
-    main: ./cmd/ngdb
-    binary: ngdb
+    main: ./cmd/gitniblet
+    binary: gitniblet
     env:
       - CGO_ENABLED=0
     flags:
       - -mod=vendor
       - -trimpath
     ldflags:
-      - -s -w -X github.com/jim-collier/nano-git-db/app.CommitTime={{ .CommitTimestamp }}
+      - -s -w -X github.com/yottacore/gitniblet/app.CommitTime={{ .CommitTimestamp }}
     goos: [linux, darwin, windows, freebsd]
     goarch: [amd64, arm64]  # flow-style so cicd.bash --no-arm can filter this line
 
 archives:
-  - id: ngdb
+  - id: gitniblet
     formats: [tar.gz]
-    name_template: "ngdb-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+    name_template: "gitniblet-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
     format_overrides:
       - goos: windows
         formats: [zip]
 
 # nfpm packages only the linux builds (it ignores the other OSes automatically).
 nfpms:
-  - id: ngdb
-    package_name: ngdb
+  - id: gitniblet
+    package_name: gitniblet
     formats: [deb, rpm]
-    maintainer: nano-git-db maintainers <release@nano-git-db.local>
+    maintainer: gitniblet maintainers <release@gitniblet.local>
     description: Local-first database on an append-only, git-syncable transaction log.
     license: AGPL-3.0-or-later
-    homepage: https://github.com/jim-collier/nano-git-db
+    homepage: https://github.com/yottacore/gitniblet
     bindir: /usr/bin
     contents:
       - src: ./license.md
-        dst: /usr/share/doc/ngdb/license.md
+        dst: /usr/share/doc/gitniblet/license.md
       - src: ./README.md
-        dst: /usr/share/doc/ngdb/README.md
+        dst: /usr/share/doc/gitniblet/README.md
 
 checksum:
   name_template: checksums.txt
 
 release:
-  # The same first line as --version. release.yml sets NGDB_BUILD.
-  header: "ngdb v{{ .Version }} build {{ .Env.NGDB_BUILD }}"
+  # The same first line as --version. release.yml sets GITNIBLET_BUILD.
+  header: "gitniblet v{{ .Version }} build {{ .Env.GITNIBLET_BUILD }}"
   # -alpha/-beta/-rc tags land as a GitHub pre-release (not flagged Latest)
   prerelease: auto
   github:
     owner: jim-collier
-    name: nano-git-db
+    name: gitniblet

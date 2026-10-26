@@ -6,9 +6,9 @@ package crud
 import (
 	"fmt"
 
-	"github.com/jim-collier/nano-git-db/enc"
-	"github.com/jim-collier/nano-git-db/internal/core/ddl"
-	"github.com/jim-collier/nano-git-db/internal/core/txlog"
+	"github.com/yottacore/gitniblet/enc"
+	"github.com/yottacore/gitniblet/internal/core/ddl"
+	"github.com/yottacore/gitniblet/internal/core/txlog"
 )
 
 // Field-value encryption orchestration: which fields get sealed (policy) and

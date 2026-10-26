@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jim-collier/nano-git-db/internal/core/txlog"
+	"github.com/yottacore/gitniblet/internal/core/txlog"
 )
 
 const syncDDL = "tables:\n" +

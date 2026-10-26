@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/jim-collier/nano-git-db/gate"
-	"github.com/jim-collier/nano-git-db/internal/core/crud"
+	"github.com/yottacore/gitniblet/gate"
+	"github.com/yottacore/gitniblet/internal/core/crud"
 )
 
 // applyGate renders the startup notice for a non-interactive command. A Nag

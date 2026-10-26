@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jim-collier/nano-git-db/internal/core/guid"
+	"github.com/yottacore/gitniblet/internal/core/guid"
 )
 
 // now() must be strictly increasing even under rapid calls or a wall clock

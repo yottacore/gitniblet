@@ -6,8 +6,8 @@ package script
 import (
 	"fmt"
 
-	"github.com/jim-collier/nano-git-db/internal/core/crud"
-	"github.com/jim-collier/nano-git-db/internal/core/ddl"
+	"github.com/yottacore/gitniblet/internal/core/crud"
+	"github.com/yottacore/gitniblet/internal/core/ddl"
 )
 
 // apiDB adapts the core CRUD API to the DB interface the host sees. Only

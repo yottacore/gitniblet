@@ -11,14 +11,14 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/jim-collier/nano-git-db/internal/core/config"
+	"github.com/yottacore/gitniblet/internal/core/config"
 )
 
 // webUser sets (or replaces) a proxied-mode web login. The password comes from
-// NGDB_WEB_PASSWORD when set - so it can be scripted - else it is read from
+// GITNIBLET_WEB_PASSWORD when set - so it can be scripted - else it is read from
 // stdin. The creds file lives in the user config dir, outside any synced tree.
 func webUser(username string) error {
-	password := os.Getenv("NGDB_WEB_PASSWORD")
+	password := os.Getenv("GITNIBLET_WEB_PASSWORD")
 	if password == "" {
 		var err error
 		if password, err = readPassword(); err != nil {

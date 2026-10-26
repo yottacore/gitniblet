@@ -7,12 +7,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/jim-collier/nano-git-db/internal/core/txlog"
+	"github.com/yottacore/gitniblet/internal/core/txlog"
 )
 
 // LogDirFor resolves where a database's tx-log should live, given a user-entered
 // location and the database name. Point it at a git repo's top level and it gets
-// the auto `ngdb/<name>` subfolder; any other path (a plain folder, or a spot
+// the auto `gitniblet/<name>` subfolder; any other path (a plain folder, or a spot
 // inside a repo but not its root) is taken verbatim and created as-is. An empty
 // location falls back to the current directory, still preferring the enclosing
 // repo's subfolder. So the caller only ever asks for one location, never the
@@ -24,7 +24,7 @@ func LogDirFor(location, name string) (string, error) {
 			return "", err
 		}
 		if root, ok := txlog.RepoRoot(path); ok && sameDir(root, path) {
-			return filepath.Join(root, "ngdb", name), nil
+			return filepath.Join(root, "gitniblet", name), nil
 		}
 		return path, nil
 	}
@@ -33,7 +33,7 @@ func LogDirFor(location, name string) (string, error) {
 		return "", err
 	}
 	if root, ok := txlog.RepoRoot(wd); ok {
-		return filepath.Join(root, "ngdb", name), nil
+		return filepath.Join(root, "gitniblet", name), nil
 	}
 	return wd, nil
 }

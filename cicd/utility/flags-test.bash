@@ -6,7 +6,7 @@
 ##	Purpose:
 ##		Checks the shared flag set through cicd.bash --list, which plans the run
 ##		and runs nothing, and the pre-push hook's choice to gate a push or not,
-##		against a scratch repo with NGDB_GATE_DRYRUN=1.
+##		against a scratch repo with GITNIBLET_GATE_DRYRUN=1.
 ##	Syntax:
 ##		flags-test.bash     ## about 5 seconds
 ##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
@@ -25,8 +25,8 @@ runDir="$(fTempDir_Make flags-test)"  ||  exit 1
 trap 'fSafeRm "${runDir}" > /dev/null' EXIT
 ## The plans below expect Local hooks on, which needs the hooks folder. A
 ## hosted runner has no ../private/cicd-hooks, so stand one in.
-export NGDB_HOOKS_DIR="${runDir}/hooks"
-mkdir -p "${NGDB_HOOKS_DIR}"  ||  exit 1
+export GITNIBLET_HOOKS_DIR="${runDir}/hooks"
+mkdir -p "${GITNIBLET_HOOKS_DIR}"  ||  exit 1
 
 declare -i fails=0
 fCheck(){  ## id, name, then a command that passes or not. A subshell, so set -u stops only that check.
@@ -87,7 +87,7 @@ fNoHooksDir(){
 	full="$(fPlan)"
 	want="|${full}|"; want="${want/"|Local hooks|"/|}"; want="${want#|}"; want="${want%|}"
 	[[ "${want}" != "${full}" ]]  ||  { echo "  Local hooks isn't in the default plan"; return 1; }
-	fWant "$(NGDB_HOOKS_DIR="${missing}" fPlan)" "${want}"  &&  fWant "$(NGDB_HOOKS_DIR="${missing}" fOff)" "Local hooks (no ${missing})"
+	fWant "$(GITNIBLET_HOOKS_DIR="${missing}" fPlan)" "${want}"  &&  fWant "$(GITNIBLET_HOOKS_DIR="${missing}" fOff)" "Local hooks (no ${missing})"
 }
 fCheck deehh "with no hooks folder, Local hooks is off and the rest of the plan is the same" fNoHooksDir
 
@@ -147,7 +147,7 @@ git init -q -b main "${repo}"  &&  cd "${repo}"  &&  {
 }  ||  { echo "FAIL deech can't make the scratch repo"; exit 1; }
 first="$(git rev-parse HEAD~2)"; docs="$(git rev-parse HEAD~1)"; code="$(git rev-parse HEAD)"
 zero=0000000000000000000000000000000000000000
-fHook(){ printf '%s\n' "$2" | NGDB_GATE_DRYRUN=1 SKIP_GATE="${1}" bash "${hook}" 2>&1; }
+fHook(){ printf '%s\n' "$2" | GITNIBLET_GATE_DRYRUN=1 SKIP_GATE="${1}" bash "${hook}" 2>&1; }
 fHookCases(){
 	local bad=0 out
 	out="$(fHook 0 "refs/heads/dev ${code} refs/heads/dev ${first}")";   [[ -z "${out}" ]]                 ||  { echo "  dev: ${out}"; bad=1; }

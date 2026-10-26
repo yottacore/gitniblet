@@ -22,11 +22,11 @@ if ! command -v makensis >/dev/null 2>&1; then
 fi
 
 made=0
-for exe in dist/*windows*/ngdb.exe; do
+for exe in dist/*windows*/gitniblet.exe; do
 	[[ -f "${exe}" ]] || continue
 	arch="$(basename "$(dirname "${exe}")" | grep -oP 'windows_\K(amd64|arm64)' || true)"
 	[[ -n "${arch}" ]] || { echo "windows-installer: cannot derive arch from ${exe} - skipping"; continue; }
-	out="dist/ngdb-${version}-windows-${arch}-setup.exe"
+	out="dist/gitniblet-${version}-windows-${arch}-setup.exe"
 	# Absolute paths: makensis resolves File/OutFile against its own CWD, not the
 	# script dir, so relative dist/ paths would miss.
 	makensis -V2 \
@@ -37,4 +37,4 @@ for exe in dist/*windows*/ngdb.exe; do
 	made=$((made + 1))
 done
 
-[[ "${made}" -gt 0 ]] || echo "windows-installer: no dist/*windows*/ngdb.exe found (run goreleaser first)"
+[[ "${made}" -gt 0 ]] || echo "windows-installer: no dist/*windows*/gitniblet.exe found (run goreleaser first)"

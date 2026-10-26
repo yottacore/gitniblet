@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 
-// Package ddl parses the nano-git-db DDL into an in-memory schema model.
+// Package ddl parses the gitniblet DDL into an in-memory schema model.
 //
 // The DDL is an SHCL document (github.com/jim-collier/shcl), so the language
 // itself - indentation, quoting, comments, merging of repeated sections - is

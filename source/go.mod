@@ -1,4 +1,4 @@
-module github.com/jim-collier/nano-git-db
+module github.com/yottacore/gitniblet
 
 go 1.25.0
 

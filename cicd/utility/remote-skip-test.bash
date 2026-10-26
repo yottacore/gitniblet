@@ -47,7 +47,7 @@ cat > "${runDir}/bin/ssh" << 'EOF'
 [[ "${SSH_MODE}" == play ]] || exit 255
 case "${*: -1}" in
 	0)                  exit 0 ;;
-	-s)                 cat > /dev/null; echo /tmp/nano-git-db-floss/20261025-000000_001 ;;
+	-s)                 cat > /dev/null; echo /tmp/gitniblet-floss/20261025-000000_001 ;;
 	"cat > "*)          cat > "${BUNDLE_OUT:-/dev/null}" ;;
 	*remote-unix.bash*) cat "${BOX_OUT}"; exit 1 ;;
 	*)                  exit 255 ;;
@@ -55,9 +55,9 @@ esac
 EOF
 ## One binary's -test.v=test2json output, as remote-unix.bash frames it.
 v=$'\x16'
-printf '%s\n' "FreeBSD amd64 on vmFreeBSD: 4 cores, load 0.1, 2 jobs" "@@ngdb-test begin github.com/jim-collier/nano-git-db/internal/core/guid" \
+printf '%s\n' "FreeBSD amd64 on vmFreeBSD: 4 cores, load 0.1, 2 jobs" "@@gitniblet-test begin github.com/yottacore/gitniblet/internal/core/guid" \
 	"${v}=== RUN   TestRoundTrip" "${v}--- PASS: TestRoundTrip (0.00s)" "${v}=== RUN   TestDecodeAcceptsHex" "    guid_test.go:1: boom" \
-	"${v}--- FAIL: TestDecodeAcceptsHex (0.00s)" "${v}FAIL" "@@ngdb-test end 1" > "${runDir}/box.out"
+	"${v}--- FAIL: TestDecodeAcceptsHex (0.00s)" "${v}FAIL" "@@gitniblet-test end 1" > "${runDir}/box.out"
 chmod +x "${runDir}/wrap" "${runDir}/bin/ssh"
 ## Its own temp root, so another run's folders don't count against dednb.
 mkdir -p "${runDir}/temp/${tempProject}"
@@ -70,10 +70,10 @@ fCase(){  ## id, name, expected exit, expected line, env for the run
 	then echo "PASS ${id} ${name}"
 	else echo "FAIL ${id} ${name} (exit ${rc})"; tail -20 <<< "${out}"; fails+=1; fi
 }
-stand=(NGDB_RUN_DIR= NGDB_VM_WRAP="${runDir}/wrap" PATH="${runDir}/bin:${PATH}" HOST_TEMP="${runDir}/temp")
+stand=(GITNIBLET_RUN_DIR= GITNIBLET_VM_WRAP="${runDir}/wrap" PATH="${runDir}/bin:${PATH}" HOST_TEMP="${runDir}/temp")
 fCase dedn7 "box that doesn't answer is a SKIP" 0 "SKIP macos: no answer from b26, vmKt6m"             "${stand[@]}" WRAP_MODE=run  SSH_MODE=dead
 fCase dedn8 "box that can't be held is a SKIP"  0 "SKIP freebsd: no answer from vmFreeBSD"             "${stand[@]}" WRAP_MODE=hold SSH_MODE=dead
-fCase dedn9 "no wrap helper is a SKIP"          0 "SKIP freebsd: no VM and host lock wrap helper here" NGDB_VM_WRAP= HOME=/nonexistent
+fCase dedn9 "no wrap helper is a SKIP"          0 "SKIP freebsd: no VM and host lock wrap helper here" GITNIBLET_VM_WRAP= HOME=/nonexistent
 fCase dedna "box that fails is a FAIL"          1 "FAIL freebsd on vmFreeBSD"                          "${stand[@]}" WRAP_MODE=run  SSH_MODE=half
 fCase dedr4 "box's tests print one line each"   1 "FAIL dabew internal/core/guid TestDecodeAcceptsHex" "${stand[@]}" WRAP_MODE=run  SSH_MODE=play BOX_OUT="${runDir}/box.out" BUNDLE_OUT="${runDir}/bundle.tgz"
 ## b26 is held, so macos falls back to vmKt6m.

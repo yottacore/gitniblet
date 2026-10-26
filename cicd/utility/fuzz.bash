@@ -27,7 +27,7 @@ while (($#)); do case "$1" in
 	*) echo "fuzz.bash: unknown option: $1" >&2; exit 2 ;;
 esac; done
 
-source "$(dirname "$0")/include/cpu-limit.bash"   ## NGDB_JOBS + GOMAXPROCS (caps fuzz workers)
+source "$(dirname "$0")/include/cpu-limit.bash"   ## GITNIBLET_JOBS + GOMAXPROCS (caps fuzz workers)
 fCpuLimit heavy  ## a quarter of the cores, busy or not
 source "$(dirname "$0")/include/temp-run.bash"    ## fTempDir_Make + fSafeRm
 repoRoot="$(realpath -e "$(dirname "$0")/../..")"
@@ -58,7 +58,7 @@ tmp="$(fTempDir_Make fuzz)"; trap 'fSafeRm "${tmp}" > /dev/null' EXIT
 out="${tmp}/out"
 
 fRunTarget() {   ## $1 = import path, $2 = target name
-	go test -mod=vendor -p "${NGDB_JOBS}" -parallel "${NGDB_JOBS}" -run '^$' -fuzz="^${2}\$" -fuzztime="${fuzzTime}" "$1" >"${out}" 2>&1
+	go test -mod=vendor -p "${GITNIBLET_JOBS}" -parallel "${GITNIBLET_JOBS}" -run '^$' -fuzz="^${2}\$" -fuzztime="${fuzzTime}" "$1" >"${out}" 2>&1
 }
 
 ## go1.26's fuzzing coordinator can report the -fuzztime deadline itself as the
@@ -80,7 +80,7 @@ for t in "${targets[@]}"; do
 		note=" (deadline flake, rerun)"
 		rc=0; fRunTarget "${pkg}" "${fn}" || rc=$?
 	fi
-	line="${testID["${t}"]:------} ${pkg#github.com/jim-collier/nano-git-db/} ${fn} (${fuzzTime})"
+	line="${testID["${t}"]:------} ${pkg#github.com/yottacore/gitniblet/} ${fn} (${fuzzTime})"
 	if ((rc == 0)); then
 		echo "PASS ${line}${note}"
 	else

@@ -3,7 +3,7 @@
 
 <#
 .SYNOPSIS
-	Download, verify and install the ngdb executable from a GitHub release.
+	Download, verify and install the gitniblet executable from a GitHub release.
 
 .DESCRIPTION
 	Runs on Windows, Linux and macOS under PowerShell 7. Safe to re-run: an
@@ -30,7 +30,7 @@
 	Skip the confirmation prompt.
 
 .EXAMPLE
-	& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/jim-collier/nano-git-db/main/install.ps1')))
+	& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/yottacore/gitniblet/main/install.ps1')))
 
 .EXAMPLE
 	.\install.ps1 -Release dev -Target user
@@ -62,8 +62,8 @@ $ErrorActionPreference = 'Stop'
 ## Settings
 
 $RepoOwner = 'jim-collier'
-$RepoName  = 'nano-git-db'
-$ExeName   = 'ngdb'
+$RepoName  = 'gitniblet'
+$ExeName   = 'gitniblet'
 $ApiBase   = "https://api.github.com/repos/$RepoOwner/$RepoName"
 $DownBase  = "https://github.com/$RepoOwner/$RepoName/releases/download"
 
@@ -137,7 +137,7 @@ function Get-InstallDirectory {
 function Get-InstalledVersion {
 	param([string] $ExePath)
 	if (-not (Test-Path -LiteralPath $ExePath)) { return $null }
-	## "ngdb v1.0.0 build dedrq", or before that "ngdb 1.0.0 (abc1234)".
+	## "gitniblet v1.0.0 build dedrq", or before that "gitniblet 1.0.0 (abc1234)".
 	try { return @(& $ExePath --version)[0].Split(' ')[1].TrimStart('v') } catch { return $null }
 }
 

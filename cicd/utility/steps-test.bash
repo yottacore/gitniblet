@@ -24,7 +24,7 @@ inc="${repoRoot}/cicd/utility/include"
 # shellcheck source=include/temp-run.bash
 source "${inc}/temp-run.bash"
 runDir="$(fTempDir_Make steps-test)"  ||  exit 1
-export NGDB_LOG_DIR="${runDir}/logs"  ## so the real runs below never pass for the newest run log
+export GITNIBLET_LOG_DIR="${runDir}/logs"  ## so the real runs below never pass for the newest run log
 trap 'fSafeRm "${runDir}" > /dev/null' EXIT
 
 declare -i fails=0
@@ -60,8 +60,8 @@ fCheck dedq2 "half the CPUs, a quarter when busy or heavy, capped, never under 1
 fLive(){
 	local out
 	out="$(bash -c 'set -Eeuo pipefail; source "$1"; c="$(nproc)"
-		echo "${NGDB_JOBS} ${GOMAXPROCS} $(( NGDB_BUSY ? c / 4 : c / 2 )) ${NGDB_JOBS_MAX} $((c / 2))"
-		fCpuLimit heavy; echo "${NGDB_JOBS} $(( c / 4 > 0 ? c / 4 : 1 ))"
+		echo "${GITNIBLET_JOBS} ${GOMAXPROCS} $(( GITNIBLET_BUSY ? c / 4 : c / 2 )) ${GITNIBLET_JOBS_MAX} $((c / 2))"
+		fCpuLimit heavy; echo "${GITNIBLET_JOBS} $(( c / 4 > 0 ? c / 4 : 1 ))"
 		ps -o ni= -p $$; ionice -p $$ 2> /dev/null || echo idle' _ "${inc}/cpu-limit.bash")"
 	local -a l; mapfile -t l <<< "${out}"
 	local -a a b; read -r -a a <<< "${l[0]}"; read -r -a b <<< "${l[1]}"
@@ -135,10 +135,10 @@ lintDir="${repoRoot}/cicd/artifacts/lint"
 lintBefore="$(find "${lintDir}" -maxdepth 1 -name 'run_*.log' -newer "${runDir}" 2> /dev/null | wc -l)"
 fCheck dedq7 "a quick host run numbers every step and closes each with PASS" fQuickRun
 fLogDir(){
-	compgen -G "${NGDB_LOG_DIR}/run_*.log" > /dev/null  ||  { echo "  no run log in ${NGDB_LOG_DIR}"; return 1; }
+	compgen -G "${GITNIBLET_LOG_DIR}/run_*.log" > /dev/null  ||  { echo "  no run log in ${GITNIBLET_LOG_DIR}"; return 1; }
 	(( $(find "${lintDir}" -maxdepth 1 -name 'run_*.log' -newer "${runDir}" 2> /dev/null | wc -l) == lintBefore ))  ||  { echo "  a new log in ${lintDir}"; return 1; }
 }
-fCheck deef2 "a run's log goes to NGDB_LOG_DIR, not cicd/artifacts/lint" fLogDir
+fCheck deef2 "a run's log goes to GITNIBLET_LOG_DIR, not cicd/artifacts/lint" fLogDir
 
 ## A go that always fails, so the first step does.
 mkdir -p "${runDir}/bin"
@@ -157,11 +157,11 @@ chmod +x "${runDir}/bin/docker"
 fContainerArgs(){
 	local run
 	local -a ctrFlags=(-q --quick --no-sync --no-remote --no-install --no-hooks --no-publish --no-demo --no-format)
-	NGDB_DOCKER="${runDir}/bin/docker" nice -n 19 bash "${repoRoot}/cicd/cicd.bash" "${ctrFlags[@]}" > "${runDir}/ctr.out" 2>&1  ||  { tail -20 "${runDir}/ctr.out"; return 1; }
+	GITNIBLET_DOCKER="${runDir}/bin/docker" nice -n 19 bash "${repoRoot}/cicd/cicd.bash" "${ctrFlags[@]}" > "${runDir}/ctr.out" 2>&1  ||  { tail -20 "${runDir}/ctr.out"; return 1; }
 	run="$(grep '^run ' "${runDir}/docker.log")"
-	[[ "${run}" =~ --cpus\ ([0-9]+)\ --cpu-shares\ 256\ .*-e\ NGDB_STEPS\ -e\ NGDB_JOBS_CAP=([0-9]+)\ .*/etc/localtime:/etc/localtime:ro.*\ nice\ -n\ 19\ bash\  ]] \
+	[[ "${run}" =~ --cpus\ ([0-9]+)\ --cpu-shares\ 256\ .*-e\ GITNIBLET_STEPS\ -e\ GITNIBLET_JOBS_CAP=([0-9]+)\ .*/etc/localtime:/etc/localtime:ro.*\ nice\ -n\ 19\ bash\  ]] \
 		&&  [[ "${BASH_REMATCH[1]}" == "$(( $(nproc) / 2 ))" && "${BASH_REMATCH[2]}" == "${BASH_REMATCH[1]}" ]] \
-		&&  grep -qF 'Container: running nano-git-db-' "${runDir}/ctr.out" \
+		&&  grep -qF 'Container: running gitniblet-' "${runDir}/ctr.out" \
 		||  { echo "  ${run}"; return 1; }
 }
 fCheck dedq9 "the container gets --cpus, --cpu-shares 256, the step list, the cap and nice" fContainerArgs

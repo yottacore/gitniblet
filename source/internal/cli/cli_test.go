@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jim-collier/nano-git-db/internal/core/config"
+	"github.com/yottacore/gitniblet/internal/core/config"
 )
 
 const personDDL = `
@@ -194,7 +194,7 @@ func TestRenameOpsEndToEnd(t *testing.T) {
 	}
 }
 
-// A command that could not run has to fail, or `ngdb ddl "$f" || die` in a
+// A command that could not run has to fail, or `gitniblet ddl "$f" || die` in a
 // script never fires. Usage goes to stderr for the same reason.
 // ID: dava8
 func TestUnrunnableCommandsFail(t *testing.T) {

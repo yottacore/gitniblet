@@ -20,13 +20,13 @@ func TestVersionLine(t *testing.T) {
 		offset                      int
 		want                        string
 	}{
-		{"", "", "UTC", 0, "ngdb v" + Version},
-		{commit, "", "UTC", 0, "ngdb v" + Version + " build decp8"},
-		{commit, "garbage", "UTC", 0, "ngdb v" + Version + " build decp8"},
-		{commit, "2026-10-24T03:00:00Z", "UTC", 0, "ngdb v" + Version + " build decp8 (2026-10-24)"},
+		{"", "", "UTC", 0, "gitniblet v" + Version},
+		{commit, "", "UTC", 0, "gitniblet v" + Version + " build decp8"},
+		{commit, "garbage", "UTC", 0, "gitniblet v" + Version + " build decp8"},
+		{commit, "2026-10-24T03:00:00Z", "UTC", 0, "gitniblet v" + Version + " build decp8 (2026-10-24)"},
 		// Same build seen from the US west coast is still the 23rd there.
-		{commit, "2026-10-24T03:00:00Z", "PDT", -7 * 3600, "ngdb v" + Version + " build decp8 (2026-10-23)"},
-		{"", "2026-10-24T03:00:00Z", "UTC", 0, "ngdb v" + Version + " (2026-10-24)"},
+		{commit, "2026-10-24T03:00:00Z", "PDT", -7 * 3600, "gitniblet v" + Version + " build decp8 (2026-10-23)"},
+		{"", "2026-10-24T03:00:00Z", "UTC", 0, "gitniblet v" + Version + " (2026-10-24)"},
 	}
 	for _, c := range cases {
 		CommitTime, BuildTime = c.commitTime, c.buildTime

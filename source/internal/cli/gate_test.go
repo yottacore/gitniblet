@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jim-collier/nano-git-db/gate"
-	"github.com/jim-collier/nano-git-db/internal/core/crud"
+	"github.com/yottacore/gitniblet/gate"
+	"github.com/yottacore/gitniblet/internal/core/crud"
 )
 
 type fakeGate struct{ st gate.Status }

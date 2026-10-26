@@ -26,8 +26,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jim-collier/nano-git-db/internal/core/guid"
-	"github.com/jim-collier/nano-git-db/internal/core/store"
+	"github.com/yottacore/gitniblet/internal/core/guid"
+	"github.com/yottacore/gitniblet/internal/core/store"
 )
 
 // Entry is one transaction-log row. Field is blank for record-level ops

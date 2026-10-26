@@ -29,7 +29,7 @@ function Remove-RunFolder {
 	Set-Location $env:SystemDrive\
 	if ($Keep -eq 1) { "kept $($env:COMPUTERNAME):$Work"; return }
 	$item = Get-Item -LiteralPath $Work -ErrorAction SilentlyContinue
-	if ($Work -match '\\nano-git-db-floss\\\d{8}-\d{6}_\d{3}$' -and $item -and $item.PSIsContainer -and -not $item.LinkType) {
+	if ($Work -match '\\gitniblet-floss\\\d{8}-\d{6}_\d{3}$' -and $item -and $item.PSIsContainer -and -not $item.LinkType) {
 		Remove-Item -LiteralPath $Work -Recurse -Force
 	} else {
 		Write-Warning "remote-windows: left $Work, not a run folder"
@@ -49,11 +49,11 @@ try {
 	## Busy percent over a second, from GetSystemTimes. WMI and the perf counters
 	## both refuse a non-admin ssh logon. Kernel time includes idle.
 	$load = try {
-		Add-Type -Namespace Ngdb -Name Cpu -MemberDefinition '[DllImport("kernel32.dll")] public static extern bool GetSystemTimes(out long idle, out long kernel, out long user);'
+		Add-Type -Namespace Gitniblet -Name Cpu -MemberDefinition '[DllImport("kernel32.dll")] public static extern bool GetSystemTimes(out long idle, out long kernel, out long user);'
 		$i1 = $k1 = $u1 = $i2 = $k2 = $u2 = 0L
-		if (-not [Ngdb.Cpu]::GetSystemTimes([ref]$i1, [ref]$k1, [ref]$u1)) { throw 'GetSystemTimes' }
+		if (-not [Gitniblet.Cpu]::GetSystemTimes([ref]$i1, [ref]$k1, [ref]$u1)) { throw 'GetSystemTimes' }
 		Start-Sleep -Seconds 1
-		if (-not [Ngdb.Cpu]::GetSystemTimes([ref]$i2, [ref]$k2, [ref]$u2)) { throw 'GetSystemTimes' }
+		if (-not [Gitniblet.Cpu]::GetSystemTimes([ref]$i2, [ref]$k2, [ref]$u2)) { throw 'GetSystemTimes' }
 		$all = ($k2 - $k1) + ($u2 - $u1)
 		if ($all -le 0) { throw 'no ticks' }
 		[math]::Round(100 * ($all - ($i2 - $i1)) / $all)
@@ -68,22 +68,22 @@ try {
 		$name, $dir, $pkg = $line -split ' ', 3
 		if (-not $name) { continue }
 		$log = "$Work\logs\$name.log"
-		"@@ngdb-test begin $pkg"
+		"@@gitniblet-test begin $pkg"
 		Push-Location -LiteralPath "$Work\$dir"
 		## Quoted, since PowerShell splits -test.timeout at the dot.
 		& "$Work\tests\$name.test.exe" '-test.v=test2json' '-test.timeout=15m' "-test.parallel=$jobs" *> $log
 		$rc = $LASTEXITCODE
 		Pop-Location
 		Get-Content -LiteralPath $log
-		"@@ngdb-test end $rc"
+		"@@gitniblet-test end $rc"
 		if ($rc -ne 0) { $failed++ }
 	}
 
 	## The smoke script is bash. Git for Windows brings one; it isn't on PATH.
 	$bash = "$env:ProgramFiles\Git\bin\bash.exe"
 	if (Test-Path -LiteralPath $bash) {
-		$env:NGDB_SMOKE_EXPECT_DATE = '1'
-		& $bash ./cicd/utility/smoke-cli.bash ./ngdb.exe *> "$Work\logs\smoke.log"
+		$env:GITNIBLET_SMOKE_EXPECT_DATE = '1'
+		& $bash ./cicd/utility/smoke-cli.bash ./gitniblet.exe *> "$Work\logs\smoke.log"
 		if ($LASTEXITCODE -eq 0) { "PASS smoke-cli" }
 		else { "FAIL smoke-cli"; Get-Content "$Work\logs\smoke.log" -Tail 20; $failed++ }
 	} else {

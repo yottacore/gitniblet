@@ -2,12 +2,12 @@
 <html>
 <head>
 	<meta charset="utf-8">
-	<title>ngdb</title>
+	<title>gitniblet</title>
 	<link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
 	<div id="gate">
-		<h1>ngdb</h1>
+		<h1>gitniblet</h1>
 		<p class="gate-msg">{{.Message}}</p>
 		<form method="post" action="/gate/continue">
 			<button id="gate-continue" type="submit" {{if gt .Remaining 0}}disabled{{end}}>Continue with read/write<span id="gate-wait">{{if gt .Remaining 0}} ({{.Remaining}}s){{end}}</span></button>

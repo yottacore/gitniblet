@@ -2,14 +2,14 @@
 <html>
 <head>
 	<meta charset="utf-8">
-	<title>ngdb</title>
+	<title>gitniblet</title>
 	<script src="/assets/htmx.min.js"></script>
 	<link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
 	{{if .Banner}}<div id="banner">{{.Banner}}</div>{{end}}
 	<div id="side">
-		<h1>ngdb</h1>
+		<h1>gitniblet</h1>
 		{{if .Proxied}}
 		<div id="whoami">{{.User}} <form method="post" action="/logout"><button type="submit">Sign out</button></form></div>
 		{{end}}

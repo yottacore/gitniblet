@@ -7,7 +7,7 @@
 // registry. The name is the first positional, or a --db/-d flag. The low-level
 // schema/log verbs (build/replay/sync/gc) also take a name, and keep an
 // explicit-path form for use before a database is registered. Writes stamp the
-// user from NANOGITDB_USER, else the OS username.
+// user from GITNIBLET_USER, else the OS username.
 package cli
 
 import (
@@ -18,15 +18,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jim-collier/nano-git-db/donate"
-	"github.com/jim-collier/nano-git-db/enc"
-	"github.com/jim-collier/nano-git-db/internal/core/config"
-	"github.com/jim-collier/nano-git-db/internal/core/crud"
-	"github.com/jim-collier/nano-git-db/internal/core/ddl"
-	"github.com/jim-collier/nano-git-db/internal/core/schema"
-	"github.com/jim-collier/nano-git-db/internal/core/store"
-	"github.com/jim-collier/nano-git-db/internal/core/txlog"
-	"github.com/jim-collier/nano-git-db/script"
+	"github.com/yottacore/gitniblet/donate"
+	"github.com/yottacore/gitniblet/enc"
+	"github.com/yottacore/gitniblet/internal/core/config"
+	"github.com/yottacore/gitniblet/internal/core/crud"
+	"github.com/yottacore/gitniblet/internal/core/ddl"
+	"github.com/yottacore/gitniblet/internal/core/schema"
+	"github.com/yottacore/gitniblet/internal/core/store"
+	"github.com/yottacore/gitniblet/internal/core/txlog"
+	"github.com/yottacore/gitniblet/script"
 )
 
 // Run is the CLI entry point.
@@ -154,20 +154,20 @@ func doData(verb string, args []string) error {
 	}
 	if verb == "query" {
 		if len(rest) < 1 {
-			return fmt.Errorf("usage: ngdb query <db> <sql>")
+			return fmt.Errorf("usage: gitniblet query <db> <sql>")
 		}
 		return crudQuery(paths, rest[0])
 	}
 	// every other verb needs a table: the --table flag, else the next positional
 	if table == "" {
 		if len(rest) < 1 {
-			return fmt.Errorf("usage: ngdb %s <db> <table> <args>", verb)
+			return fmt.Errorf("usage: gitniblet %s <db> <table> <args>", verb)
 		}
 		table, rest = rest[0], rest[1:]
 	}
 	need := func(n int, form string) error {
 		if len(rest) < n {
-			return fmt.Errorf("usage: ngdb %s <db> <table> %s", verb, form)
+			return fmt.Errorf("usage: gitniblet %s <db> <table> %s", verb, form)
 		}
 		return nil
 	}
@@ -325,7 +325,7 @@ func usage() error {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "usage: ngdb <verb> ...")
+	fmt.Fprintln(w, "usage: gitniblet <verb> ...")
 	fmt.Fprintln(w, "  setup and run modes:")
 	fmt.Fprintln(w, "    --init [repo-or-dir]           register the $PWD .shcl as a database")
 	fmt.Fprintln(w, "    --config <dir> ...             use an alternate registry dir, then run")
@@ -336,14 +336,14 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "    --tui [<db>]                   terminal UI (no name: pick/create a db)")
 	fmt.Fprintln(w, "    --serve [<db>]                 local web UI on 127.0.0.1:8765")
 	fmt.Fprintln(w, "    webuser <username>             set a proxied-mode web login")
-	fmt.Fprintln(w, "                                   (password from NGDB_WEB_PASSWORD or prompt)")
+	fmt.Fprintln(w, "                                   (password from GITNIBLET_WEB_PASSWORD or prompt)")
 	fmt.Fprintln(w, "    --script <f.lua> <ddl> <sqlite> <dir>   run a Lua script")
 	if donate.Enabled { // open-source-only feature
 		fmt.Fprintln(w, "    --donate                       ways to support the project")
 	}
 	fmt.Fprintln(w, "    --version, -v                  print the version and exit")
 	fmt.Fprintln(w, "  <db> is a registered database name (extension optional). Register one")
-	fmt.Fprintln(w, "  with --init; run ngdb with no arguments to see the ones you have.")
+	fmt.Fprintln(w, "  with --init; run gitniblet with no arguments to see the ones you have.")
 	fmt.Fprintln(w, "  schema and log:")
 	fmt.Fprintln(w, "    ddl <file>                     parse a DDL file and print a summary")
 	fmt.Fprintln(w, "    build <db>                     build/migrate the SQLite view")
@@ -371,7 +371,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "    attachuri <db> <table> <id> <uri> [desc]   attach a link-in-place URI")
 	fmt.Fprintln(w, "    attachfile <db> <table> <id> <path> [desc] copy a file in and attach it")
 	fmt.Fprintln(w, "    attachments <db> <table> <id>              list a row's attachments")
-	fmt.Fprintln(w, "  writes are stamped with NANOGITDB_USER (default: the OS username)")
+	fmt.Fprintln(w, "  writes are stamped with GITNIBLET_USER (default: the OS username)")
 
 }
 

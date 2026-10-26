@@ -405,8 +405,8 @@ func report(repo string, in io.Reader, out io.Writer) (bool, error) {
 // frames its output with these lines. The end line may follow output that had
 // no newline of its own.
 const (
-	beginMark = "@@ngdb-test begin " // + import path
-	endMark   = "@@ngdb-test end "   // + the binary's exit code
+	beginMark = "@@gitniblet-test begin " // + import path
+	endMark   = "@@gitniblet-test end "   // + the binary's exit code
 )
 
 // test2json is go tool test2json -p pkg, over one binary's raw output.
