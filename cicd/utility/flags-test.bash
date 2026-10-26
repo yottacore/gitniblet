@@ -63,6 +63,21 @@ fOtherModes(){
 }
 fCheck deece "--long and --slow are the default run; --quick keeps fuzz, security and dogfood" fOtherModes
 
+## --no-format isn't here, since it changes what lint does, not which steps run.
+fOffFlags(){
+	local bad=0 pair flag name full want
+	full="$(fPlan)"
+	for pair in '--no-install:Dogfood' '--no-hooks:Local hooks' '--no-publish:Backup + publish' '--no-demo:Demo recording'; do
+		flag="${pair%%:*}"; name="${pair#*:}"
+		want="|${full}|"; want="${want/"|${name}|"/|}"; want="${want#|}"; want="${want%|}"
+		[[ "${want}" != "${full}" ]]  ||  { echo "  ${name} isn't in the default plan"; bad=1; }
+		fWant "$(fPlan "${flag}")" "${want}"  ||  bad=1
+		fWant "$(fOff "${flag}")" "${name} (${flag})"  ||  bad=1
+	done
+	return "${bad}"
+}
+fCheck deee3 "--no-install, --no-hooks, --no-publish and --no-demo each turn off only their own step" fOffFlags
+
 fAliases(){
 	local out bad=0
 	out="$(bash "${cicd}" --list --gate 2>&1)"; [[ "$(head -1 <<< "${out}")" == "--gate is another name for --backlog-run-quick." ]]  ||  bad=1

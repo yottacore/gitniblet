@@ -522,7 +522,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - Regression tests for all completed features and bug reports.
 	- ID: 2026101915305767
 	- Type: Task
-	- Status: Queued
+	- Status: Started
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261019-153057
 	- Opened by: JC
@@ -536,6 +536,62 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- 20261024: CICD reset, raised to high. Each Done item names its test's ID, in the new ID scheme from 2026101915293586, or says in a few words why it has none.
 		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
 	- Related IDs: 2026101915293586
+	- Progress log:
+		- 20261025: Split into 4 children by part of the backlog: 2026102520454994 (new-format Done items), 2026102520454999 (old-format Done bugs), 2026102520455004 and 2026102520455009 (old-format Done features, in 2 halves). A 5th, 2026102520474880, runs the tests no pipeline step runs yet. This item closes with the last of them.
+	- Decisions:
+		- Only the floss backlog. Enterprise and vendor have their own items for this, 2026101915313001 and 2026101915313002.
+
+- Regression tests: old-format Done bugs.
+	- ID: 2026102520454999
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-204550
+	- Opened by: JC
+	- Parent ID: 2026101915305767
+	- Requirements [Feature]:
+		- The 8 items under `Done - Bugs`, Code Review 20260805 items 1 to 20, per the parent. Each numbered item inside them gets its own test ID, or a reason.
+		- Add a test where one is missing and would make sense.
+
+- Regression tests: old-format Done features, first half.
+	- ID: 2026102520455004
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-204550
+	- Opened by: JC
+	- Parent ID: 2026101915305767
+	- Requirements [Feature]:
+		- The items under `Done - Features and enhancements`, from "Need to research, decide, and document" through "Ability to delete entries from TUI", per the parent.
+		- Add a test where one is missing and would make sense.
+
+- Regression tests: old-format Done features, second half.
+	- ID: 2026102520455009
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-204550
+	- Opened by: JC
+	- Parent ID: 2026101915305767
+	- Requirements [Feature]:
+		- The items under `Done - Features and enhancements`, from "Startup:" to the end of the list, per the parent.
+		- Add a test where one is missing and would make sense.
+
+- Regression tests: run the ones no pipeline step runs yet.
+	- ID: 2026102520474880
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-204748
+	- Opened by: JC
+	- Parent ID: 2026101915305767
+	- Related IDs: 2026102408252318
+	- Requirements [Feature]:
+		- Done items name these tests, but they run only by hand, so a regression in what they cover goes unseen, per the parent.
+		- The bash tests in `cicd/utility/`: `flags-test.bash`, `cleanup-test.bash`, `steps-test.bash`, `remote-skip-test.bash` and `container-fallback-test.bash`.
+		- The TUI simulation-screen tests under `-race`, for 2026102408252318.
+	- Decisions:
+		- 20261025: Notes for whoever takes it. `steps-test.bash` and `container-fallback-test.bash` run `cicd.bash` itself, and `container-fallback-test.bash` edits the tracked Dockerfile and puts it back, which the hands-off modes rule out. `-race` needs cgo, which the container and the build keep off.
 
 - Lookup picker and write-time value check.
 	- ID: 2026102407295340
@@ -662,6 +718,32 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Progress log:
 		- 20261024: Lists already honor `visible_list` on system fields. The example DDL's built-in `lookups` and `lookup_values` tables ask for `id` on forms, read-only.
 
+- Regression tests: new-format Done items.
+	- ID: 2026102520454994
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-204550
+	- Opened by: JC
+	- Parent ID: 2026101915305767
+	- Requirements [Feature]:
+		- Each Done item in the `Issues` section names its test by test ID, or says in a few words why it has none, per the parent.
+		- Add a test where one is missing and would make sense.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: All 17 Done items in `Issues` name their tests by ID, or give a reason. 7 rows changed: IDs added to the lookup check, seed and TUI race items, a reason on the 2 govulncheck items and the issue-tracker demo removal, and a new test for the off flags item.
+		- `flags-test.bash` deee3 checks that `--no-install`, `--no-hooks`, `--no-publish` and `--no-demo` each drop only their own step from the default plan, and list it as off with that flag.
+		- Verified: deee3 passes, and fails with `--no-hooks` made to do nothing. `testid check` found every ID unique. The quick gate passed.
+		- 6 of these items name bash tests that no pipeline step runs, and the TUI race item needs `-race`. That's 2026102520474880.
+		- Swept: every Done item in `Issues`, and each ID they name, against the test sources.
+	- Decisions:
+		- A scan such as govulncheck has no test ID, so its items say the scan step is the check.
+		- The bash tests' rows are left as they were, since they name IDs. Running them in a pipeline is 2026102520474880.
+	- Branch: r1025
+	- Test case: `cicd/utility/flags-test.bash` deee3, new here. The rest are named on each item.
+	- Closed: 20261025-204921
+
 - Remove the issue-tracker demo. ngdb-issue-tracker takes its place, in its own repo.
 	- ID: 2026102513390812
 	- Type: Task
@@ -672,6 +754,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Progress log:
 		- 20261025: `demos/` is gone, walkthrough and `seed.bash` included. The CLI smoke still needs a schema, so `issues.shcl` moved to `cicd/utility/smoke/`, and the remote test bundle takes that folder. The README points at ngdb-issue-tracker.
 		- Verified: the CLI smoke passes on the new path.
+	- Test case: None, since it's a removal. The CLI smoke reads the schema from its new path on every run.
 
 - CICD reset: container cleanup.
 	- ID: 2026102416210002
@@ -792,7 +875,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Actual fix [Bug]: Toolchain pin bumped to `go1.26.10`.
 		- Swept: every `1.26.x` pin outside `vendor/`, in `go.mod`, the workflows, `tool-versions.bash`, `.goreleaser.yaml`, `dependabot.yml` and the docs. Only the 3 changed files had one.
 	- Branch: round1024
-	- Test case: The govulncheck gate. It failed under `go1.26.5` and passes under `go1.26.10`.
+	- Test case: No test ID, since it's a scan, not a test. The govulncheck step in every full run and in hosted CI fails on it. It failed under `go1.26.5` and passes under `go1.26.10`.
 	- Closed: 20261024-092700
 
 - `remote-test.bash` leaves vmKt6m running after it's used.
@@ -895,7 +978,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Swept: enterprise `cicd.bash` has none of these stages, and vendor has no `cicd.bash`. Fuzz can still write a crash input into `testdata/`, but it's a test stage, so it gets no flag.
 		- 2026-10-24: Verified: one full run at 6bb9d3d with `--no-install --no-hooks --no-publish --no-demo --no-format`. Every other stage passed, the 5 off stages printed their skip headers, and `git status` was clean after.
 	- Branch: round1024
-	- Test case: None in the repo, since it needs a stand-in for every stage. The check is kept outside the repo.
+	- Test case: `cicd/utility/flags-test.bash` deee3, through `--list`. `--no-format` changes what lint does, not the plan, so it isn't checked.
 	- Closed: 20261024-091700
 
 - Refuse a lookup value that isn't in the field's group, on write.
@@ -921,7 +1004,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Decisions:
 		- An inactive value is refused like a missing one, per design.md's "can't be picked", except where the row already holds it.
 	- Branch: round1024
-	- Test case: `TestLookupWriteCheck` and `TestLookupReplayDoesNotCheck` in `source/internal/core/crud/lookupcheck_test.go`.
+	- Test case: `TestLookupWriteCheck` (decar) and `TestLookupReplayDoesNotCheck` (decas) in `source/internal/core/crud/lookupcheck_test.go`.
 	- Closed: 20261024-085223
 
 - Seed rows from the schema's `seed:` section.
@@ -953,7 +1036,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- A seed problem only warns, rather than counting as a schema error, since a missing pick-list value isn't worth greying out the database.
 		- Two clients that both seed before their first sync each log the same rows, and replay keeps both copies. Filed as 2026102407584270.
 	- Branch: round1024
-	- Test case: `TestSeedParse` and `TestSeedParseExample` in `source/internal/core/ddl/seed_test.go`, `TestSeedRowsLogFirst` and `TestSeedRowsExample` in `source/internal/core/schema/seed_test.go`.
+	- Test case: `TestSeedParse` (dec93) and `TestSeedParseExample` (dec94) in `source/internal/core/ddl/seed_test.go`, `TestSeedRowsLogFirst` (dec95) and `TestSeedRowsExample` (dec96) in `source/internal/core/schema/seed_test.go`.
 	- Closed: 20261024-075842
 
 - A run through the container prints 2 blank lines before the first step on this host.
@@ -1060,7 +1143,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Swept: every simulation screen and `screenText` caller in the TUI tests (tui, views, lookups, gate, picker), and every test that types into a form and then checks the DB. Only the lookups one waited on the typed text.
 	- Actual fix [Bug]: A shared test screen that starts once and keeps draws and reads apart. No app code changed.
 	- Branch: round1024
-	- Test case: The TUI package's simulation-screen tests under `-race`, such as `TestViewOpensAndLoadsOnSimulationScreen` and `TestLookupsShowInTUI`.
+	- Test case: The TUI package's simulation-screen tests under `-race`, such as `TestViewOpensAndLoadsOnSimulationScreen` (d9e1p) and `TestLookupsShowInTUI` (dec9z). Every run has them, but none with `-race` yet, which is 2026102520474880.
 	- Closed: 20261024-084419
 
 - govulncheck lists 2 `golang.org/x/text` advisories in a required module.
@@ -1086,7 +1169,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Actual fix [Bug]: `golang.org/x/text` v0.21.0 -> v0.41.0, with a vendor refresh.
 		- Swept: every `go.mod` in floss (just the one), and `x/text` mentions outside `vendor/`. Enterprise and vendor `go.mod` checked, not changed.
 	- Branch: round1024
-	- Test case: The govulncheck gate. It listed both advisories at v0.21.0 and lists none at v0.41.0.
+	- Test case: No test ID, since it's a scan, not a test. The govulncheck step in every full run and in hosted CI fails on it. It listed both advisories at v0.21.0 and lists none at v0.41.0.
 	- Closed: 20261024-071232
 
 - Hosted CI can be started by hand.
