@@ -608,41 +608,24 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Decisions:
 		- Only the floss backlog. Enterprise and vendor have their own items for this, 2026101915313001 and 2026101915313002.
 
-- Regression tests: old-format Done bugs.
-	- ID: 2026102520454999
+- Regression tests the old-format Done items still lack.
+	- ID: 2026102521481107
 	- Type: Task
 	- Status: Queued
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-204550
+	- Opened: 20261025-214811
 	- Opened by: JC
 	- Parent ID: 2026101915305767
+	- Related IDs: 2026102520454999, 2026102520455004, 2026102520455009
 	- Requirements [Feature]:
-		- The 8 items under `Done - Bugs`, Code Review 20260805 items 1 to 20, per the parent. Each numbered item inside them gets its own test ID, or a reason.
-		- Add a test where one is missing and would make sense.
-
-- Regression tests: old-format Done features, first half.
-	- ID: 2026102520455004
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-204550
-	- Opened by: JC
-	- Parent ID: 2026101915305767
-	- Requirements [Feature]:
-		- The items under `Done - Features and enhancements`, from "Need to research, decide, and document" through "Ability to delete entries from TUI", per the parent.
-		- Add a test where one is missing and would make sense.
-
-- Regression tests: old-format Done features, second half.
-	- ID: 2026102520455009
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-204550
-	- Opened by: JC
-	- Parent ID: 2026101915305767
-	- Requirements [Feature]:
-		- The items under `Done - Features and enhancements`, from "Startup:" to the end of the list, per the parent.
-		- Add a test where one is missing and would make sense.
+		- Tests that could exist and would make sense, for Done items that name none, per the parent. Each gets a test ID, and its item's "Test case:" row names it.
+		- Code Review 20260805 item 5: an attachment whose name holds path parts gets a working copy inside the temp folder (crud).
+		- Item 6: a second writer waits for the database file rather than failing straight away (store).
+		- Item 9: `--tui` with 2 arguments returns an error rather than opening the picker (tui).
+		- Item 11: `FuzzParse`'s seed fails when `project/example.shcl` is missing, rather than skipping it quietly (ddl).
+		- Item 12: sync's `.gitignore` keeps the SQLite file and a key file out of the log folder (txlog).
+		- The README's "Add to README.md" item: the schema blocks in README.md and syntax.md still parse.
+		- The exe name item: `smoke-cli.bash` gets a test ID on its `PASS` line, so `testid check` sees it.
 
 - Lookup picker and write-time value check.
 	- ID: 2026102407295340
@@ -860,6 +843,81 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- `id` and `date_created` show read-only and are never written from a form. That likely means honoring `ui: readonly` first.
 	- Progress log:
 		- 20261024: Lists already honor `visible_list` on system fields. The example DDL's built-in `lookups` and `lookup_values` tables ask for `id` on forms, read-only.
+
+- Regression tests: old-format Done bugs.
+	- ID: 2026102520454999
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-204550
+	- Opened by: JC
+	- Parent ID: 2026101915305767
+	- Requirements [Feature]:
+		- The 8 items under `Done - Bugs`, Code Review 20260805 items 1 to 20, per the parent. Each numbered item inside them gets its own test ID, or a reason.
+		- Add a test where one is missing and would make sense.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: Each of the 8 items under `Done - Bugs` has a "Test case:" row, with one line per numbered item in the 2 grouped ones. 14 of the 20 numbered items name test IDs, items 4 and 10 give a reason, and items 5, 6, 9 and 12 have no test yet.
+		- Filed 2026102521481107 for the tests that would make sense and don't exist yet, item 11's quiet seed skip included.
+		- Verified: each ID named matches its test's `// ID:` line, and each test named matches its ID.
+		- Swept: every item under `Done - Bugs`, against the Go and bash test sources.
+	- Decisions:
+		- Docs only, per the round. New tests go in 2026102521481107.
+		- Item 4, a data race, gets a reason rather than a new test, since the Race tests step covers only the TUI, per 2026102520474880.
+		- Item 10 is a hand check, since a no-echo prompt needs a real terminal.
+	- Branch: r1025
+	- Test case: none of its own, since it's docs only. The tests are named on each item.
+	- Closed: 20261025-215015
+
+- Regression tests: old-format Done features, first half.
+	- ID: 2026102520455004
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-204550
+	- Opened by: JC
+	- Parent ID: 2026101915305767
+	- Requirements [Feature]:
+		- The items under `Done - Features and enhancements`, from "Need to research, decide, and document" through "Ability to delete entries from TUI", per the parent.
+		- Add a test where one is missing and would make sense.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: Each of the 25 items from "Need to research" through "Ability to delete entries from TUI" has a "Test case:" row. 17 name test IDs, and 8 say why they have none of their own. The hidden-columns item's row now has its IDs.
+		- Verified: each ID named matches its test's `// ID:` line, and each test named matches its ID.
+		- Swept: every item in that range, against the Go and bash test sources.
+	- Decisions:
+		- Research, demo, layout and release setup items say why they have none. The enterprise license item points at the `gate` seam tests, since the check itself is in enterprise.
+		- The exe name item names `smoke-cli.bash`, which has no test ID yet. That's in 2026102521481107.
+	- Branch: r1025
+	- Test case: none of its own, since it's docs only. The tests are named on each item.
+	- Closed: 20261025-215015
+
+- Regression tests: old-format Done features, second half.
+	- ID: 2026102520455009
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-204550
+	- Opened by: JC
+	- Parent ID: 2026101915305767
+	- Requirements [Feature]:
+		- The items under `Done - Features and enhancements`, from "Startup:" to the end of the list, per the parent.
+		- Add a test where one is missing and would make sense.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: Each of the 31 items from "Startup:" to the end of the list has a "Test case:" row. 26 name test IDs, and 5 say why they have none of their own.
+		- Verified: each ID named matches its test's `// ID:` line, and each test named matches its ID.
+		- Swept: every item in that range, against the Go and bash test sources.
+	- Decisions:
+		- The Lua and scripting items name the floss tests that check scripting stays off, since the host is in enterprise.
+		- A scan such as govulncheck has no test ID, so the supply-chain item says the step is the check, as 2026102520454994 did.
+		- README's schema examples have no check that they still parse. That's in 2026102521481107.
+	- Branch: r1025
+	- Test case: none of its own, since it's docs only. The tests are named on each item.
+	- Closed: 20261025-215015
 
 - Remote sync first: fetch and fast-forward before building.
 	- ID: 2026102520521019
@@ -1407,24 +1465,30 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - ✅ Code Review 20260805 item 15: a write the view refused reported success.
 	- A duplicate value in a `unique:` group was turned into a warning and the warning was thrown away, so the command printed a new id and exited 0 while the field stayed empty for good.
 	- Done: the write path reports it. A create still hands back its id - the record is in the log and worth naming - alongside a message saying which part the view refused.
+	- Test case: `TestCreateReportsAFieldTheViewRefused` (davc7) and `TestCreateWithNoConflictIsNotReported` (davc8), in crud.
 
 - ✅ Code Review 20260805 item 16: editing a hard-deleted record made a ghost.
 	- Replay recreates a record it has an edit for, so that a rebuild can tolerate entries arriving before the create they belong to. It could not tell that from an edit of something already deleted, and made a record holding only the edited field - visible until the next rebuild quietly removed it again.
 	- Done: a field write against a record the view no longer holds is refused, checked under the write lock so a delete cannot slip in alongside. Soft-deleted records are still there, so they stay editable.
+	- Test case: `TestFieldWriteOnAHardDeletedRowIsRefused` (davc9) and `TestFieldWriteOnASoftDeletedRowStillWorks` (davca), in crud.
 
 - ✅ Code Review 20260805 item 17: a typo in `uniques:` or `indexes:` made a database impossible to open.
 	- A name matching no field was reported but kept, then handed to SQLite, so a database that had just listed as fine failed to open with a raw SQL error.
 	- Done: it counts as an error, which is what greys the database out with the name and its line. The entry is dropped whole rather than one name at a time - pruning the typo out of a two-field group would leave a stricter rule than was written.
+	- Test case: ddl davcj to davcp, and `TestListFlagsASchemaWithErrors` (davcg) in config.
 
 - ✅ Code Review 20260805 item 18: control characters were dropped from the log but kept in the view.
 	- Done: they are dropped when the write is built, so the view holds what a rebuild will produce instead of the two disagreeing until the value silently changed.
+	- Test case: `TestControlCharactersReadBackTheSameAfterARebuild` (davcb) in crud, and `TestEncodeScrubsControlChars` (d9e0s) in txlog.
 
 - ✅ Code Review 20260805 item 19: the background sync replayed outside the write lock.
 	- Done: a sync's rebuild goes through the same lock a write takes, so it can no longer land between a write's log append and its own view update.
+	- Test case: `TestReplayRunsAlongsideWrites` (davcc), in crud.
 
 - ✅ Code Review 20260805 item 20: no rate limit on the web login.
 	- Each attempt is meant to be expensive to check, so an open endpoint was a way to spend the machine's CPU for free.
 	- Done: a failure count per username and per source address refuses a run of wrong guesses before any of the expensive work happens, and a cap on how many are checked at once covers the burst the counts cannot (attempts arriving together all pass the count before any has failed). Counts age out on their own, so nothing locks an account.
+	- Test case: web throttle tests davcq to davcw.
 
 - ✅ Code Review 20260805 items 13 and 14: garbage collection could lose records.
 	- Item 13: collection grouped a row's entries by the table name as written, so a table renamed mid-life split one record into two groups. The group holding its delete could be collected while the group holding its create survived, and the record reappeared on the next rebuild - permanently.
@@ -1432,6 +1496,9 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Item 14: a pass read the whole log, decided what to keep, then deleted the files it had read. Anything written in between went with them, which a running terminal or web UI made reachable in ordinary use.
 	- Done: a pass now starts by sealing the live file, so an appending process immediately gets a fresh one. It then works only over sealed segments, which it records by name and size. A write made during a pass is in the new live file, which the pass never reads or removes; the recorded sizes are re-checked before anything is deleted, which catches an append that already had a file open and aborts rather than taking the write with it.
 	- Done: after a rotation the live file is left in place holding just its header, instead of deleted. A peer who appended to it on the same commit now sees a change the union driver merges, rather than a modify/delete conflict that no driver resolves and that wedged every later sync.
+	- Test case: by item.
+		- Item 13: `TestGCGroupsARenamedTableAsOneRow` (davbr) and `TestGCNeverRewritesEntries` (davbs).
+		- Item 14: davbt, davbv and davbw, and davbx for the live file left in place.
 
 - ✅ Code Review 20260805 items 1 to 12.
 	- Item 1: another site the browser had open could drive the local web UI, and a page pointing a name it owned at the loopback address could read the whole database. Writes now have to prove they came from the UI, and the UI only answers under the address it was bound to. A reverse proxy legitimately rewrites that name, so the proxied mode keeps the write check and skips the address check.
@@ -1446,6 +1513,19 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Item 10: the password typed at the `webuser` prompt was echoed, leaving it in terminal scrollback. A piped password still reads as a plain line, so setup scripts are unaffected.
 	- Item 11: the schema fuzzer's seed corpus pointed at a file name from before the syntax migration, so it had silently been skipping the real example.
 	- Item 12: for a database kept in the same folder as its schema, sync committed and pushed the derived SQLite file, and would have pushed an encryption key placed beside it. Both are now ignored in the log directory.
+	- Test case: by item.
+		- Item 1: web origin tests davab to davae.
+		- Item 2: `TestGateRoutesRefusedWhenNotGated` (davaf).
+		- Item 3: `TestUnknownUserStillCostsAKDFRun` (davaa).
+		- Item 4: none. A data race shows only under `-race`, and the Race tests step covers only the TUI.
+		- Item 5: none yet. 2026102521481107.
+		- Item 6: none yet. 2026102521481107.
+		- Item 7: `TestUnrunnableCommandsFail` (dava8).
+		- Item 8: `TestTableFlagWithoutDatabase` (dava9).
+		- Item 9: none yet. 2026102521481107.
+		- Item 10: none. Whether a prompt echoes needs a real terminal, so it's a hand check.
+		- Item 11: `FuzzParse` (d9nwj) seeds from the example, and `TestParseExampleDDL` (d9dzs) fails without it. The seed still skips a missing file quietly, which is in 2026102521481107.
+		- Item 12: none yet. 2026102521481107.
 
 #### Done - Features and enhancements
 
@@ -1457,6 +1537,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Decisions captured in the enterprise repo (`research-enterprise-concerns.md`); implementation is phased (see the folder-hierarchy item below).
 	- 20261024: Closed. Every decision in `research-enterprise-concerns.md` is answered, and the vendor repo's design.md has the rule under "Dependencies". The vendor module requires nothing outside the standard library so far.
 	- 20261024: What's left is the vendor repo's live wiring, the Postgres handle and the payment account, which its design.md defers until the endpoint is hosted.
+	- Test case: none. Research and docs, with no code here.
 
 - ✅ Optional encrypted data in the transaction log. The local SQLite copy is always decrypted.
 	- Reason: keep the log unreadable to the git host, or to anyone who gets the repo.
@@ -1469,6 +1550,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- ✋ Deferred (phase two): also encrypt the DDL, query, and script sidecar files, with flags to decrypt and re-encrypt them for editing. Moved to 2026102408284572.
 	- ✋ Future: multiple keys by role or team; public and private keys for read-only roles; passphrase-generated keys; re-encrypting existing data with a new key. Moved to 2026102408284578.
 	- 20261024: Closed with phase one done. The 2 open parts are their own Deferred items now.
+	- Test case: crud d9dze, d9dzf and d9dzg, ddl d9e01 and d9e02, config d9dz2 and d9dz3, cli d9dyp and d9dyq, and txlog d9e1c.
 
 - ✅ Figure a clean and consistent way to hide list columns (or fields in general).
 	- Design settled: `visible_form`/`visible_list` per field (spec in example.shcl, decisions in design.md UI section). The syntax migration it was waiting on is done; the display work itself is still to do.
@@ -1478,14 +1560,16 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Showing system fields on forms is split out to 2026102407263968, since it needs `readonly` first.
 	- Swept: every list and form call site in the TUI and web, table pages and view blocks both. The web save filter stays on the full field list on purpose. The CLI is left alone by design. Enterprise and vendor have no callers.
 	- Branch: round1024
-	- Test case: `TestFieldVisibility` (schema), `TestHiddenFieldsStayPut` (web) and `TestHiddenFieldsInGridAndForm` (tui). Each failed against the old column and form lists and passes now.
+	- Test case: `TestFieldVisibility` (dec83, schema), `TestHiddenFieldsStayPut` (dec85, web) and `TestHiddenFieldsInGridAndForm` (dec84, tui). Each failed against the old column and form lists and passes now.
 	- Closed: 20261024-072639
 
 - ✅ Code Review 20260805 item 21: replay prepared a fresh SQL statement for every log entry.
 	- Done: a pass reuses its statements, which are one shape per table and one per field however long the log is. Rebuilding a 5000-entry log went from about 240ms to about 97ms, on the path every open and every sync that brings changes takes.
+	- Test case: none. A speed change. Replay results are covered by `TestApplyReplaysToView` (d9e1f) and `TestLogIsSourceOfTruth` (d9dzd), and speed by the profiler step.
 
 - ✅ Code Review 20260805 item 22: the CLI passed a database's three paths around as an unlabeled list.
 	- Done: a named type with a field per file, so which one is which reads at every use and searching for the log directory or the view finds them.
+	- Test case: none. A type change the compiler checks. `TestCrudVerbsEndToEnd` (d9dyk) covers the verbs.
 
 - ✅ Use sister project 'SHCL' as the engine for config and DDL files.
 	- Done: one language now covers the schema, the queries sidecar, and ngdb's own registry, settings and web-credential files. The TOML dependency is gone, and so is the hand-rolled indent parser.
@@ -1494,32 +1578,39 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Done: renames go through the writer rather than editing lines of text, so comments survive by construction. The file comes back canonical, which does reflow hand-tuned column alignment once.
 	- Note: syntax changes to existing schemas - `unique:`/`index:` entries instead of bare comma rows, `.` instead of `/` for path shorthand, relationships need names, seeds name their table. Details in syntax.md.
 	- Note: restating a table or a query now merges it rather than dropping the repeat, since that is how the language joins nodes.
+	- Test case: ddl d9dzs, d9e03 and dav19, config d9dyw and d9hsn, `TestPWDDdl` (d9dz1) for a pre-rename `.ddl`, and renames d9e06, d9e07 and dav1c.
 
 - ✅ Track the shcl 1.1 release.
 	- Done: a section that combines with an earlier one is now reported with both line numbers, so a second `table: t` folding into the first is no longer silent. `example.shcl` was reorganized to open each section once.
 	- Done: quoting a default escapes it again - `@null` is the sentinel, `"@null"` is the text. The schema file had documented this all along; it just could not be honored before.
 	- Done: cross-cutting messages (a table defined twice, a `unique:` naming a missing field) now cite a line like every other message.
 	- Done: layout blocks validate at any nesting depth, and each section is described once instead of twice. Both were generated in code before, one only as deep as eight blocks.
+	- Test case: ddl datq8, datq6 and dav1b. The line number on a cross-cutting message isn't checked on its own.
 
 - ✅ Track the shcl 1.2 release.
 	- Done: a fault in the built-in vocabulary no longer switches schema checking off wholesale, so a mistake there can no longer hide real mistakes in a user's file. Faults now read as faults rather than pointing at a line number the user cannot see.
 	- Done: renaming a field or table no longer pulls a commented-out section out of the block it was written in. Uncommenting it afterwards would have attached it to the wrong table.
+	- Test case: `TestSchemaFaultLeavesValidationOn` (dav1a) and `TestRenameKeepsCommentedOutSectionIntact` (dav1c).
 
 - ✅ Shorter row and transaction ids in the log.
 	- Done: ids are written as 22 characters of base64url instead of 32 of hex. Two ride on every line, so the log gets smaller to read and replay; the git repo barely changes, since both forms hold the same bits.
 	- Done: logs written before the switch still replay - both forms are read, told apart by width. Ids are never re-encoded in place: an encrypted value is keyed off the id text, so rewriting one would strand its value.
+	- Test case: guid dabev to dabey, with `TestDecodeAcceptsHex` (dabew) for older logs.
 
 - ✅ New `ref` field type for a reference to another row.
 	- Done: stored as the same raw bytes as the `id` it points at, so it joins directly against the key and takes 16 bytes rather than 22 or 32. Read and written as the usual id text.
+	- Test case: `TestRefColumnIsBlob` (dabe5) in store, and dabe6 and dabe7 in txlog.
 
 - ✅ Every key and reference in the view is binary; text ids live only in the log.
 	- Done: the built-in link tables (`many2many`, `comments`, `audit_trail`, `access_rows`) hold their `parent_id` columns as references too, moved together with the queries that read them - a blob compared to a string matches nothing and reports no error, so a half-done conversion reads as "no results".
 	- Done: hand-written SQL gets `id()` and `idtext()` to convert between an id's text and stored forms. `id()` rejects a malformed id rather than returning nothing.
 	- Done: the id format moved to its own package, shared by the log and the view instead of owned by either.
+	- Test case: store dabez to dabf3, and dabe5.
 
 - ✅ Comments pane in views: a `type: comments` layout block shows a table's built-in comments as a detail pane.
 	- Done: the pane follows a sibling list block's selected row, lists that row's thread, and adds to it - in the TUI (Tab to the pane, Enter to add) and the web UI (a per-row comments link loads the thread, an add form posts it). Comments never become a list column, and a comments block over a table without the feature is dropped with a warning.
 	- Done: the demo board view gained the pane and the recorder's TUI beat adds a comment there.
+	- Test case: da19y in schema, da19z in tui, and da1a0 in web.
 
 - ✅ Demo gif polish.
 	- Done: theme beat dropped; in its place a real TUI action - a task with an existing comment thread is selected and a comment is added in the board's comments pane (a linked detail the list view never shows).
@@ -1527,19 +1618,23 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Done: the faux window has square corners and fills the frame except a 4px black outline; terminal scrolls smooth (no jump scroll) with a blinking cursor.
 	- Done: the gif runs at 50fps, where 30 could not hold a steady frame delay. The brisk typing pace is now asked for directly rather than falling out of a fixed per-key subtraction, so its jitter scales with it and the cursor stops stuttering.
 	- Done: fixed beats trimmed to ~50s, keeping the longer holds where there is output to read.
+	- Test case: none. Demo output, checked by eye.
 
 - ✅ Enterprise license validation. Phones home to confirm an active subscription and allows a set number of copies at once. Does not fail if it cannot reach the server for a while, and does not bind to specific hardware.
 	- Note: scheme decided in the enterprise repo; implementation is a later phase.
+	- Test case: none here. Only the scheme was settled in this repo. The check is in enterprise, behind the `gate` seam, which d9hhe and d9hhf cover.
 
 - ✅ Address a database by name on the CLI and in the UIs, not by its file paths.
 	- Done: every CRUD verb now names a registered database (`ngdb create issues task ...`) and looks up its ddl/sqlite/log from the registry; the old three-path form is gone for data verbs. The name is the first positional, or `--db`/`--table` flags (both accepted, in any order), and resolves with or without a file extension.
 	- Done: `build`/`replay`/`sync`/`gc` and the rename verbs take a name too, keeping an explicit-path form for pre-registration use; `--tui <db>` and `--serve <db>` open a registered database directly.
 	- Done: demo recorder, `demos/` walkthrough + `seed.bash`, README, and syntax.md all switched to the name-based form; the recorder's TUI beat uses a standard dark theme instead of high-contrast.
+	- Test case: cli d9z0f and d9z0g, and `TestFindByName` (d9z0h) in config.
 
 - ✅ Animated README demo (faux terminal, in cicd, skippable with `--quick`).
 	- Done: `cicd/utility/demo-video/demo-video.py` drives a real ngdb (TUI first, then the same data from the CLI) inside a decorated xterm on a private Xvfb, typing at a realistic pace with the odd fixed typo. It renders a 1920x1080 mp4 and a looping 960x540 50fps gif with a hard black loop seam.
 	- Done: the mp4 and full gif go to `../private/demo-video/{video,gif}` and GFS-rotate; the latest gif is copied to `assets/demo.gif` for the README. All content is anonymous (fake user/host, /tmp paths).
 	- Note: adapted from the sister silkterm recorder, minus its GPU and audio work; deps are python3 stdlib + ffmpeg + xterm/xdotool/Xvfb/xfwm4. A web-UI leg can be added later.
+	- Test case: none. It makes a gif, checked by eye. The demo step runs it.
 
 - ✅ CI/CD improvements (all three repos).
 	- Done: a small hosted `ci.yml` per repo runs vet, gofmt, test, and build on push and pull request, with Go pinned. The full pipeline stays local.
@@ -1548,35 +1643,44 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Done: linter and tool versions pinned in one place. A dependabot config brings dependency and toolchain bumps as grouped pull requests.
 	- Done: README badges for CI status, latest release, and Go version.
 	- Done: first live release cut - v1.0.0-alpha.1 published (archives, .deb/.rpm, checksums, and Windows installers across linux/macOS/windows/freebsd on amd64+arm64).
+	- Test case: none. Pipeline and release setup, and the hosted CI runs are the check.
 
 - ✅ Donations model.
 	- Done: a "Support nano-git-db" entry in Help/About and `--donate` shows one blurb and one link (DONATE.md). The CLI prints it, the TUI shows a dialog, and the web UI shows a Support page. Open-source build only.
 	- Done: a Support section in README.md, a DONATE.md, and a `.github/FUNDING.yml`.
 	- Done: the donate files and package are locked to the maintainer via `.github/CODEOWNERS`.
 	- Note: to finish going live, enable a GitHub Sponsors profile and fill in the FUNDING.yml handles.
+	- Test case: `TestFields` (d9ja9) in donate.
 
 - ✅ Web UI basic login.
 	- Done: an explicit `web_mode` setting (default `local`) picks the shape. `local` identifies the single user with no password (the git repo account, else the OS user) and refuses to serve if a proxy header appears, so an exposed box never runs passwordless. `proxied` requires a login: a session cookie checked against a local file of PBKDF2-hashed passwords, kept outside the synced tree. Add a user with the `webuser` verb.
 	- Done: the signed-in user drives the data layer, so the existing user and group permissions apply to the web view.
 	- Note: stronger sign-in methods stay an enterprise concern.
+	- Test case: config d9hsm, d9hsn, d9hsp and dah5k, and web d9hsr to d9hsx and d9hsy.
 
 - ✅ Exe name should be 'ngdb'.
 	- Done: the built binary and all user-facing references (CLI/TUI/web usage, version line, web title) are now `ngdb`; `cmd/nanogitdb` renamed to `cmd/ngdb`. The module path `nano-git-db` and the `NANOGITDB_USER`/`NANOGITDB_HOST` env vars are unchanged.
+	- Test case: `TestVersionLine` (debg5) checks the name in the version line, and `smoke-cli.bash` runs `bin/ngdb`, with no ID yet (2026102521481107).
 
 - ✅ Order of fields in txlog should NOT affect backward or forward schema compatibility.
 	- Done: the reader maps columns by the header row's names instead of fixed positions. A column can be reordered, added, or dropped - an unknown extra column is ignored, a missing one defaults to empty (this subsumes the old host_name legacy-width special-case). Header rows are detected by their reserved column names, so even the header order can change. A record just needs enough fields to carry the required columns, else it's flagged torn.
+	- Test case: `TestReadMapsColumnsByName` (d9exe).
 
 - ✅ Set up the folder hierarchy to separate and delineate the concerns decided in the "Misc to-do" above. (Possibly an additional new private repo?)
 	- Approach decided in the enterprise repo docs. Folder layout now in place: the repos are renamed and the additional private repo is created and scaffolded; the concern implementations follow in later phases.
+	- Test case: none. Repo layout only.
 
 - ✅ Make opening menu look more like a menu. Better spacing around and in beteen items.
 	- Done: the startup picker is now a centered, bordered panel with margins instead of a full-screen list, and blank spacer rows sit between entries. Up/Down skip the spacers so the highlight only stops on real entries.
+	- Test case: `TestPickerSkipsSpacers` (d9ew5).
 
 - ✅ When defining a db in the TUI or CLI, allow just pointing to a top-level repo - then figure everything else out (i.e. "[repo dir]/ngdb/[short spaceless db name]/") If the dir is not a github repo, use the directory exactly as entered (assuming it's empty or nonexistent). Don't ask for txlog or config files, just create them in the dir.
 	- Done: the CLI `--init` already derived this; pulled the logic into shared `config.LogDirFor(location, name)` and switched the TUI create form to a single "location (repo or folder)" field. Point at a repo top level -> `<repo>/ngdb/<name>`; any other folder is used as-is (created if missing). No separate tx-log path to enter; config still auto-places in the user config dir.
+	- Test case: config d9ew9, d9ewa and d9ewb.
 
 - ✅ Ability to delete entries from TUI (e.g. invalid ones).
 	- Done: in the startup picker, `d` (or Delete) on a database asks to remove it, then - only if it has files on disk - a second confirm offers to delete those too (default keep). Remove just deregisters (drops the registry record); delete also removes the tx-log dir and record dir. The `.ddl` schema is always kept. Broken `[!]` records are removable; read-only system records are not.
+	- Test case: `TestPickerRemovesDatabase` (d9ex7) in tui, and d9ex5 and d9ex6 in config.
 
 - ✅ Startup:
 	- ✅ If the program is run from an active directory that has a DDL, use that one.
@@ -1588,6 +1692,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- ✅ If no DDL and nothing in user config, the only options are "Create new database", and "Open existing ..."
 	- Done: new `internal/core/config` package holds a per-db TOML registry. Records live under the OS user-config dir, one `config.toml` each, carrying the DDL path, log dir, sqlite path, key file, and encryption preference. `config.List` discovers them and checks the DDL parses; a missing sqlite is fine since it rebuilds from the log on open. Startup routing: a lone `*.ddl` in the current dir opens directly, otherwise the TUI shows a picker of registered databases plus Create-new and Open-existing. Unopenable databases still list, flagged with the reason.
 	- Note: Create-new points at an existing DDL. Authoring a DDL from scratch is a separate concern, as are the flags in the next item.
+	- Test case: config d9dz1 and d9dyz, tui d9e1g and d9e1h, and `TestInitNoArgUsesPWD` (d9dys) in cli.
 
 - ✅ Add to README.md:
 	- ✅ A section on the bare-minimum, super-simple DDL syntax
@@ -1597,6 +1702,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- ✅ Create that file.
 	- Done: README gained a "Quick start" with a minimal schema and a full hierarchical to-do example, plus a basic CLI walkthrough and a pointer to the full syntax reference. Both DDL blocks were parse-verified, and the to-do one runs end to end.
 	- Done: new `github/syntax.md` is the complete reference covering DDL grammar, types, system columns, uniques, features, access, renames, views, tunables, the sidecar files, all CLI verbs, run modes, and env vars. It documents only implemented behavior; example.ddl's not-yet-wired keys are flagged as forward-looking.
+	- Test case: none. Docs. A check that the README's schema blocks still parse is in 2026102521481107.
 
 - ✅ Partial flag list:
 	- ✅ `--init[=]["git repo root to auto-calculate subfolders for (e.g. 'ngdb/dbname/'), or override default with specific 'git-repo-root-path/subfolder(s)/'"]`  ## If no arg specified, and already in a git root or DDL is in $PWD, use it. Otherwise error.
@@ -1604,39 +1710,49 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- ✅ `--[en]crypt[ion][=]on|off|auto[matic]|yes|no|true|false|y|n|t|f|enable[d]|disable[d]`  ## If on, may be overridden by DDL values of 'never'. If off, may be overridden by DDL values of 'always'. Default=auto.
 	- Done (`--init`, `--config`): `--init [path]` registers the lone current-dir DDL as a database and materializes its view. It picks the tx-log dir automatically: inside a git repo it goes under `<repo-root>/ngdb/<name>`, an explicit path is taken verbatim, and outside a repo it uses the current dir. `--config <dir>` is a global prefix that repoints the registry. Both accept the `=` form.
 	- Done (`--encrypt`): built with the encryption item below. `--encrypt[=on|off|auto]` is a global prefix (bare means on). Paired with `--init` it mints the per-db key and persists the preference.
+	- Test case: cli d9dyr to d9dyv for `--init`, `TestBaseOverride` (d9dz0) for `--config`, and d9dz2 and d9dz3 for `--encrypt`.
 
 - ✅ TUI color themes: selectable, readable, dark and light (default dark)
 	- Done: press `T` in the TUI for a picker of six themes - three dark, three light, default dark. Colors are fixed RGB rather than the terminal-palette names tview defaults to, so text stays legible whatever the surrounding terminal looks like. Switching applies live (the database picker included) and the choice persists in a user-global `settings.toml`, so it carries across sessions and databases.
+	- Test case: tui d9e74, d9e75 and d9e76.
 
 - ✅ Add "host_name" to the transaction log, in addition to user. (Because the same user might use multiple hosts, and that might be useful info.)
 	- Done: `host_name` appended as the last tx-log column, so older logs without it still parse as an empty host and both widths survive a union merge. It's stamped automatically from the OS hostname, overridable with `NANOGITDB_HOST`, the machine analogue of `NANOGITDB_USER`. Metadata only, so replay ignores it. All four front-ends inherit it.
+	- Test case: `TestHostNameRoundTripAndLegacy` (d9e1b) and `TestWritesStampHost` (d9dzb).
 
 - ✅ Tx-log garbage collection: mark + collect records older than N days
 	- Done as the designed segment rotation, via `gc <ddl> <logdir>`. Entries for rows hard-deleted longer than `gc_age_days` ago (default 90) get dropped, survivors land in a write-once segment file, and the old files retire whole. No log line is ever edited in place, so the union merge stays safe. Reads walk the segments then the live file; new writes recreate it.
 	- Note: sync now stages the whole log dir, so both the rotations and the attachments folder replicate. That also closes a replication gap left by the attachments item.
 	- Note: if two clients GC at once they just duplicate survivors, which replay collapses on the next pass.
+	- Test case: txlog d9e0z, d9e10 and d9e11.
 
 - ✅ Tunable options (e.g. `git_sync_frequency`, tx-log GC age)
 	- Done: a `tunables:` DDL section accepting both `key: value` and `key = value` forms. `git_sync_frequency` (default 60, 0 disables) drives a background git sync loop in the TUI and web UIs when the log dir is a git work tree; a pull that brings new entries full-replays into the view, so two open UIs converge without restarting. `gc_age_days` (default 90) is parsed and waiting for the GC item. Unknown tunables warn but still store.
+	- Test case: `TestTunables` (d9e00) in ddl, and d9e0a and d9e0b in schema.
 
 - ✅ DDL-defined scripting: triggers, events, before/after methods via the Lua host (now an enterprise-edition feature; the open-source build ignores `code:` hooks)
 	- Done for the write path and app open: `code:` keys name functions in a `.lua` sidecar. Field `before_update` can veto or replace a value, table `before_update` can veto and runs after the field hooks, both `after_update` forms fire post-commit, and app `before_open` can veto the open. Trigger code gets the sandboxed `db.*` API, and writes from inside a trigger don't re-fire triggers, so hooks can't recurse. Hooks fire in the core CRUD API so all four front-ends behave identically; replay never fires them. Missing functions warn instead of blocking.
 	- Note: sync and UI-lifecycle hooks and `validation: method:` are deferred (see design.md).
+	- Test case: none here. The Lua host is in enterprise. d9e21 and d9e22 check scripting stays off without it.
 
 - ✅ CLI schema ops: `--rename-table`, `--rename-field` (updates DDL + SQLite, adds aliases)
 	- Done: `--rename-table` and `--rename-field`. The DDL is rewritten line by line so comments and formatting survive, with the old name added to an `aliases:` line, and the SQLite view gets an ALTER TABLE rename. The part that makes it safe: replay translates aliased names in old tx-log entries to the current ones, so a log written before the rename still rebuilds correctly. The log itself is never rewritten, since append-only stays sacred.
+	- Test case: ddl d9e06 and d9e07, and `TestRenameOpsEndToEnd` (d9dyn), which rebuilds an old log through the aliases.
 
 - ✅ Granular access model: view -> table -> field|record, by user groups
 	- Done with everything-open-until-configured semantics, so a userless setup keeps working. Identity is the write-stamp user resolved through the users table, with groups via the users/groups m:m. Blacklist wins and an empty whitelist means everyone; owners always pass and admins pass read and write but not delete. Writes are gated in the core CRUD API so no front-end can bypass the table, field, and row-grant rules. Reads are hidden at the catalog instead: unreadable tables and views vanish with a warning, unreadable fields drop from grids and forms, and ungranted rows filter out of row lists.
 	- Note: raw SQL `query` stays open by design. The local file is the trust boundary and the write path is the hard gate (documented in design.md).
+	- Test case: crud d9dz4, d9dz5, d9dz6 and d9dzn, and schema d9e08 and d9e09.
 
 - ✅ Predefined queries: plain-text query file, dropdown in the UIs
 	- Done: queries live in a `.queries` sidecar next to the DDL, parsed with the same grammar and warn-and-fix validation. The TUI offers them on a view via 'p', loading the dataset into the focused block with the query's own columns; the web view page gets a dropdown and Run. A view's `startup_named_query` naming an active query loads it the moment the view opens in both UIs, and an unresolvable name degrades to the usual empty open. Queries without a `view:` are offered on every view, and `active: no` hides one without deleting it.
+	- Test case: ddl d9e03, d9e04, d9e05 and fuzz d9nwk, tui d9e1q, and web d9e1t.
 
 - ✅ Opt-in table features driven by DDL: local + URI attachments, comments, audit trail, row-level access
 	- Done in the core CRUD API so all four front-ends behave alike, and everything replicates through the tx-log like ordinary data. Audit capture rides the same commit as the change it records; same-user updates coalesce into one record keeping the oldest old-value per field, and a hard delete snapshots the row. Comments and both attachment kinds get API helpers plus UI across the TUI, web, CLI, and Lua. Copied files land under `<logdir>/attachments/` and sync with the log.
 	- Note: Lua has no `attach_file`, since its sandbox has no file access.
 	- Note: row-level access grants work here; enforcement belongs to the access-model item below.
+	- Test case: crud d9dzh, d9dzj, d9dzk, d9dzm and d9dzn, and web d9e1y.
 
 - ✅ Added a new hierarchical levels:
 	- 'ui:' above "views:".
@@ -1644,6 +1760,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 			- If no default view specified, defaults to the first one defined.
 	- 'database:' above "tables:" and "relationships:".
 	- Done: both wrappers parse transparently, so older flat DDLs still work, and the default view opens on startup in the TUI and web UI with blocks still empty per the no-records-until-asked rule. A `default_view` naming an unusable view warns and falls back to the first. The example's `methods:` key was renamed to `code:`, with the old key still read.
+	- Test case: ddl d9dzw and d9dzv, and `TestDefaultViewResolution` (d9e0j) in schema.
 
 - ✅ DDL hierarchy doesn't have to be unique.
 	- As an example, 'tables:'/'table:' can be defined multiple times
@@ -1653,12 +1770,15 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Hierarchies can be short-handed. For example, instead of "database:", "tables:", table: "table_name1", you could optionally specify `database/tables/table: "table_name1"`. (Or maybe '.' or '|' delimiter instead of '/'. Research what others do for DDL.)
 	- Done: duplicate sections merge into the first occurrence at every level, while entities like table/field/view stay separate. A scalar redefined to a different value keeps the first and warns. The '/' path shorthand expands to real nesting.
 	- Note: kept '/' as the delimiter since example.ddl already uses it; '.' collides with numbers and '|' reads as alternation.
+	- Test case: ddl d9dzt, dajgg and datq7.
 
 - ✅ Validate the DDL file and transaction log upon load. Fix soft syntax errors (with a warning), that can be safely assumed around. If something is genuinely incorrect too ambiguous to assume around, hard error on startup.
 	- Done: DDL load drops nameless or redefined tables and fields and system-column collisions (first definition wins), and treats an unknown field type as text, each with a warning. Mixed indentation stays a hard error. Tx-log load warns per torn line with its file and line number instead of skipping silently; repeated header rows still skip quietly as normal union-merge leftovers. Replay skips and warns on mangled row ids and unknown operations, which may come from a newer client, rather than aborting the whole rebuild. All four front-ends surface the warnings.
+	- Test case: ddl d9dzx, d9dzy, d9dzz and dajgh, and txlog d9e1d, d9e0y and d9e15.
 
 - ✅ On-the-fly schema change: update or rebuild local `.sqlite` when DDL changes with data present
 	- Done additively: `build`, `replay`, and `sync` add a column for any field added to the DDL, and replay skips with a warning any log entry for a table or field the local schema doesn't know yet, so a schema edit can never strand an existing database. Type changes and field drops still mean a rebuild from the log, which loses nothing since the log is the truth.
+	- Test case: `TestBuildMigratesNewFields` (d9e0n) and `TestReplaySkipsSchemaDrift` (d9e13).
 
 - ✅ Transaction log enhancements:
 	- ✅ Search and replace problematic symbols, e.g.:
@@ -1675,40 +1795,55 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 			- 🗦COMMA🗧
 			- 🗦MISC_ILLEGAL🗧 (bell, backspace, etc. - actually those should just be scrubbed before landing)
 			- etc.
+	- Test case: txlog d9e0r to d9e0x, and fuzz d9nwm.
 
 - ✅ View block `tree_grid` type + `parent_field`: hierarchical grid over a self-referential (same-table) parent link
 	- Done, and it pulled in view rendering itself, since no front-end rendered views yet. Views now resolve once in the core, verifying tables, turning split hints into axis and percent, and inheriting readonly, then render in both TUI and web as nested split blocks. `tree_grid` orders rows depth-first along `parent_field` with indentation, and bad data like orphans, cycles, or a wrong field degrades visibly instead of hiding rows. Blocks open empty per the design and the "All" action loads them; `startup_named_query` hooks in once named queries land.
+	- Test case: schema d9e0h and d9e0k, tui d9e1p, and web d9e1r and d9e1s.
 
 - ✅ Repo scaffold: `go.mod`, package skeleton, arg-dispatch `main`, size-optimized build script, `.gitignore`. Compiles, vets, and gofmt-clean; all four front-ends stubbed and the web server serves its embedded asset.
+	- Test case: none of its own. The build and vet steps, and `TestAssetsServed` (d9e20) for the embedded asset.
 
 - ✅ DDL parser: `example.ddl` parses into an in-memory schema model through three layers (indent tree, type-directed values, semantic map). Tested, wired to `nanogitdb ddl <file>`.
+	- Test case: ddl d9dzp, d9dzq, d9dzr and d9dzs, and fuzz d9nwj.
 
 - ✅ SQLite view: builds and migrates the local `.sqlite` from the schema using pure-Go `modernc.org/sqlite`, with system columns and uniques/indexes, idempotent. Tested, wired to `nanogitdb build`. On-the-fly migration of existing data is a separate item below.
+	- Test case: store d9e0m, d9e0p and d9e0q.
 
 - ✅ Transaction log: CSV read/write plus apply log to the SQLite view, with the log as source of truth. Append-only, field-granular replay (create/update/mark_delete/delete) in one tx. Tested, wired to `nanogitdb replay`. Added `row_id` to the entry (see design).
+	- Test case: txlog d9e1a, d9e1e and d9e1f.
 
 - ✅ Core CRUD API: the single internal API every front-end and Lua calls, covering Create/Update/SetField/MarkDelete/Delete/Get/Query. Writes are log-first (append to truth, then apply to view), and it owns id, timestamp, and user stamping. Tested including a full rebuild from log. Validation, access, and triggers are separate items.
+	- Test case: crud d9dza, d9dzc and d9dzd, and d9dz7 to d9dz9 for ids and time stamps.
 
 - ✅ CLI front-end: full arg-based CRUD over the core, with verbs create/get/update/setnull/markdelete/delete/query each taking the same `<ddl> <sqlite> <logdir>` triple as replay and sync. Stateless and script-friendly until the registry existed. Writes stamp NANOGITDB_USER or the OS username, and `setnull` is its own verb so a literal "NULL" string stays expressible. Schema-op flags are their own backlog item.
+	- Test case: `TestCrudVerbsEndToEnd` (d9dyk) and `TestCreateRejectsBadAssign` (d9dym).
 
 - ✅ Git sync: pull/merge/commit/push of the tx-log dir with a background loop, shelling out to `git`. Append conflicts auto-resolve via `merge=union`, and replay sorts by (date, tx_id) so clients converge. Tested including two-client convergence, wired to `nanogitdb sync`.
+	- Test case: txlog d9e17, d9e18 and d9e19.
 
 - ✅ Lua host: `gopher-lua` bound to the same core CRUD as `db.{create,get,update,setfield,markdelete,delete,query}`, sandboxed to base/table/string/math/coroutine only with no os/io. Tested, wired to `nanogitdb --script`.
 	- Note: now an enterprise-edition feature. The host moved behind the script seam, so the open-source build has no scripting host and drops the gopher-lua dependency.
+	- Test case: none here. The host is in enterprise. `TestNoProviderDisablesScripting` (d9e21) checks the open-source build has none.
 
 - ✅ Auto tables: users, groups, and the opt-in feature tables (m:m, comments, audit, access, attachments), defined in the same DDL users write and embedded in one source file. Built idempotently at startup, with default groups (owners/admins/users/guests) seeded log-first so they replicate. audit_trail opts out of the universal system columns via the new `system_fields: no` key, and access_rows only appears when a table opts in to row_level_access. First-user membership in owners/admins is deferred until user rows exist.
+	- Test case: schema d9e0c to d9e0g.
 
 - ✅ TUI front-end: `tview`/`tcell`, both pure Go with the cross-compile intact. Table list (user tables first, then built-ins), a rows grid that stays empty until a table is opened, a create/edit form that writes only changed fields, and soft/hard delete behind a confirm modal, all through the shared CRUD API. `nanogitdb --tui <ddl> <sqlite> <logdir>`.
+	- Test case: tui d9e1j, d9e1k and d9e1m.
 
 - ✅ Web UI: stdlib `net/http` + `html/template` + `embed` with vendored, pinned htmx (2.0.4). Table sidebar, a rows grid that renders nothing until a table is asked for, a create/edit form writing only changed fields, and soft/hard delete behind hx-confirm; the 127.0.0.1-only binding is the access control. Front-end bring-up and table metadata live in shared `schema.OpenClient`/`schema.Catalog`, so the four front-ends can't drift. `nanogitdb --serve <ddl> <sqlite> <logdir>`.
+	- Test case: web d9e1v to d9e1z.
 
 - ✅ CI/CD: a manual pipeline in `cicd/cicd.bash` that builds native (size-reported), cross-compiles windows-amd64/linux-arm64/windows-arm64 (pure Go, no extra toolchains; macOS stays deferred), zips windows into `dist/`, runs test.bash (vet, gofmt, tests, smoke), verifies the module and runs govulncheck, then dogfoods and publishes. Profiling beyond the size report waits until there's something worth profiling.
 	- ✅ `-q/--quiet` (unattended, no prompt, flows to the publish step) and `-m/--message/--msg` (`-m MSG` or `-m=MSG`; auto-generated when `-q` and no `-m`), in both cicd.bash and the n8git publish helper. Stage output uses the existing `fEcho`/`fEcho_Clean` helpers (bracketed section headers, blank-line grouping).
 	- ✅ `--quick`: skip the slow stages (cross-builds + Windows packaging/install, fuzz, profiler, screenshots, govulncheck, gosec); native build, lint, quick tests, go mod verify, dogfood, and publish still run.
 	- ✅ Pipeline hardening: lint+format stage (`gofmt -w` + `staticcheck`), auto-discovered fuzz targets (`fuzz.bash` over the DDL/txlog/config parsers, seeds also run in the normal suite), `gosec` beside govulncheck (documented exclude list), and a non-gating profiler stage - samples the tx-log replay hot path into an inferno flamegraph (`cicd/artifacts/profiling/`, GFS-rotated) with a `flame-report.py` hotspot summary. Run log tee'd to `cicd/artifacts/lint/` for after-the-fact review (`lint-report.bash`).
 	- ✅ Full cross-platform packaging (non-`--quick`): goreleaser cross-builds linux/macOS/windows/freebsd for amd64+arm64 (all pure Go, one Linux box, no C toolchain), then packages `.deb`/`.rpm` for linux, a `.tar.gz`/`.zip` per target, and checksums. A single self-contained Windows `.exe` installer per arch is built with NSIS (`windows-installer.bash`/`.nsi`) - installs, adds to PATH, upgrades an existing install. Builds split: a native debug binary drives testing/profiling, an optimized release binary is what gets packaged and dogfooded. `--no-arm` trims a run to amd64 only (arm is cheap here, so it's opt-out not opt-in). Deferred (each needs the target OS's own tooling/signing host): macOS `.dmg`, Windows `.msi`, FreeBSD `.pkg` (ship as archives); AppImage + Flatpak.
+	- Test case: `flags-test.bash` deecd to deeck for the flags and `--quick`, and `steps-test.bash` dedq4 to dedq8 for the step lines. The rest is the pipeline itself.
 
 - ✅ Supply-chain hardening: vendored deps, `go mod verify`, `-mod=vendor`, and `govulncheck`, all wired into the pipeline. The first govulncheck run found five reachable Go-stdlib vulns; pinning `toolchain go1.26.4` cleared them and it now scans clean.
+	- Test case: none. The scan and `go mod verify` steps are the check.
 
 ### Deferred
 
