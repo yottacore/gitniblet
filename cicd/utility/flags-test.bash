@@ -24,7 +24,7 @@ source "${repoRoot}/cicd/utility/include/temp-run.bash"
 runDir="$(fTempDir_Make flags-test)"  ||  exit 1
 trap 'fSafeRm "${runDir}" > /dev/null' EXIT
 ## The plans below expect Local hooks on, which needs the hooks folder. A
-## hosted runner has no ../../private/cicd-hooks, so stand one in.
+## hosted runner has no ../private/cicd-hooks, so stand one in.
 export NGDB_HOOKS_DIR="${runDir}/hooks"
 mkdir -p "${NGDB_HOOKS_DIR}"  ||  exit 1
 

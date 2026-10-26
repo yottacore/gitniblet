@@ -40,7 +40,7 @@ import time
 from pathlib import Path
 
 ME_DIR  = Path(__file__).resolve().parent
-REPO    = ME_DIR.parents[2]                       # cicd/utility/demo-video -> nano-git-db-floss/repo
+REPO    = ME_DIR.parents[2]                       # cicd/utility/demo-video -> gitniblet-floss/repo
 PRIVATE = REPO.parent / "private" / "demo-video"  # ../private symlink -> synced tree
 DEMO_DB = ME_DIR / "demo-db.bash"
 TEMP_RUN = REPO / "cicd/utility/include/temp-run.bash"   # run folder + the safe removal guard

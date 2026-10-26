@@ -158,7 +158,7 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "                      build. A diverged branch stops the run without it."
 	fEcho_Clean "      --no-arm        Build/package amd64 only (skip arm64) to trim a full run."
 	fEcho_Clean "      --no-install    Skip the dogfood install of the built binary."
-	fEcho_Clean "      --no-hooks      Skip the pre-publish hooks (../../private/cicd-hooks)."
+	fEcho_Clean "      --no-hooks      Skip the pre-publish hooks (../private/cicd-hooks)."
 	fEcho_Clean "      --no-publish    Skip backup + publish: no commit, no push."
 	fEcho_Clean "      --no-demo       Skip the demo recording, which rewrites assets/demo.gif."
 	fEcho_Clean "      --no-format     Check gofmt only, fail on unformatted Go files rather"
@@ -192,7 +192,7 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean ""
 	fEcho_Clean "The run log goes to cicd/artifacts/lint/, or to NGDB_LOG_DIR when it's set,"
 	fEcho_Clean "as the pipeline's own tests do for the runs they start. NGDB_HOOKS_DIR stands in"
-	fEcho_Clean "for ../../private/cicd-hooks the same way."
+	fEcho_Clean "for ../private/cicd-hooks the same way."
 	fEcho_Clean ""
 	fEcho_Clean "cicd/utility/git-hooks/pre-push runs --merge-gate before a push to main, unless"
 	fEcho_Clean "the push changes only the paths in no-gate-paths beside it. A push to dev isn't"
@@ -281,7 +281,7 @@ fMain(){
 	[[ -f "${filePath_CICD_TestExec}"  ]]  ||  fThrowError "File not found: '${filePath_CICD_TestExec}'"
 	[[ -n "${gitAutomationScript}"     ]]  ||  fThrowError "Git automation script not found where specified or in path: '${gitAutomationScript}'."
 
-	declare hooksDir="${NGDB_HOOKS_DIR:-${dirPath_Base}/../../private/cicd-hooks}"
+	declare hooksDir="${NGDB_HOOKS_DIR:-${dirPath_Base}/../private/cicd-hooks}"
 	if ((doList)); then fList; return 0; fi
 
 	## Prompt to continue
@@ -481,7 +481,7 @@ fMain(){
 		fStep_End
 	fi
 
-	## Optional local pre-publish hooks (not committed, kept in ../../private/cicd-hooks). Each
+	## Optional local pre-publish hooks (not committed, kept in ../private/cicd-hooks). Each
 	## *.bash there runs here before publish so anything a hook regenerates gets
 	## committed in the same run. No-op when the folder is absent. A hook gets the
 	## repo base path as $1; a failing hook warns but does not abort the run.
@@ -1234,3 +1234,4 @@ fMain  "${@}"
 ##		- 20261025 JC: Remote sync first: fetch and fast-forward before the build, stop when diverged; --no-sync skips it.
 ##		- 20261025 JC: Race tests (the TUI under -race) and Pipeline tests (cicd/utility/*-test.bash) on this host; NGDB_LOG_DIR; the container is polled, not waited on.
 ##		- 20261025 JC: NGDB_HOOKS_DIR, so the plan's tests pass where ../../private/cicd-hooks is missing.
+##		- 20261026 JC: Local hooks dir is ../private/cicd-hooks again, now that the project folder has its own private/.
