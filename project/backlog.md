@@ -230,23 +230,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Decisions:
 		- Only the floss backlog. Enterprise and vendor have their own items for this, 2026101915313001 and 2026101915313002.
 
-- `flags-test.bash` deece and deee3 fail where `../../private/cicd-hooks` doesn't exist, as on a hosted runner.
-	- ID: 2026102522324333
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-223243
-	- Opened by: JC
-	- Related IDs: 2026102416210004, 2026102520474880
-	- Steps to reproduce [Bug]:
-		- Run `cicd/utility/flags-test.bash` from a checkout with no `../../private/cicd-hooks` beside it.
-	- Incorrect behavior [Bug]: deece and deee3 fail. The default and `--quick` plans list `Local hooks (no <dir>)` as off, and both checks expect only the flag-driven off steps. Hosted CI run 40272702133 failed its Linux merge gate on it.
-	- Expected behavior [Bug]: Both pass whether or not the private hooks folder exists.
-	- Reproduced [Bug]: 20261025, from an export of 21bc082 with no private folder beside it, and in hosted CI run 40272702133. Both pass in the floss checkout and its worktrees, which have the folder.
-	- Possible cause [Bug]: The test reads the real plan, where Local hooks is on only when `hooksDir` exists. Point `hooksDir` at a folder the test makes, or leave Local hooks out of the compared lists.
-	- Estimated effort: Low
-	- Test case: `flags-test.bash` deece and deee3 themselves, from a checkout with no private folder beside it.
-
 - Regression tests the old-format Done items still lack.
 	- ID: 2026102521481107
 	- Type: Task
@@ -482,6 +465,38 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- `id` and `date_created` show read-only and are never written from a form. That likely means honoring `ui: readonly` first.
 	- Progress log:
 		- 20261024: Lists already honor `visible_list` on system fields. The example DDL's built-in `lookups` and `lookup_values` tables ask for `id` on forms, read-only.
+
+- `flags-test.bash` deece and deee3 fail where `../../private/cicd-hooks` doesn't exist, as on a hosted runner.
+	- ID: 2026102522324333
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-223243
+	- Opened by: JC
+	- Related IDs: 2026102416210004, 2026102520474880
+	- Steps to reproduce [Bug]:
+		- Run `cicd/utility/flags-test.bash` from a checkout with no `../../private/cicd-hooks` beside it.
+	- Incorrect behavior [Bug]: deece and deee3 fail. The default and `--quick` plans list `Local hooks (no <dir>)` as off, and both checks expect only the flag-driven off steps. Hosted CI run 40272702133 failed its Linux merge gate on it.
+	- Expected behavior [Bug]: Both pass whether or not the private hooks folder exists.
+	- Reproduced [Bug]: 20261025, from an export of 21bc082 with no private folder beside it, and in hosted CI run 40272702133. Both pass in the floss checkout and its worktrees, which have the folder.
+	- Possible cause [Bug]: The test reads the real plan, where Local hooks is on only when `hooksDir` exists. Point `hooksDir` at a folder the test makes, or leave Local hooks out of the compared lists.
+	- Actual cause [Bug]: The test reads the real plan, where Local hooks is on only when `../../private/cicd-hooks` exists, and nothing let the test stand a folder in.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: Reproduced from an export of 22bd94f with no private folder beside it: deece and deee3 fail.
+		- `cicd.bash` reads the hooks folder from `NGDB_HOOKS_DIR` when it's set, as it does the run log from `NGDB_LOG_DIR`. `flags-test.bash` points it at an empty folder it makes, so the plans are the same everywhere.
+		- New deehh checks that a missing hooks folder turns off only Local hooks, listed as `Local hooks (no <dir>)`, so the missing-folder path is still covered.
+		- `--help` names `NGDB_HOOKS_DIR`, and its `--no-hooks` line had the path one level short, from before the folder rename.
+		- Verified: in the export, the old `cicd.bash` fails deece, deee3 and deehh, and the new one passes all 10. With a private folder beside the export, the old one fails only deehh. `flags-test.bash` passes in the checkout, and so do `--backlog-run-quick` and `testid check`. shellcheck finds nothing new.
+		- Swept: the other `cicd.bash` runs in `cicd/utility/*-test.bash` all pass `--no-hooks`, so the folder doesn't change their plans. `ci.yml` and `smoke-cli.bash` don't read it. Enterprise and vendor have no Local hooks step.
+		- Not verified here: hosted CI. The `ci.yml` rerun is on 2026102416210004 and 2026102520474880.
+	- Decisions:
+		- An override in `cicd.bash` rather than leaving Local hooks out of the compared lists, so deee3 still checks `--no-hooks` on a hosted runner.
+	- Actual fix [Bug]: `NGDB_HOOKS_DIR` in `cicd.bash`, set by `flags-test.bash` to a folder it makes.
+	- Branch: r1025
+	- Test case: `cicd/utility/flags-test.bash` deece and deee3, and deehh, new here.
+	- Closed: 20261025-223913
 
 - A `null_ok: no` field with no default makes its table drop every row, silently.
 	- ID: 2026102407331876

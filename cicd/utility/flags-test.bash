@@ -23,6 +23,10 @@ hook="${repoRoot}/cicd/utility/git-hooks/pre-push"
 source "${repoRoot}/cicd/utility/include/temp-run.bash"
 runDir="$(fTempDir_Make flags-test)"  ||  exit 1
 trap 'fSafeRm "${runDir}" > /dev/null' EXIT
+## The plans below expect Local hooks on, which needs the hooks folder. A
+## hosted runner has no ../../private/cicd-hooks, so stand one in.
+export NGDB_HOOKS_DIR="${runDir}/hooks"
+mkdir -p "${NGDB_HOOKS_DIR}"  ||  exit 1
 
 declare -i fails=0
 fCheck(){  ## id, name, then a command that passes or not. A subshell, so set -u stops only that check.
@@ -77,6 +81,15 @@ fOffFlags(){
 	return "${bad}"
 }
 fCheck deee3 "--no-install, --no-hooks, --no-publish and --no-demo each turn off only their own step" fOffFlags
+
+fNoHooksDir(){
+	local full want missing="${runDir}/no-hooks"
+	full="$(fPlan)"
+	want="|${full}|"; want="${want/"|Local hooks|"/|}"; want="${want#|}"; want="${want%|}"
+	[[ "${want}" != "${full}" ]]  ||  { echo "  Local hooks isn't in the default plan"; return 1; }
+	fWant "$(NGDB_HOOKS_DIR="${missing}" fPlan)" "${want}"  &&  fWant "$(NGDB_HOOKS_DIR="${missing}" fOff)" "Local hooks (no ${missing})"
+}
+fCheck deehh "with no hooks folder, Local hooks is off and the rest of the plan is the same" fNoHooksDir
 
 ## Every *-test.bash beside cicd.bash, so a new one can't be left out, but
 ## remote-test.bash, which is the Remote tests step and uses the real boxes.
@@ -186,3 +199,4 @@ echo "flags-test.bash: PASS"
 ##	History:
 ##		- 20261025 JC: Created.
 ##		- 20261025 JC: Race tests and Pipeline tests in the plans.
+##		- 20261025 JC: A stand-in hooks folder, so the plans match on a hosted runner.
