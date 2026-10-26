@@ -32,6 +32,21 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 ## Issues
 
+- A pipeline test runs the binary against the real config folder.
+	- ID: 2026102613060001
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261026-130600
+	- Opened by: JC
+	- Steps to reproduce [Bug]:
+		- Have `~/.config/ngdb` and no `~/.config/gitniblet`.
+		- Run the floss pipeline tests on the host: `cleanup-test.bash`, then `container-fallback-test.bash`.
+	- Incorrect behavior [Bug]: `~/.config/ngdb` was moved to `~/.config/gitniblet` at 12:44:04 on 20261026, during one of those 2 tests. The test touched the real registry, not a temp one.
+	- Expected behavior [Bug]: No test reads or writes the real config folder. Each one that runs the binary sets `HOME`, `XDG_CONFIG_HOME` and `AppData` to its run folder.
+	- Possible cause [Bug]: `smoke-cli.bash` sets none of them, and the host fallback run calls it.
+	- Workaround: `~/.config/ngdb` is a link to `gitniblet` on b23, so the installed `ngdb` still finds its databases.
+
 - CICD reset: standard flags.
 	- ID: 2026102416210004
 	- Type: Task
