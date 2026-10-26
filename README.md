@@ -17,9 +17,9 @@
 
 <img src="assets/logo.png" alt="GitNiblet" width="140"/>
 
-A multi-user database you sync with `git`. No server, no SQL, and one static binary that gives you a command line, a terminal UI, and a local web UI.
+A multi-user database that syncs via `git`. No database server, no daemon, and one static binary that gives you a command line, a terminal UI, and a local web UI.
 
-The database itself is a folder of append-only text. When two people edit at once, git merges it the way it merges any text file - and because each write is its own line, that merge happens field by field instead of clobbering a record.
+The database itself is a folder with append-only text. When two people edit at once, git merges it the way it merges any text file - and because each write is its own line, that merge happens field by field instead of clobbering a record.
 
 <img src="assets/demo.gif" width="90%" alt="Browsing a tree-grid board and editing a record in the terminal UI, then querying and adding the same data from the CLI - where the whole database is just a folder of append-only text."/>
 

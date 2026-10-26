@@ -272,6 +272,35 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- The README's "Add to README.md" item: the schema blocks in README.md and syntax.md still parse.
 		- The exe name item: `smoke-cli.bash` gets a test ID on its `PASS` line, so `testid check` sees it.
 
+- Read every shcl file through shclwrap and shcl 3.0.
+	- ID: 2026102509204445
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-092044
+	- Opened by: JC
+	- Related IDs: 2026102509202821
+	- Requirements [Feature]:
+		- gitniblet vendors shcl's Go library v1.2.0, which reads the 2.x rules. It takes a bare `a, b` list and ignores `[a, b]`. shcl 3 refuses the bare form, so a schema with a list can't load clean in both.
+		- `source/internal/core/ddl/schema.shcl` uses `allowed: a, b`, so it fails to load in shcl 3 with V099.
+		- The schema, queries, registry, and settings files all go through shclwrap and shcl 3.0.
+		- Found in gitniblet-issue-tracker. Its seed rows keep the bare form until this is in.
+
+- A config file of any name and path names the database's files.
+	- ID: 2026102509202821
+	- Type: Feature
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-092028
+	- Opened by: JC
+	- Related IDs: 2026102509204445
+	- Requirements [Feature]:
+		- The config declares the schema, the tx-log, and the view, each with any name and path. Today the tx-log is always `txlog.csv` inside `log_dir`.
+		- `--config` takes a folder, where gitniblet looks for `config.shcl`, or a config file by name. Today it takes only a registry folder.
+		- A relative path is relative to the config file, and `${HOME}` works. Today a record needs absolute paths.
+		- gitniblet doesn't write state such as `last_opened` into that file, so it can be tracked in git.
+		- Found in gitniblet-issue-tracker, which works around it with a wrapper that writes a registry record from its own config.
+
 - Lookup picker and write-time value check.
 	- ID: 2026102407295340
 	- Type: Enhancement
