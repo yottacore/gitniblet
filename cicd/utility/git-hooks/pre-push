@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+
+##	Purpose:
+##		Local merge gate. Before a push that updates main, runs cicd.bash
+##		--merge-gate on the commit being pushed, in a scratch worktree, since the
+##		working tree often holds edits that aren't in it. A push whose commits
+##		change only the paths in no-gate-paths beside this skips it. dev and
+##		feature branches are never gated. SKIP_GATE=1 skips it, which cicd.bash
+##		sets for its own publish, after a run that passed the same checks.
+##	Syntax:
+##		Turn it on once per clone:  git config core.hooksPath cicd/utility/git-hooks
+##		NGDB_GATE_DRYRUN=1 prints what it would do and runs no gate.
+##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
+##	Licensed under The MIT License (MIT). Full text at:
+##		https://mit-license.org/
+##	SPDX-License-Identifier: MIT
+
+set -euo pipefail
+
+[[ "${SKIP_GATE:-0}" != "1" ]]  ||  exit 0
+
+## stdin: "<local ref> <local sha> <remote ref> <remote sha>", one line per ref.
+mainSha=""  mainWas=""
+while read -r _ localSha remoteRef remoteSha; do
+	[[ "${remoteRef}" == "refs/heads/main" ]]  ||  continue
+	## A delete pushes the zero sha, with nothing to check.
+	if [[ "${localSha}" =~ [^0] ]]; then mainSha="${localSha}"; mainWas="${remoteSha}"; fi
+done
+[[ -n "${mainSha}" ]]  ||  exit 0
+
+top="$(git rev-parse --show-toplevel)"
+hookDir="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+
+## The first changed path no-gate-paths doesn't cover, or nothing. A new main,
+## or one whose old tip isn't here, counts as changing everything.
+fGatedPath(){
+	local changed path pattern
+	local -a patterns=()
+	[[ "${mainWas}" =~ [^0] ]]  ||  { echo "(a new main)"; return 0; }
+	changed="$(git -C "${top}" diff --name-only "${mainWas}" "${mainSha}" 2> /dev/null)"  ||  { echo "(${mainWas} isn't here)"; return 0; }
+	[[ ! -f "${hookDir}/no-gate-paths" ]]  ||  mapfile -t patterns < <(grep -v -e '^#' -e '^[[:space:]]*$' "${hookDir}/no-gate-paths" || true)
+	while IFS= read -r path; do
+		[[ -n "${path}" ]]  ||  continue
+		for pattern in "${patterns[@]}"; do
+			# shellcheck disable=2053  ## The pattern is meant to glob.
+			if [[ "${path}" == ${pattern} ]]; then continue 2; fi
+		done
+		echo "${path}"; return 0
+	done <<< "${changed}"
+}
+gatedPath="$(fGatedPath)"
+if [[ -z "${gatedPath}" ]]; then
+	echo "pre-push: no gate, the push to main changes only paths in no-gate-paths" >&2
+	exit 0
+fi
+echo "pre-push: gating the push to main with cicd.bash --merge-gate, for ${gatedPath} (SKIP_GATE=1 skips)" >&2
+[[ "${NGDB_GATE_DRYRUN:-0}" != "1" ]]  ||  exit 0
+
+## A run folder like cicd.bash's, removed only through the guard.
+# shellcheck source=cicd/utility/include/temp-run.bash
+source "${hookDir}/../include/temp-run.bash"
+runDir="$(fTempRun_Make)"  ||  { echo "pre-push: no run folder" >&2; exit 1; }
+tree="${runDir}/tree"
+fCleanup(){
+	git -C "${top}" worktree remove --force "${tree}" > /dev/null 2>&1  ||  true
+	fSafeRm "${runDir}" > /dev/null  ||  true
+}
+trap fCleanup EXIT
+trap 'exit 1' INT TERM
+git -C "${top}" worktree add --detach -q "${tree}" "${mainSha}"  ||  { echo "pre-push: couldn't check out ${mainSha} to gate it" >&2; exit 1; }
+bash "${tree}/cicd/cicd.bash" --merge-gate
+
+
+##	History:
+##		- 20261025 JC: Created, from zuid's.

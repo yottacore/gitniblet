@@ -311,7 +311,7 @@ gofmt -l cmd internal        # must print nothing
 
 Cross-compile by exporting `GOOS` and `GOARCH` before `./cicd/build.bash`. Every target builds from any machine, because it is all pure Go.
 
-`./cicd/cicd.bash` runs the full local pipeline: build, lint, test, fuzz, a vulnerability and security scan, a profiling pass, and packaging. `--quick` skips the slow stages. Its extra tools are fetched on demand by `go run`, except the flamegraph renderer (`cargo install inferno`), which the profiling stage skips if missing. Build and test run in a Debian container with Go pinned, from `cicd/container/Dockerfile`, when docker is there. Without it they run on your machine, and `--no-container` asks for that.
+`./cicd/cicd.bash` runs the full local pipeline: build, lint, test, fuzz, a vulnerability and security scan, a profiling pass, and packaging. `--quick` skips the slow stages, and `--backlog-run-quick` is the few-minute check before a commit. Its extra tools are fetched on demand by `go run`, except the flamegraph renderer (`cargo install inferno`), which the profiling stage skips if missing. Build and test run in a Debian container with Go pinned, from `cicd/container/Dockerfile`, when docker is there. Without it they run on your machine, and `--no-container` asks for that.
 
 Contributions are welcome - see [contributing.md](contributing.md).
 

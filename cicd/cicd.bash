@@ -44,7 +44,7 @@ if [[ -z "${doQuietly+x}" ]]; then
 
 	## Generic constants
 	declare  -i doQuietly=0
-	declare  -i doQuick=0  ## --quick: skip the slow stages (cross-builds, fuzz, profiler, govulncheck, gosec)
+	declare  -i doQuick=0  ## --quick: skip the slow stages (cross-builds, packaging, remote tests, profiler, demo)
 	declare  -i doNoArm=0  ## --no-arm: build/package amd64 only (arm64 is cheap here, so this is just a run-time trim)
 	## Off switches for the stages that touch the box or the tracked tree, so a full run can stay hands-off
 	declare  -i doInstall=1  doHooks=1  doPublish=1  doDemo=1  doFormat=1
@@ -53,6 +53,20 @@ if [[ -z "${doQuietly+x}" ]]; then
 	declare  -i doContainer=1
 	declare  -i doRemote=1  ## Native tests on the test boxes for the platforms only cross-built here
 	declare  -i doKeepTemp=0  ## --keep-temp: keep the run folder and the run's containers
+	## run, quick, backlog-quick, backlog-full or merge-gate. The last 3 are hands-off:
+	## no dogfood, publish, hooks, demo or gofmt -w, and no prompt.
+	declare     runMode="run"
+	declare  -a testAreas=()
+	declare  -i doList=0  doSync=1  ## No sync step yet, so --no-sync is only taken
+	declare     leakOpt=""            ## No leak checks yet, so this is only taken
+	declare     aliasNote=""
+	## --backlog-run-quick's areas, as "name|go packages", in --help order.
+	declare -ra testAreaDefs=(
+		"cli|./internal/cli/..."           "tui|./internal/tui/..."             "web|./internal/web/..."
+		"core|./internal/core/..."         "config|./internal/core/config/..."  "crud|./internal/core/crud/..."
+		"ddl|./internal/core/ddl/..."      "schema|./internal/core/schema/..."  "store|./internal/core/store/..."
+		"txlog|./internal/core/txlog/..."  "seams|./app/... ./cmd/... ./donate/... ./enc/... ./gate/... ./script/..."
+	)
 	declare  -i inContainer=0; [[ "${NGDB_IN_CONTAINER:-}" == "1" ]] && inContainer=1  ## Set for the run started inside
 	declare -r  projectName="nano-git-db"
 	declare -r  containerImage="nano-git-db-cicd"
@@ -110,9 +124,31 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean ""
 	#           X-------------------------------------------------------------------------------X
 	fEcho_Clean "Usage: ${meName} [options]"
+	fEcho_Clean "  (no flags)          The default run, up to about an hour: builds, cross-builds"
+	fEcho_Clean "                      and packages, lint, tests, fuzz, security, remote tests,"
+	fEcho_Clean "                      dogfood, profiler, demo, hooks, then back up and publish."
+	fEcho_Clean "      --quick         About 10 minutes. Skips cross-builds, packaging, remote"
+	fEcho_Clean "                      tests, profiler and demo. Still dogfoods the release build."
+	fEcho_Clean "      --long          Also --slow. The default run, since nothing here takes"
+	fEcho_Clean "                      hours."
+	fEcho_Clean "      --leakcheck, --no-leakcheck"
+	fEcho_Clean "                      Taken. There are no leak checks yet."
+	fEcho_Clean "      --backlog-run-quick [<area>...]"
+	fEcho_Clean "                      About 4 minutes: release build and CLI smoke, gofmt check,"
+	fEcho_Clean "                      staticcheck, and the tests, or only the tests of the areas"
+	fEcho_Clean "                      named. Also --gate. Areas:"
+	local def line="                       "
+	for def in "${testAreaDefs[@]}"; do line+=" ${def%%|*}"; done
+	fEcho_Clean "${line}"
+	fEcho_Clean "      --backlog-run-full"
+	fEcho_Clean "                      Every check of the default run, the other boxes included."
+	fEcho_Clean "      --merge-gate    The same checks, before a merge to main. Also --ci."
+	fEcho_Clean "                      These 3 never dogfood, publish, commit, push, install,"
+	fEcho_Clean "                      sync, rewrite a tracked file, or prompt."
+	fEcho_Clean "      --list          Print the steps and test IDs the other flags would run,"
+	fEcho_Clean "                      and run nothing."
 	fEcho_Clean "  -q, --quiet         Run unattended (no prompt) and quiet; flows to publish."
-	fEcho_Clean "      --quick         Skip the slow stages: cross-builds, packaging, fuzz,"
-	fEcho_Clean "                      remote tests, profiler, demo recording, govulncheck + gosec."
+	fEcho_Clean "      --no-sync       Taken. There's no sync from the remote yet."
 	fEcho_Clean "      --no-arm        Build/package amd64 only (skip arm64) to trim a full run."
 	fEcho_Clean "      --no-install    Skip the dogfood install of the built binary."
 	fEcho_Clean "      --no-hooks      Skip the local pre-publish hooks (../private/cicd-hooks)."
@@ -145,6 +181,11 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean ""
 	fEcho_Clean "Every step runs at nice 19 and idle I/O, on half the CPUs, or a quarter for"
 	fEcho_Clean "fuzz or when the 1-minute load is over half of them, checked before each step."
+	fEcho_Clean ""
+	fEcho_Clean "cicd/utility/git-hooks/pre-push runs --merge-gate before a push to main, unless"
+	fEcho_Clean "the push changes only the paths in no-gate-paths beside it. A push to dev isn't"
+	fEcho_Clean "gated. Turn it on once per clone with:"
+	fEcho_Clean "  git config core.hooksPath cicd/utility/git-hooks"
 	#           X-------------------------------------------------------------------------------X
 	fEcho_Clean "" ;:;}
 
@@ -157,7 +198,21 @@ fMain(){
 	local cliMessage=""
 	while (($#)); do case "${1}" in
 		-q|--quiet)                doQuietly=1                          ; shift ;;
-		--quick)                   doQuick=1                            ; shift ;;
+		--quick)                   runMode="quick"                      ; shift ;;
+		--long|--slow)             runMode="run"                        ; shift ;;
+		--leakcheck|--no-leakcheck)
+			[[ -z "${leakOpt}" || "${leakOpt}" == "${1}" ]]  ||  fThrowError "--leakcheck and --no-leakcheck are opposites; give one."
+			leakOpt="${1}"; shift ;;
+		--gate|--backlog-run-quick)
+			[[ "${1}" != "--gate" ]]  ||  aliasNote="--gate is another name for --backlog-run-quick."
+			runMode="backlog-quick"; shift
+			while (($#)) && [[ "${1}" != -* ]]; do testAreas+=("${1}"); shift; done ;;
+		--backlog-run-full)        runMode="backlog-full"               ; shift ;;
+		--ci|--merge-gate)
+			[[ "${1}" != "--ci" ]]  ||  aliasNote="--ci is another name for --merge-gate."
+			runMode="merge-gate"; shift ;;
+		--list)                    doList=1                             ; shift ;;
+		--no-sync)                 doSync=0                             ; shift ;;
 		--no-arm)                  doNoArm=1                            ; shift ;;
 		--no-install)              doInstall=0                          ; shift ;;
 		--no-hooks)                doHooks=0                            ; shift ;;
@@ -175,6 +230,19 @@ fMain(){
 		*) fThrowError "Unknown option: '${1}' (try --help)." ;;
 	esac; done
 
+	local area def known
+	for area in "${testAreas[@]}"; do
+		known=""
+		for def in "${testAreaDefs[@]}"; do [[ "${def%%|*}" != "${area}" ]]  ||  known=1; done
+		[[ -n "${known}" ]]  ||  fThrowError "Unknown area: '${area}'. --help lists them."
+	done
+
+	[[ "${runMode}" != "quick" ]]  ||  doQuick=1
+	## The hands-off modes leave the box, the remote and the tracked tree alone.
+	if fIsHandsOff; then
+		doQuietly=1  doInstall=0  doHooks=0  doPublish=0  doDemo=0  doFormat=0  doSync=0
+	fi
+
 	## Commit message: -m wins; else auto-generate when running quiet/unattended.
 	## An empty message when interactive lets the publish step open an editor.
 	local commitMessage="${cliMessage}"
@@ -184,7 +252,8 @@ fMain(){
 
 	# Validate dependencies
 	fMustBeInPath realpath
-	((inContainer))  ||  fMustBeInPath trash
+	## Only the publish script uses it, and a hosted runner has none.
+	((inContainer || ! doPublish || doList))  ||  fMustBeInPath trash
 
 	## Resolve paths
 	fResolvePath  dirPath_Base                                 "${dirPath_Base}"                                   ; readonly dirPath_Base
@@ -200,11 +269,15 @@ fMain(){
 	[[ -f "${filePath_CICD_TestExec}"  ]]  ||  fThrowError "File not found: '${filePath_CICD_TestExec}'"
 	[[ -n "${gitAutomationScript}"     ]]  ||  fThrowError "Git automation script not found where specified or in path: '${gitAutomationScript}'."
 
+	declare hooksDir="${dirPath_Base}/../../private/cicd-hooks"
+	if ((doList)); then fList; return 0; fi
+
 	## Prompt to continue
 	if ((! doQuietly)); then
 		fCopyright
 		fAbout
 		fEcho_Clean
+		fEcho_Clean "Mode .........................: ${runMode}"
 		fEcho_Clean "Source directory .............: ${dirPath_Source}"
 		if ((isCompileProject)); then
 		fEcho_Clean "Executable to build ..........: ${filePath_ExecToTestAndInstall_BuildLocation}"
@@ -212,7 +285,7 @@ fMain(){
 		fi
 		fEcho_Clean "Test script ..................: ${filePath_CICD_TestExec}"
 		if ((doQuick)); then
-		fEcho_Clean "Quick mode ...................: cross-builds + packaging + fuzz + remote tests + profiler + demo + govulncheck + gosec skipped"
+		fEcho_Clean "Quick mode ...................: cross-builds + packaging + remote tests + profiler + demo skipped"
 		fi
 		if ((doNoArm)); then
 		fEcho_Clean "No-arm mode ..................: arm64 builds + packages skipped (amd64 only)"
@@ -280,7 +353,6 @@ fMain(){
 
 	## Every step is counted before the first one runs. The run in the container
 	## takes the outer run's list, so its numbers carry on.
-	declare hooksDir="${dirPath_Base}/../../private/cicd-hooks"
 	if ((inContainer)) && [[ -n "${NGDB_STEPS:-}" ]]; then fSteps_Import
 	else fSteps_PlanAll; fi
 
@@ -296,7 +368,11 @@ fMain(){
 				containerLine="Container: ${containerWhy}, so build and test run on this host."
 			fi
 		fi
-		fSteps_Header "${exeName} CI/CD" "${containerLine}" "CPUs: ${NGDB_CORES}, load ${NGDB_LOAD}. A step gets half, or a quarter for fuzz or when the load is over half."
+		local -a headerLines=()
+		[[ -z "${aliasNote}" ]]  ||  headerLines+=("${aliasNote}")
+		((${#testAreas[@]} == 0))  ||  headerLines+=("Test areas: ${testAreas[*]}")
+		[[ -z "${leakOpt}" ]]  ||  headerLines+=("${leakOpt}: there are no leak checks yet.")
+		fSteps_Header "${exeName} CI/CD, ${runMode}" "${headerLines[@]}" "${containerLine}" "CPUs: ${NGDB_CORES}, load ${NGDB_LOAD}. A step gets half, or a quarter for fuzz or when the load is over half."
 	fi
 
 	if ((useContainer))  &&  fContainer_Ready; then
@@ -389,7 +465,8 @@ fMain(){
 		local -a gitArgs=()
 		if ((doQuietly));                then gitArgs+=(--quiet); fi
 		if [[ -n "${commitMessage}" ]];  then gitArgs+=("--message=${commitMessage}"); fi
-		doPromptToContinue=0  "${gitAutomationScript}"  "${gitArgs[@]}"
+		## This run already passed what the pre-push hook's --merge-gate would check.
+		doPromptToContinue=0  SKIP_GATE=1  "${gitAutomationScript}"  "${gitArgs[@]}"
 		fStep_End
 	fi
 
@@ -403,34 +480,83 @@ fMain(){
 ## Every step in run order, on or off, with why it's off. The conditions here
 ## are the only ones; each step below runs when fStep finds it in this list.
 fSteps_PlanAll(){
-	local why
+	local why quick=""  bq=""  off
+	((! doQuick))  ||  quick="--quick"
+	[[ "${runMode}" != "backlog-quick" ]]  ||  bq="--backlog-run-quick"
 	if ((isCompileProject)); then
-		fStep_Plan "Build (native debug)"
+		fStep_Plan "Build (native debug)" "${bq}"
 		fStep_Plan "Build (native release)"
-		why="";  ((! doQuick))  ||  why="--quick"
-		fStep_Plan "Cross-compile + package" "${why}"
+		fStep_Plan "Cross-compile + package" "${bq:-${quick}}"
 	fi
 	fStep_Plan "Lint + format"
 	fStep_Plan "Tests"
-	why="";  ((! doQuick))  ||  why="--quick"
-	fStep_Plan "Fuzz" "${why}"
-	fStep_Plan "Security + supply-chain"
+	fStep_Plan "Fuzz" "${bq}"
+	fStep_Plan "Security + supply-chain" "${bq}"
 	## The rest runs on this machine, never in the container.
 	((! inContainer))  ||  return 0
 
-	why="";  ((! doQuick))  ||  why="--quick";  ((doRemote))  ||  why="--no-remote"
+	why="${bq:-${quick}}";  ((doRemote))  ||  why="--no-remote"
 	fStep_Plan "Remote tests" "${why}"
-	why="";  ((doInstall))  ||  why="--no-install"
+	why="";  ((doInstall))  ||  { fOff --no-install; why="${off}"; }
 	fStep_Plan "Dogfood" "${why}"
-	why="";  [[ -x "${dirPath_Base}/cicd/utility/profile.bash" ]]  ||  why="no cicd/utility/profile.bash";  ((! doQuick))  ||  why="--quick"
+	why="";  [[ -x "${dirPath_Base}/cicd/utility/profile.bash" ]]  ||  why="no cicd/utility/profile.bash";  why="${bq:-${quick:-${why}}}"
 	fStep_Plan "Profiler" "${why}"
-	why="";  [[ -x "${dirPath_Base}/cicd/utility/demo-video/demo-video.py" ]]  ||  why="no demo-video.py";  ((doDemo))  ||  why="--no-demo";  ((! doQuick))  ||  why="--quick"
+	why="";  [[ -x "${dirPath_Base}/cicd/utility/demo-video/demo-video.py" ]]  ||  why="no demo-video.py";  ((doDemo))  ||  { fOff --no-demo; why="${off}"; };  why="${quick:-${why}}"
 	fStep_Plan "Demo recording" "${why}"
-	why="";  [[ -d "${hooksDir}" ]]  ||  why="no ${hooksDir}";  ((doHooks))  ||  why="--no-hooks"
+	why="";  [[ -d "${hooksDir}" ]]  ||  why="no ${hooksDir}";  ((doHooks))  ||  { fOff --no-hooks; why="${off}"; }
 	fStep_Plan "Local hooks" "${why}"
-	why="";  ((doPublish))  ||  why="--no-publish"
+	why="";  ((doPublish))  ||  { fOff --no-publish; why="${off}"; }
 	fStep_Plan "Backup + publish" "${why}"
 }
+
+fIsHandsOff(){ [[ "${runMode}" == backlog-* || "${runMode}" == "merge-gate" ]]; }
+## Sets the caller's off: the flag a person would give, or the hands-off mode that turned it off.
+fOff(){ if fIsHandsOff; then off="--${runMode/#backlog-/backlog-run-}"; else off="${1}"; fi; }
+
+## --list: the plan, then the test IDs of each step that runs tests. Runs nothing.
+fList(){
+	fSteps_PlanAll
+	local s ids pkg name id def area
+	local -i n=0
+	[[ -z "${aliasNote}" ]]  ||  fEcho_Clean "${aliasNote}"
+	fEcho_Clean "${exeName} CI/CD, ${runMode}: ${#stepsOn[@]} steps, ${#stepsOff[@]} off"
+	for s in "${stepsOn[@]}"; do fEcho_Clean "Step $((++n)): ${s}"; done
+	for s in "${stepsOff[@]}"; do fEcho_Clean "Off: ${s}"; done
+	command -v go &> /dev/null  ||  { fEcho_Clean "No go here, so no test IDs."; return 0; }
+	ids="$(GOFLAGS='' go -C "${dirPath_Base}/cicd/utility/testid" run . ids "${dirPath_Base}")"  ||  fThrowError "Couldn't read the test IDs."
+
+	## The areas as import path prefixes. ngdb-testid is its own module, run only with no areas.
+	local -r modPath="$(sed -n 's/^module //p' "${dirPath_Source}/go.mod")"
+	local -a prefixes=()
+	for area in "${testAreas[@]}"; do
+		for def in "${testAreaDefs[@]}"; do
+			[[ "${def%%|*}" == "${area}" ]]  ||  continue
+			for pkg in ${def#*|}; do pkg="${pkg#./}"; prefixes+=("${modPath}/${pkg%/...}"); done
+		done
+	done
+	if fStep_IsOn "Tests"; then
+		fEcho_Clean "Tests:"
+		while read -r pkg name id; do
+			if ((${#prefixes[@]})); then
+				local hit=""
+				for s in "${prefixes[@]}"; do [[ "${pkg}" != "${s}" && "${pkg}" != "${s}/"* ]]  ||  hit=1; done
+				[[ -n "${hit}" ]]  ||  continue
+			fi
+			fEcho_Clean "${id} ${pkg#"${modPath}/"} ${name}"
+		done <<< "${ids}"
+	fi
+	if fStep_IsOn "Fuzz"; then
+		fEcho_Clean "Fuzz:"
+		while read -r pkg name id; do
+			[[ "${name}" == Fuzz* ]]  &&  fEcho_Clean "${id} ${pkg#"${modPath}/"} ${name}"
+		done <<< "${ids}"
+	fi
+	! fStep_IsOn "Build (native release)"  ||  fEcho_Clean "Build (native release) runs the CLI smoke, cicd/utility/smoke-cli.bash, which has no per-test IDs."
+	! fStep_IsOn "Remote tests"            ||  fEcho_Clean "Remote tests: the module's tests above and the CLI smoke, on each box."
+	return 0
+}
+
+fStep_IsOn(){ local s; for s in "${stepsOn[@]}"; do [[ "${s}" != "${1}" ]]  ||  return 0; done; return 1; }
 
 ## Opens a step that's planned, after checking the load again. Fuzz gets a
 ## quarter of the CPUs, busy or not.
@@ -472,6 +598,7 @@ fStages_BuildAndTest(){
 		fEcho_Clean "version check (release):"
 		"${filePath_ExecToTestAndInstall_BuildLocation}" --version
 		fEcho_Clean "Built ${filePath_ExecToTestAndInstall_BuildLocation}"
+		NGDB_SMOKE_EXPECT_DATE=1 "${dirPath_Base}/cicd/utility/smoke-cli.bash" "${filePath_ExecToTestAndInstall_BuildLocation}"
 
 		## Bump guard: app.Version is authoritative in source; a release tags v<Version>.
 		## If that tag already exists the version wasn't bumped since the last release -
@@ -517,28 +644,37 @@ fStages_BuildAndTest(){
 	## Lint + format. gofmt rewrites Go source in place (the language standard;
 	## Bash is never auto-formatted). staticcheck is the deeper linter and resolves
 	## its own module, so it runs outside vendor mode. go vet lives in test.bash.
-	## Under --quick, staticcheck's network fetch is skipped (gofmt still runs).
+	## gofmt covers the whole module but vendor/, as hosted CI always did. Walking
+	## vendor/ only to drop it costs 20 CPU seconds.
 	fStep "Lint + format"  ||  fThrowError "Lint isn't planned."
-	if ((doFormat)); then
-		( cd "${dirPath_Source}"  &&  gofmt -w cmd internal )
-		fEcho_Clean "gofmt: formatted in place"
+	local -a goRoots=()
+	mapfile -t goRoots < <(cd "${dirPath_Source}"  &&  find . -mindepth 1 -maxdepth 1 \( -type d ! -name vendor ! -name '.*' \) -o \( -type f -name '*.go' \))
+	local unformatted  ## split so a gofmt parse error isn't masked by 'local'
+	unformatted="$(cd "${dirPath_Source}"  &&  gofmt -l "${goRoots[@]}")"
+	if [[ -z "${unformatted}" ]]; then
+		fEcho_Clean "gofmt: clean"
+	elif ((doFormat)); then
+		( cd "${dirPath_Source}"  &&  mapfile -t files <<< "${unformatted}"  &&  gofmt -w "${files[@]}" )
+		fEcho_Clean "gofmt: formatted in place:"$'\n'"${unformatted}"
 	else
-		local unformatted  ## split so a gofmt parse error isn't masked by 'local'
-		unformatted="$(cd "${dirPath_Source}"  &&  gofmt -l cmd internal)"
-		[[ -z "${unformatted}" ]]  ||  fThrowError "gofmt needed (--no-format leaves them as is):\n${unformatted}"
-		fEcho_Clean "gofmt: clean (check only, --no-format)"
+		fThrowError "gofmt needed (--no-format and the hands-off modes leave them as is):\n${unformatted}"
 	fi
-	if ((doQuick)); then
-		fEcho_Clean "staticcheck skipped (--quick)"
-	else
-		( cd "${dirPath_Source}"  &&  GOFLAGS=  go run "${NGDB_STATICCHECK}" ./... )
-		fEcho_Clean "staticcheck: clean"
-	fi
+	( cd "${dirPath_Source}"  &&  GOFLAGS=  go run "${NGDB_STATICCHECK}" ./... )
+	fEcho_Clean "staticcheck: clean"
 	fStep_End
 
 	## Test
 	fStep "Tests"  ||  fThrowError "Tests aren't planned."
-	"${filePath_CICD_TestExec}"
+	local -a testPkgs=() pkgs=()
+	local area def
+	for area in "${testAreas[@]}"; do
+		for def in "${testAreaDefs[@]}"; do
+			[[ "${def%%|*}" == "${area}" ]]  ||  continue
+			read -r -a pkgs <<< "${def#*|}"; testPkgs+=("${pkgs[@]}")
+		done
+	done
+	((${#testPkgs[@]} == 0))  ||  fEcho_Clean "Only the areas ${testAreas[*]}: ${testPkgs[*]}"
+	"${filePath_CICD_TestExec}" "${testPkgs[@]}"
 	fEcho_Clean "Tests passed"
 	fStep_End
 
@@ -551,9 +687,9 @@ fStages_BuildAndTest(){
 		fStep_End
 	fi
 
-	## Security + supply-chain. go mod verify is quick and offline; govulncheck and
-	## gosec each pull a tool over the network and are the slow ones, so --quick
-	## skips them (the offline checks all live in test.bash). Real findings fail.
+	## Security + supply-chain. go mod verify is offline; govulncheck and gosec
+	## each pull a tool over the network. All 3 take about a minute, so --quick
+	## keeps them, and only --backlog-run-quick leaves them out. Real findings fail.
 	##
 	## gosec excludes below are all justified for this local-first, single-user,
 	## git-synced tool:
@@ -567,19 +703,16 @@ fStages_BuildAndTest(){
 	##   G203            template.HTML/CSS - only wraps dev-computed layout CSS, never user input
 	##   G124            cookie Secure - set under HTTPS; local mode is loopback-only HTTP
 	##   G101            false positive on a filename constant
-	fStep "Security + supply-chain"  ||  fThrowError "Security isn't planned."
-	fEcho_Clean "go mod verify$( ((doQuick)) || echo ", govulncheck and gosec")"
-	( cd "${dirPath_Source}"  &&  go mod verify )
-	if ((doQuick)); then
-		fEcho_Clean "Module verified (govulncheck + gosec skipped: --quick)"
-	else
+	if fStep "Security + supply-chain"; then
+		fEcho_Clean "go mod verify, govulncheck and gosec"
+		( cd "${dirPath_Source}"  &&  go mod verify )
 		( cd "${dirPath_Source}"  &&  GOFLAGS=  go run "${NGDB_GOVULNCHECK}" ./... )
 		fEcho_Clean "No known vulnerabilities (govulncheck)"
 		( cd "${dirPath_Source}"  &&  GOFLAGS=  go run "${NGDB_GOSEC}" -concurrency "${NGDB_JOBS}" \
 			-exclude=G101,G104,G124,G202,G203,G204,G301,G302,G304,G306,G703 -quiet ./... )
 		fEcho_Clean "No security findings (gosec)"
+		fStep_End
 	fi
-	fStep_End
 
 	popd 1>/dev/null
 
@@ -637,6 +770,8 @@ fInnerArgs(){
 	((! doQuick))   ||  innerArgs+=(--quick)
 	((! doNoArm))   ||  innerArgs+=(--no-arm)
 	((doFormat))    ||  innerArgs+=(--no-format)
+	## The mode last, since --backlog-run-quick takes the words after it as areas.
+	! fIsHandsOff   ||  innerArgs+=("--${runMode/#backlog-/backlog-run-}" "${testAreas[@]}")
 	return 0
 }
 
@@ -999,3 +1134,4 @@ fMain  "${@}"
 ##		- 20261025 JC: Tests on the other boxes (cicd/utility/remote-test.bash) after build and test; --no-remote skips them.
 ##		- 20261025 JC: Each run gets its own temp folder, removed at the end along with its containers, dangling images and old image tags; --keep-temp keeps them.
 ##		- 20261025 JC: Step lines with the count, time and PASS or FAIL, planned up front; the load is checked before each step.
+##		- 20261025 JC: The shared flags: --backlog-run-quick with areas, --backlog-run-full, --merge-gate, --long, --list, and the taken ones. --quick keeps fuzz and security. The CLI smoke after the release build.

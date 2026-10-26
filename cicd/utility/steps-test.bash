@@ -127,7 +127,7 @@ fRunShape(){  ## log, PASS|FAIL
 fQuickRun(){
 	nice -n 19 bash "${repoRoot}/cicd/cicd.bash" "${flags[@]}" > "${runDir}/pass.out" 2>&1  ||  { tail -20 "${runDir}/pass.out"; return 1; }
 	fRunShape "${runDir}/pass.out" PASS  &&  grep -qF 'CI/CD: done; PASS' "${runDir}/pass.out" \
-		&&  grep -qE '^Off: Fuzz \(--quick\)$' "${runDir}/pass.out" \
+		&&  grep -qE '^Off: Cross-compile \+ package \(--quick\)$' "${runDir}/pass.out" \
 		&&  [[ "$(grep -cE '^Jobs: [0-9]+ of [0-9]+ CPUs, load ' "${runDir}/pass.out")" == "$(grep -cE 'Step [0-9]+ of [0-9]+; Starting ' "${runDir}/pass.out")" ]]
 }
 fCheck dedq7 "a quick host run numbers every step and closes each with PASS" fQuickRun

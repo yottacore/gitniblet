@@ -1,0 +1,11 @@
+# Paths the pre-push hook doesn't gate a push to main for. A push whose
+# commits change only these skips cicd.bash --merge-gate. One shell glob a
+# line, matched against the repo-relative path, where * also matches /.
+# project/ isn't listed whole, since the tests read project/example.shcl.
+# Its docs are .md, so the first line covers them. The workflows stay gated,
+# since release.yml runs on main.
+*.md
+assets/*
+.github/CODEOWNERS
+.github/FUNDING.yml
+.github/dependabot.yml

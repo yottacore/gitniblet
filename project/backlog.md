@@ -221,6 +221,54 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: cicd1025
 	- Test case: `cicd/utility/cleanup-test.bash`, dedp4 to dedpb.
 
+- CICD reset: standard flags.
+	- ID: 2026102416210004
+	- Type: Task
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: `cicd/cicd.bash --backlog-run-full`, from the round worktree, with the container and the boxes. It's the full run line from now on, and runs the same steps as `--merge-gate`.
+	- Needs external testing: `ci.yml` on the round branch, by `workflow_dispatch`. Its Linux job now runs `cicd.bash --merge-gate --no-container --no-remote`, with nsis.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Prereq IDs: 2026101303344552, 2026102416210001, 2026102416210006
+		- `--no-container`, `--no-remote` and `--keep-temp` turn off what those 3 add, so they go in first.
+	- Related IDs: 2026102520025738
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, the flags in the CICD style guide, and Merge gate.
+		- Add the flags every project takes: `--long` with `--slow` as another name, `--leakcheck`, `--no-leakcheck`, `--backlog-run-quick [<area>...]`, `--backlog-run-full`, `--merge-gate`, `--no-container`, `--no-remote`, `--no-sync`, `--keep-temp`, and `--list`. `--gate` and `--ci` are other names for `--backlog-run-quick` and `--merge-gate`, and say so in one line. The existing `--no-<stage>` flags stay.
+		- The default run takes about an hour at most, and `--quick` about 10 minutes. `--quick` still copies the release build to dogfood.
+		- `--backlog-run-quick` takes about 4 minutes, and `--help` lists its areas.
+		- `--backlog-run-quick`, `--backlog-run-full`, and `--merge-gate` never dogfood, publish, commit, push, install, sync, or rewrite a tracked file, and never prompt.
+		- A pre-push hook runs `--merge-gate` on a push to main only, and skips it when the commits change only docs and project files, from one path list the hook reads. A push to dev is never gated.
+		- `ci.yml` runs `--merge-gate` as far as the runner can, in place of its own list of steps.
+		- Once it's in, these flags replace the gate commands and the full-run line in the private round settings.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: `cicd.bash` takes the shared flags. `--backlog-run-quick [<area>...]` runs the release build with the CLI smoke, the gofmt check, staticcheck and the tests, or only the tests of the areas named, which `--help` lists. `--backlog-run-full` and `--merge-gate` run every check of the default run. Those 3 turn off dogfood, demo, hooks, publish and `gofmt -w`, and never prompt. `--gate` and `--ci` say in one line what they stand for.
+		- `--long` and `--slow` are the default run, since nothing here takes hours. `--leakcheck`, `--no-leakcheck` and `--no-sync` are taken, with nothing to turn on or off yet. `--list` prints the plan and the test IDs, and runs nothing.
+		- `--quick` now keeps fuzz, staticcheck, govulncheck and gosec, per the shared rules, and still dogfoods. The CLI smoke runs after the release build in every mode.
+		- gofmt covers the whole module but `vendor/`, as `ci.yml` did.
+		- `cicd/utility/git-hooks/pre-push` runs `--merge-gate` on the pushed commit in a scratch worktree, for a push to main only. `no-gate-paths` beside it lists what skips it: `*.md`, `assets/` and 3 git host files. The publish stage sets `SKIP_GATE=1`, since its run already passed. The floss main checkout has it turned on through `core.hooksPath`.
+		- `ci.yml`'s Linux job runs `--merge-gate --no-container --no-remote` in place of its own steps. The macOS job keeps its own, since `cicd.bash` needs a newer bash than macOS has.
+		- design.md, README and `--help` say so.
+		- Verified: `flags-test.bash` deecd to deeck pass. deecd to deecg fail on the old `cicd.bash`. deech, deecj and deeck fail with a hook that ignores main, a path list that skips everything, no cleanup, or an exit that's dropped.
+		- Verified: `--backlog-run-quick` passed through the container in 26s and on the host in 12s, with warm caches at load 18 to 30. `--gate cli seams` ran only those 23 tests. `--merge-gate --no-container --no-remote` passed its 8 steps in 115s wall and 501s user at load 24, and changed no tracked file.
+		- Verified: `steps-test.bash`, `cleanup-test.bash` and `container-fallback-test.bash` pass. dedpb failed once at load 31, then passed twice. That's 2026102520025738.
+		- Departs from the requirements: `project/example.shcl` stays gated, since the tests read it. The rest of `project/` is `.md` and skips the gate.
+		- 20261025: `steps-test.bash` dedq7 now checks for `Off: Cross-compile + package (--quick)` in place of `Off: Fuzz (--quick)`, since `--quick` keeps fuzz. The rest of it is the same.
+		- Swept: every `--quick`, `doQuick` and `fStep` site in `cicd.bash`, the 4 test scripts that run it, `ci.yml`, `release.yml`, which doesn't call it, and the docs that name the flags. Enterprise `cicd.bash` has none of these stages, and vendor has no `cicd.bash`.
+	- Decisions:
+		- `--backlog-run-quick` leaves out the debug build, fuzz and the security scan, to stay well under 4 minutes. `--backlog-run-full` has them.
+		- Areas narrow only the tests. Lint and the build take seconds, so they stay whole.
+		- `--backlog-run-full` and `--merge-gate` keep the profiler, as the old full run line did. It writes only to the ignored `cicd/artifacts/`.
+		- `project/` isn't in `no-gate-paths` whole, since the tests read `project/example.shcl`. Its docs are `.md`. The workflows stay gated, since `release.yml` runs on main.
+		- `trash` is required only when publish runs, so a hosted runner needs none.
+		- The remote sync and the leak checks are 2026102416210008's. The CLI smoke in `cicd.bash`, also on that item, is done here.
+	- Branch: r1025
+	- Test case: `cicd/utility/flags-test.bash`, deecd to deeck. No pipeline stage runs it.
+
 - A `null_ok: no` field with no default makes its table drop every row, silently.
 	- ID: 2026102407331876
 	- Type: Bug
@@ -471,27 +519,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Commit: e37fe11
 	- Test case: `TestBuildNumber` (dedrs) and `TestVersionLine` (debg5) in `source/app/app_test.go`, and the version checks in `smoke-cli.bash`.
 
-- CICD reset: standard flags.
-	- ID: 2026102416210004
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261024-162100
-	- Opened by: JC
-	- Prereq IDs: 2026101303344552, 2026102416210001, 2026102416210006
-		- `--no-container`, `--no-remote` and `--keep-temp` turn off what those 3 add, so they go in first.
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per the shared CICD rules, the flags in the CICD style guide, and Merge gate.
-		- Add the flags every project takes: `--long` with `--slow` as another name, `--leakcheck`, `--no-leakcheck`, `--backlog-run-quick [<area>...]`, `--backlog-run-full`, `--merge-gate`, `--no-container`, `--no-remote`, `--no-sync`, `--keep-temp`, and `--list`. `--gate` and `--ci` are other names for `--backlog-run-quick` and `--merge-gate`, and say so in one line. The existing `--no-<stage>` flags stay.
-		- The default run takes about an hour at most, and `--quick` about 10 minutes. `--quick` still copies the release build to dogfood.
-		- `--backlog-run-quick` takes about 4 minutes, and `--help` lists its areas.
-		- `--backlog-run-quick`, `--backlog-run-full`, and `--merge-gate` never dogfood, publish, commit, push, install, sync, or rewrite a tracked file, and never prompt.
-		- A pre-push hook runs `--merge-gate` on a push to main only, and skips it when the commits change only docs and project files, from one path list the hook reads. A push to dev is never gated.
-		- `ci.yml` runs `--merge-gate` as far as the runner can, in place of its own list of steps.
-		- Once it's in, these flags replace the gate commands and the full-run line in the private round settings.
-	- Estimated effort: Avg
-
 - Regression tests for all completed features and bug reports.
 	- ID: 2026101915305767
 	- Type: Task
@@ -573,6 +600,22 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Expected behavior [Bug]: The box's load is read, and the job count drops to a quarter when it's over half, as on the other boxes.
 	- Reproduced [Bug]: 20261025, in the full run on `cicd1025`.
 	- Possible cause [Bug]: A source that doesn't need WMI, such as `Get-Counter` on the processor time, might work for a non-admin. Not tried.
+	- Estimated effort: Low
+
+- `cleanup-test.bash` dedpb can take 30s to stop after Ctrl+C under load.
+	- ID: 2026102520025738
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261025-200257
+	- Opened by: JC
+	- Related IDs: 2026102416210006, 2026102416210004
+	- Steps to reproduce [Bug]:
+		- Run `cicd/utility/cleanup-test.bash` with the box busy, at load 31 on 32 CPUs.
+	- Incorrect behavior [Bug]: dedpb fails with "took 30s to stop". The run waited out the hanging docker stand-in rather than stopping on Ctrl+C.
+	- Expected behavior [Bug]: The run stops within 10 seconds of Ctrl+C every time.
+	- Reproduced [Bug]: Once in 3 runs on 20261025, while testing 2026102416210004. The other 2 passed.
+	- Possible cause [Bug]: The test sends Ctrl+C as soon as the stand-in logs `run`, which may be before `cicd.bash` reaches its `wait`. Not checked.
 	- Estimated effort: Low
 
 - A user table that restates a built-in table merges into it, as a system field does.
