@@ -21,6 +21,7 @@ repoRoot="$(realpath -e "$(dirname "$0")/../..")"
 # shellcheck source=include/temp-run.bash
 source "${repoRoot}/cicd/utility/include/temp-run.bash"
 runDir="$(fTempDir_Make cleanup-test)"  ||  exit 1
+export NGDB_LOG_DIR="${runDir}/logs"
 fCleanup(){ jobs -p | xargs -r kill 2> /dev/null; fSafeRm "${runDir}" > /dev/null; }
 trap fCleanup EXIT
 
@@ -91,7 +92,7 @@ chmod +x "${runDir}/bin/docker"
 fCicd(){  ## mode, log, then extra args
 	local mode="$1" log="$2"; shift 2
 	env -u NGDB_RUN_DIR DMODE="${mode}" DLOG="${log}" DCUR="${cur}" NGDB_DOCKER="${runDir}/bin/docker" HOST_TEMP="${runDir}/cicd" \
-		nice -n 19 bash "${repoRoot}/cicd/cicd.bash" -q --quick --no-remote --no-install --no-hooks --no-publish --no-demo --no-format "$@"
+		nice -n 19 bash "${repoRoot}/cicd/cicd.bash" -q --quick --no-sync --no-remote --no-install --no-hooks --no-publish --no-demo --no-format "$@"
 }
 fLeft(){ find "${runDir}/cicd/${tempProject}" -mindepth 1 -maxdepth 1 2> /dev/null | wc -l; }
 fRanWith(){ grep -E '^run ' "$1" | grep -qF -- "$2"; }
@@ -170,3 +171,4 @@ exit $((fails > 0))
 
 ##	History:
 ##		- 20261025 JC: Created.
+##		- 20261025 JC: Run logs go in the test's folder.

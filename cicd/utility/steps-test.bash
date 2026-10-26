@@ -24,6 +24,7 @@ inc="${repoRoot}/cicd/utility/include"
 # shellcheck source=include/temp-run.bash
 source "${inc}/temp-run.bash"
 runDir="$(fTempDir_Make steps-test)"  ||  exit 1
+export NGDB_LOG_DIR="${runDir}/logs"  ## so the real runs below never pass for the newest run log
 trap 'fSafeRm "${runDir}" > /dev/null' EXIT
 
 declare -i fails=0
@@ -105,7 +106,7 @@ fCheck dedq6 "a nested run takes the outer run's step list" fNested
 
 ## cicd.bash itself, on this host. Every step opens and closes in order, the
 ## count matches, and the run ends on a blank line.
-flags=(-q --quick --no-remote --no-container --no-install --no-hooks --no-publish --no-demo --no-format)
+flags=(-q --quick --no-sync --no-remote --no-container --no-install --no-hooks --no-publish --no-demo --no-format)
 fRunShape(){  ## log, PASS|FAIL
 	awk -v want="$2" '
 		/^\[ [0-9]+-[0-9]+\.[0-9]+: .*; [0-9]+ steps/ { split($0, h, "; "); sub(/ steps.*/, "", h[2]); total = h[2] + 0; next }
@@ -127,10 +128,17 @@ fRunShape(){  ## log, PASS|FAIL
 fQuickRun(){
 	nice -n 19 bash "${repoRoot}/cicd/cicd.bash" "${flags[@]}" > "${runDir}/pass.out" 2>&1  ||  { tail -20 "${runDir}/pass.out"; return 1; }
 	fRunShape "${runDir}/pass.out" PASS  &&  grep -qF 'CI/CD: done; PASS' "${runDir}/pass.out" \
-		&&  grep -qE '^Off: Fuzz \(--quick\)$' "${runDir}/pass.out" \
+		&&  grep -qE '^Off: Cross-compile \+ package \(--quick\)$' "${runDir}/pass.out" \
 		&&  [[ "$(grep -cE '^Jobs: [0-9]+ of [0-9]+ CPUs, load ' "${runDir}/pass.out")" == "$(grep -cE 'Step [0-9]+ of [0-9]+; Starting ' "${runDir}/pass.out")" ]]
 }
+lintDir="${repoRoot}/cicd/artifacts/lint"
+lintBefore="$(find "${lintDir}" -maxdepth 1 -name 'run_*.log' -newer "${runDir}" 2> /dev/null | wc -l)"
 fCheck dedq7 "a quick host run numbers every step and closes each with PASS" fQuickRun
+fLogDir(){
+	compgen -G "${NGDB_LOG_DIR}/run_*.log" > /dev/null  ||  { echo "  no run log in ${NGDB_LOG_DIR}"; return 1; }
+	(( $(find "${lintDir}" -maxdepth 1 -name 'run_*.log' -newer "${runDir}" 2> /dev/null | wc -l) == lintBefore ))  ||  { echo "  a new log in ${lintDir}"; return 1; }
+}
+fCheck deef2 "a run's log goes to NGDB_LOG_DIR, not cicd/artifacts/lint" fLogDir
 
 ## A go that always fails, so the first step does.
 mkdir -p "${runDir}/bin"
@@ -143,11 +151,12 @@ fFailRun(){
 fCheck dedq8 "a failing step closes with FAIL and the run stops" fFailRun
 
 ## A docker stand-in that logs and passes, so only the run's arguments are checked.
-printf '#!/bin/bash\necho "$*" >> "%s"\n[[ "$1" != version ]] || echo 29\nexit 0\n' "${runDir}/docker.log" > "${runDir}/bin/docker"
+## Its run ends as the real run inside does, with a step's PASS line and a blank.
+printf '#!/bin/bash\necho "$*" >> "%s"\n[[ "$1" != version ]] || echo 29\n[[ "$1" != run ]] || printf "%%s\\n\\n" "[ 20261025-000000.00: Step 5 of 5; PASS Security + supply-chain ]"\nexit 0\n' "${runDir}/docker.log" > "${runDir}/bin/docker"
 chmod +x "${runDir}/bin/docker"
 fContainerArgs(){
 	local run
-	local -a ctrFlags=(-q --quick --no-remote --no-install --no-hooks --no-publish --no-demo --no-format)
+	local -a ctrFlags=(-q --quick --no-sync --no-remote --no-install --no-hooks --no-publish --no-demo --no-format)
 	NGDB_DOCKER="${runDir}/bin/docker" nice -n 19 bash "${repoRoot}/cicd/cicd.bash" "${ctrFlags[@]}" > "${runDir}/ctr.out" 2>&1  ||  { tail -20 "${runDir}/ctr.out"; return 1; }
 	run="$(grep '^run ' "${runDir}/docker.log")"
 	[[ "${run}" =~ --cpus\ ([0-9]+)\ --cpu-shares\ 256\ .*-e\ NGDB_STEPS\ -e\ NGDB_JOBS_CAP=([0-9]+)\ .*/etc/localtime:/etc/localtime:ro.*\ nice\ -n\ 19\ bash\  ]] \
@@ -157,8 +166,17 @@ fContainerArgs(){
 }
 fCheck dedq9 "the container gets --cpus, --cpu-shares 256, the step list, the cap and nice" fContainerArgs
 
+## Uses dedq9's output. The next section on this host follows the run inside after one blank, not two.
+fOneBlank(){
+	grep -qF 'PASS Security + supply-chain ]' "${runDir}/ctr.out"  ||  { echo "  no output from the run inside"; return 1; }
+	! awk 'prev == "" && $0 == "" && NR > 1 { print "  2 blank lines at line " NR; bad = 1 } { prev = $0 } END { exit !bad }' "${runDir}/ctr.out"
+}
+fCheck deed8 "one blank line between the run in the container and the next section" fOneBlank
+
 exit $((fails > 0))
 
 
 ##	History:
 ##		- 20261025 JC: Created.
+##		- 20261025 JC: One blank after the run in the container.
+##		- 20261025 JC: Run logs go in the test's folder.

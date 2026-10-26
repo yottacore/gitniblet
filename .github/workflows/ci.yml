@@ -1,6 +1,7 @@
 # Safety-net CI: proves the tree builds and passes off this machine, on Linux
-# and arm64 macOS. The full local pipeline (fuzz, profiling, dogfood, publish)
-# stays in cicd/cicd.bash.
+# and arm64 macOS. Linux runs cicd/cicd.bash --merge-gate as far as a runner
+# can: on the runner itself, with no test boxes. The full local pipeline
+# (dogfood, demo, publish) stays in cicd/cicd.bash.
 name: CI
 
 on:
@@ -16,35 +17,22 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: source
     steps:
       - uses: actions/checkout@v7
+        with:
+          # goreleaser's snapshot reads the tags.
+          fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
           go-version: '1.26.10'
           cache-dependency-path: source/go.sum
-      - name: gofmt
-        run: |
-          unformatted=$(gofmt -l . | grep -v '^vendor/' || true)
-          if [ -n "$unformatted" ]; then echo "needs gofmt:"; echo "$unformatted"; exit 1; fi
-      - name: vet
-        run: go vet -mod=vendor ./...
-      - name: test
-        run: |
-          set -o pipefail
-          go -C ../cicd/utility/testid run . check "$GITHUB_WORKSPACE"
-          { go test -mod=vendor -json ./...  &&  go -C ../cicd/utility/testid test -json .; } | go -C ../cicd/utility/testid run . report "$GITHUB_WORKSPACE"
-      - name: build
-        run: go build -mod=vendor ./...
-      - name: smoke
-        working-directory: .
-        run: |
-          bash cicd/build.bash
-          NGDB_SMOKE_EXPECT_DATE=1 bash cicd/utility/smoke-cli.bash bin/ngdb
+      - name: nsis
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends nsis
+      - name: merge gate
+        run: bash cicd/cicd.bash --merge-gate --no-container --no-remote
 
   # GitHub's free arm64 macOS runner. Build, test, then smoke-test the built CLI.
+  # Its own steps, since cicd.bash needs a newer bash than macOS has.
   macos:
     runs-on: macos-latest
     defaults:
