@@ -24,6 +24,7 @@ inc="${repoRoot}/cicd/utility/include"
 # shellcheck source=include/temp-run.bash
 source "${inc}/temp-run.bash"
 runDir="$(fTempDir_Make steps-test)"  ||  exit 1
+export NGDB_LOG_DIR="${runDir}/logs"  ## so the real runs below never pass for the newest run log
 trap 'fSafeRm "${runDir}" > /dev/null' EXIT
 
 declare -i fails=0
@@ -130,7 +131,14 @@ fQuickRun(){
 		&&  grep -qE '^Off: Cross-compile \+ package \(--quick\)$' "${runDir}/pass.out" \
 		&&  [[ "$(grep -cE '^Jobs: [0-9]+ of [0-9]+ CPUs, load ' "${runDir}/pass.out")" == "$(grep -cE 'Step [0-9]+ of [0-9]+; Starting ' "${runDir}/pass.out")" ]]
 }
+lintDir="${repoRoot}/cicd/artifacts/lint"
+lintBefore="$(find "${lintDir}" -maxdepth 1 -name 'run_*.log' -newer "${runDir}" 2> /dev/null | wc -l)"
 fCheck dedq7 "a quick host run numbers every step and closes each with PASS" fQuickRun
+fLogDir(){
+	compgen -G "${NGDB_LOG_DIR}/run_*.log" > /dev/null  ||  { echo "  no run log in ${NGDB_LOG_DIR}"; return 1; }
+	(( $(find "${lintDir}" -maxdepth 1 -name 'run_*.log' -newer "${runDir}" 2> /dev/null | wc -l) == lintBefore ))  ||  { echo "  a new log in ${lintDir}"; return 1; }
+}
+fCheck deef2 "a run's log goes to NGDB_LOG_DIR, not cicd/artifacts/lint" fLogDir
 
 ## A go that always fails, so the first step does.
 mkdir -p "${runDir}/bin"
@@ -171,3 +179,4 @@ exit $((fails > 0))
 ##	History:
 ##		- 20261025 JC: Created.
 ##		- 20261025 JC: One blank after the run in the container.
+##		- 20261025 JC: Run logs go in the test's folder.

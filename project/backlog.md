@@ -269,6 +269,73 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: r1025
 	- Test case: `cicd/utility/flags-test.bash`, deecd to deeck. No pipeline stage runs it.
 
+- Regression tests: run the ones no pipeline step runs yet.
+	- ID: 2026102520474880
+	- Type: Task
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: `cicd/cicd.bash --backlog-run-full`. The Race tests and Pipeline tests steps pass, with a `PASS` line for each ID in the 6 scripts, deef1 to deef3 included.
+	- Needs external testing: `ci.yml` on the round branch. Its Linux merge gate now runs Race tests, which needs gcc on the runner, and Pipeline tests. Check both pass, and how much longer the job takes.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-204748
+	- Opened by: JC
+	- Parent ID: 2026101915305767
+	- Related IDs: 2026102408252318, 2026102520025738
+	- Requirements [Feature]:
+		- Done items name these tests, but they run only by hand, so a regression in what they cover goes unseen, per the parent.
+		- The bash tests in `cicd/utility/`: `flags-test.bash`, `cleanup-test.bash`, `steps-test.bash`, `remote-skip-test.bash` and `container-fallback-test.bash`.
+		- The TUI simulation-screen tests under `-race`, for 2026102408252318.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: `cicd.bash` has 2 new steps on the host, after build and test: Race tests runs the TUI tests under `go test -race` at a quarter of the CPUs, and Pipeline tests runs every `cicd/utility/*-test.bash` but `remote-test.bash`, `sync-test.bash` included. `--list` names the IDs of both.
+		- A host with no C compiler lists Race tests as off, with the reason.
+		- `container-fallback-test.bash` dedme now edits a copy of `cicd/` and `go.mod`, so the tracked Dockerfile is never touched. The runs that the tests start keep their logs in the test's temp folder, through a new `NGDB_LOG_DIR`, so `lint-report.bash` never takes one for the newest run.
+		- `--help`, design.md's CI/CD pipeline and the README say so.
+		- Verified: `flags-test.bash` deef1 passes, and fails on the old `cicd.bash` and with `remote-test.bash` left in the step. `steps-test.bash` deef2 passes, and the old `cicd.bash` writes its log to `cicd/artifacts/lint` with `NGDB_LOG_DIR` set. `container-fallback-test.bash` deef3 passes, and fails with the old dedme.
+		- Verified: all 6 scripts pass, alone and under the environment the step gives them. The TUI tests passed under `-race` in 26s wall at load 2. A quick host run passed with Race tests in it. `--backlog-run-quick`, `testid check` and shellcheck pass.
+		- 20261025: `flags-test.bash` deecd's `--backlog-run-full` plan went from `...|Security + supply-chain|Remote tests|Profiler` to `...|Security + supply-chain|Race tests|Pipeline tests|Remote tests|Profiler`. deece's `--quick` plan went from `|Fuzz|Security + supply-chain|Dogfood|` to `|Fuzz|Security + supply-chain|Race tests|Dogfood|`, and its off list gained `Pipeline tests (--quick)` after `Cross-compile + package (--quick)`. The rest of both is the same.
+		- Swept: every `cicd.bash` run the 6 scripts start, for the run log and tracked edits. `flags-test.bash` runs only `--list`, and `sync-test.bash` runs in a copy, so both already wrote nothing. `remote-skip-test.bash` starts `remote-test.bash`, which writes no run log.
+	- Decisions:
+		- 20261025: Notes for whoever takes it. `steps-test.bash` and `container-fallback-test.bash` run `cicd.bash` itself, and `container-fallback-test.bash` edits the tracked Dockerfile and puts it back, which the hands-off modes rule out. `-race` needs cgo, which the container and the build keep off.
+		- Both steps run on the host, not in the container. The image has no C compiler, and adding one grows it for one step. The pipeline tests start `cicd.bash` with docker and ssh stand-ins, which have to run outside it anyway.
+		- Pipeline tests takes every `*-test.bash` beside `cicd.bash` but `remote-test.bash`, which is the Remote tests step, rather than a list, so a new one can't be left out.
+		- `-race` covers only the TUI package, as asked. The whole module under `-race` would cost minutes for code with no goroutines of its own.
+		- Race tests runs in `--quick` too, since it takes under 30 seconds. Pipeline tests is off in `--quick`, as remote tests are, since it takes about 6 minutes, most of it 2 nested quick runs. Both are off in `--backlog-run-quick`.
+		- `steps-test.bash` and `container-fallback-test.bash` still run `cicd.bash` from the real tree in the hands-off modes. Those runs write only the ignored `bin/` and their temp folders.
+		- Hosted CI runs both steps, since `--merge-gate` is every check of the default run.
+	- Branch: r1025
+	- Test case: `cicd/utility/flags-test.bash` deef1, `steps-test.bash` deef2 and `container-fallback-test.bash` deef3, new here. The TUI tests under `-race`, such as d9e1p and dec9z, run in the Race tests step.
+
+- `cleanup-test.bash` dedpb can take 30s to stop after Ctrl+C under load.
+	- ID: 2026102520025738
+	- Type: Bug
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: `cicd/utility/cleanup-test.bash` 10 times in a row on a busy box, load over 24 on 32 CPUs. dedpb passes every time.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261025-200257
+	- Opened by: JC
+	- Related IDs: 2026102416210006, 2026102416210004, 2026102520474880
+	- Steps to reproduce [Bug]:
+		- Run `cicd/utility/cleanup-test.bash` with the box busy, at load 31 on 32 CPUs.
+	- Incorrect behavior [Bug]: dedpb fails with "took 30s to stop". The run waited out the hanging docker stand-in rather than stopping on Ctrl+C.
+	- Expected behavior [Bug]: The run stops within 10 seconds of Ctrl+C every time.
+	- Reproduced [Bug]: Once in 3 runs on 20261025, while testing 2026102416210004. The other 2 passed. Not again in 65 runs of the Ctrl+C case on 20261025, at load 2 to 32.
+	- Possible cause [Bug]: The test sends Ctrl+C as soon as the stand-in logs `run`, which may be before `cicd.bash` reaches its `wait`. Not checked.
+	- Actual cause [Bug]:
+		- Not found. Only `cicd.bash` sitting in `wait` until the stand-in exits explains exactly 30s.
+		- Ruled out: a Ctrl+C before the `wait`. Bash 5.2 runs a pending trap before `wait` starts, and the run stopped at once in every try.
+		- Ruled out: the stand-in's pid file being late. With a 1s delay before it, the run still stopped at once, leaving the stand-in behind.
+		- Likely: a race inside bash's `wait`, when the signal lands between its check and the blocking call.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: `cicd.bash` no longer waits on the container's client with a bare `wait`. It polls it with a short `sleep`, which Ctrl+C kills at once, then reads its exit with `wait`.
+		- Verified: dedpb passed in 30 runs of the Ctrl+C case at load 11 to 18, each stopping in under 1s, and in every `cleanup-test.bash` run since. It never failed before the change either, so the change is unproven.
+		- Swept: every `wait` in `cicd/`. That was the only one in `cicd.bash`.
+	- Actual fix [Bug]: A polled wait on the container's client, in place of a bare `wait`.
+	- Branch: r1025
+	- Test case: `cicd/utility/cleanup-test.bash` dedpb, which the Pipeline tests step now runs.
+
 - A `null_ok: no` field with no default makes its table drop every row, silently.
 	- ID: 2026102407331876
 	- Type: Bug
@@ -577,22 +644,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- The items under `Done - Features and enhancements`, from "Startup:" to the end of the list, per the parent.
 		- Add a test where one is missing and would make sense.
 
-- Regression tests: run the ones no pipeline step runs yet.
-	- ID: 2026102520474880
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-204748
-	- Opened by: JC
-	- Parent ID: 2026101915305767
-	- Related IDs: 2026102408252318
-	- Requirements [Feature]:
-		- Done items name these tests, but they run only by hand, so a regression in what they cover goes unseen, per the parent.
-		- The bash tests in `cicd/utility/`: `flags-test.bash`, `cleanup-test.bash`, `steps-test.bash`, `remote-skip-test.bash` and `container-fallback-test.bash`.
-		- The TUI simulation-screen tests under `-race`, for 2026102408252318.
-	- Decisions:
-		- 20261025: Notes for whoever takes it. `steps-test.bash` and `container-fallback-test.bash` run `cicd.bash` itself, and `container-fallback-test.bash` edits the tracked Dockerfile and puts it back, which the hands-off modes rule out. `-race` needs cgo, which the container and the build keep off.
-
 - Lookup picker and write-time value check.
 	- ID: 2026102407295340
 	- Type: Enhancement
@@ -610,22 +661,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Progress log:
 		- 20261024: Split into 2026102408470107 (write check), 2026102408470113 (lookup picker) and 2026102408470118 (`literal` and `sql` pickers). This item closes with the last of them.
 		- 20261024: All 3 are in. The write check is Done, and the 2 pickers wait on a look by eye.
-
-- `cleanup-test.bash` dedpb can take 30s to stop after Ctrl+C under load.
-	- ID: 2026102520025738
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261025-200257
-	- Opened by: JC
-	- Related IDs: 2026102416210006, 2026102416210004
-	- Steps to reproduce [Bug]:
-		- Run `cicd/utility/cleanup-test.bash` with the box busy, at load 31 on 32 CPUs.
-	- Incorrect behavior [Bug]: dedpb fails with "took 30s to stop". The run waited out the hanging docker stand-in rather than stopping on Ctrl+C.
-	- Expected behavior [Bug]: The run stops within 10 seconds of Ctrl+C every time.
-	- Reproduced [Bug]: Once in 3 runs on 20261025, while testing 2026102416210004. The other 2 passed.
-	- Possible cause [Bug]: The test sends Ctrl+C as soon as the stand-in logs `run`, which may be before `cicd.bash` reaches its `wait`. Not checked.
-	- Estimated effort: Low
 
 - A user table that restates a built-in table merges into it, as a system field does.
 	- ID: 2026102409431186

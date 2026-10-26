@@ -21,6 +21,7 @@ repoRoot="$(realpath -e "$(dirname "$0")/../..")"
 # shellcheck source=include/temp-run.bash
 source "${repoRoot}/cicd/utility/include/temp-run.bash"
 runDir="$(fTempDir_Make cleanup-test)"  ||  exit 1
+export NGDB_LOG_DIR="${runDir}/logs"
 fCleanup(){ jobs -p | xargs -r kill 2> /dev/null; fSafeRm "${runDir}" > /dev/null; }
 trap fCleanup EXIT
 
@@ -170,3 +171,4 @@ exit $((fails > 0))
 
 ##	History:
 ##		- 20261025 JC: Created.
+##		- 20261025 JC: Run logs go in the test's folder.

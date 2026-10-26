@@ -43,7 +43,7 @@ fHandsOff(){
 		[[ "$(fPlan "${mode}")" != *Dogfood* ]]  ||  bad=1
 	done
 	fWant "$(fPlan --backlog-run-quick)" 'Build (native release)|Lint + format|Tests'  ||  bad=1
-	fWant "$(fPlan --backlog-run-full)" 'Build (native debug)|Build (native release)|Cross-compile + package|Lint + format|Tests|Fuzz|Security + supply-chain|Remote tests|Profiler'  ||  bad=1
+	fWant "$(fPlan --backlog-run-full)" 'Build (native debug)|Build (native release)|Cross-compile + package|Lint + format|Tests|Fuzz|Security + supply-chain|Race tests|Pipeline tests|Remote tests|Profiler'  ||  bad=1
 	fWant "$(fPlan --merge-gate)" "$(fPlan --backlog-run-full)"  ||  bad=1
 	return "${bad}"
 }
@@ -56,8 +56,8 @@ fOtherModes(){
 	fWant "$(fPlan --slow)" "${full}"  ||  bad=1
 	[[ "${full}" == *"|Cross-compile + package|"*"|Remote tests|Dogfood|Profiler|"* ]]  ||  { echo "  default: ${full}"; bad=1; }
 	fWant "$(fPlan --quick --no-remote)" "$(fPlan --quick)"  ||  bad=1
-	[[ "$(fPlan --quick)" == *"|Fuzz|Security + supply-chain|Dogfood|"* ]]  ||  { echo "  quick: $(fPlan --quick)"; bad=1; }
-	[[ "$(fOff --quick)" == 'Cross-compile + package (--quick)|Remote tests (--quick)|Profiler (--quick)|Demo recording (--quick)' ]]  ||  { echo "  quick off: $(fOff --quick)"; bad=1; }
+	[[ "$(fPlan --quick)" == *"|Fuzz|Security + supply-chain|Race tests|Dogfood|"* ]]  ||  { echo "  quick: $(fPlan --quick)"; bad=1; }
+	[[ "$(fOff --quick)" == 'Cross-compile + package (--quick)|Pipeline tests (--quick)|Remote tests (--quick)|Profiler (--quick)|Demo recording (--quick)' ]]  ||  { echo "  quick off: $(fOff --quick)"; bad=1; }
 	[[ "$(fOff --no-remote)" == *'Remote tests (--no-remote)'* ]]  ||  bad=1
 	return "${bad}"
 }
@@ -77,6 +77,27 @@ fOffFlags(){
 	return "${bad}"
 }
 fCheck deee3 "--no-install, --no-hooks, --no-publish and --no-demo each turn off only their own step" fOffFlags
+
+## Every *-test.bash beside cicd.bash, so a new one can't be left out, but
+## remote-test.bash, which is the Remote tests step and uses the real boxes.
+fRaceAndPipeline(){
+	local bad=0 out script id want
+	out="$(bash "${cicd}" --list 2>&1)"
+	[[ "|$(fPlan)|" == *"|Security + supply-chain|Race tests|Pipeline tests|Remote tests|"* ]]  ||  { echo "  default: $(fPlan)"; bad=1; }
+	[[ "$(fOff --backlog-run-quick)" == *'Race tests (--backlog-run-quick)|Pipeline tests (--backlog-run-quick)'* ]]  ||  { echo "  quick gate off: $(fOff --backlog-run-quick)"; bad=1; }
+	[[ "|$(CC=nosuchcc fOff)|" == *'|Race tests (no nosuchcc for -race)|'* ]]  ||  { echo "  no cc: $(CC=nosuchcc fOff)"; bad=1; }
+	sed -n '/^Race tests:$/,/^Pipeline tests:$/p' <<< "${out}" | grep -qE '^dec9z internal/tui TestLookupsShowInTUI$'  ||  { echo "  race list lacks dec9z"; bad=1; }
+	! sed -n '/^Race tests:$/,/^Pipeline tests:$/p' <<< "${out}" | grep -E '^[0-9a-z]{5} ' | grep -qv ' internal/tui '  ||  { echo "  race list goes past the TUI"; bad=1; }
+	! grep -q 'remote-test\.bash$' <<< "${out}"  ||  { echo "  remote-test.bash is listed"; bad=1; }
+	for script in "${repoRoot}"/cicd/utility/*-test.bash; do
+		[[ "${script##*/}" != "remote-test.bash" ]]  ||  continue
+		id=""; read -r _ id _ < <(grep -oE '(fCheck|fCase|PASS) [0-9a-hjkmnp-tv-z]{5} ' "${script}")
+		want="${id} ${script##*/}"
+		sed -n '/^Pipeline tests:$/,$p' <<< "${out}" | grep -qxF "${want}"  ||  { echo "  pipeline list lacks ${want}"; bad=1; }
+	done
+	return "${bad}"
+}
+fCheck deef1 "race and pipeline tests run in the default run, not the quick gate, and --list names their IDs" fRaceAndPipeline
 
 fAliases(){
 	local out bad=0
@@ -164,3 +185,4 @@ echo "flags-test.bash: PASS"
 
 ##	History:
 ##		- 20261025 JC: Created.
+##		- 20261025 JC: Race tests and Pipeline tests in the plans.

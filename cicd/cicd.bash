@@ -67,6 +67,8 @@ if [[ -z "${doQuietly+x}" ]]; then
 		"ddl|./internal/core/ddl/..."      "schema|./internal/core/schema/..."  "store|./internal/core/store/..."
 		"txlog|./internal/core/txlog/..."  "seams|./app/... ./cmd/... ./donate/... ./enc/... ./gate/... ./script/..."
 	)
+	## Under -race. Its own step on this host, since -race needs cgo and the container has no C compiler.
+	declare -ra racePkgs=("./internal/tui/...")
 	declare  -i inContainer=0; [[ "${NGDB_IN_CONTAINER:-}" == "1" ]] && inContainer=1  ## Set for the run started inside
 	declare -r  projectName="nano-git-db"
 	declare -r  containerImage="nano-git-db-cicd"
@@ -127,10 +129,12 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "Usage: ${meName} [options]"
 	fEcho_Clean "  (no flags)          The default run, up to about an hour: remote sync, builds,"
 	fEcho_Clean "                      cross-builds and packages, lint, tests, fuzz, security,"
+	fEcho_Clean "                      the TUI tests under -race, the pipeline's own tests,"
 	fEcho_Clean "                      remote tests, dogfood, profiler, demo, hooks, then back up"
 	fEcho_Clean "                      and publish."
-	fEcho_Clean "      --quick         About 10 minutes. Skips cross-builds, packaging, remote"
-	fEcho_Clean "                      tests, profiler and demo. Still dogfoods the release build."
+	fEcho_Clean "      --quick         About 10 minutes. Skips cross-builds, packaging, the"
+	fEcho_Clean "                      pipeline's own tests, remote tests, profiler and demo."
+	fEcho_Clean "                      Still dogfoods the release build."
 	fEcho_Clean "      --long          Also --slow. The default run, since nothing here takes"
 	fEcho_Clean "                      hours."
 	fEcho_Clean "      --leakcheck, --no-leakcheck"
@@ -183,7 +187,11 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "than the one before the current, and build cache older than a week."
 	fEcho_Clean ""
 	fEcho_Clean "Every step runs at nice 19 and idle I/O, on half the CPUs, or a quarter for"
-	fEcho_Clean "fuzz or when the 1-minute load is over half of them, checked before each step."
+	fEcho_Clean "fuzz and -race or when the 1-minute load is over half of them, checked before"
+	fEcho_Clean "each step."
+	fEcho_Clean ""
+	fEcho_Clean "The run log goes to cicd/artifacts/lint/, or to NGDB_LOG_DIR when it's set,"
+	fEcho_Clean "as the pipeline's own tests do for the runs they start."
 	fEcho_Clean ""
 	fEcho_Clean "cicd/utility/git-hooks/pre-push runs --merge-gate before a push to main, unless"
 	fEcho_Clean "the push changes only the paths in no-gate-paths beside it. A push to dev isn't"
@@ -347,7 +355,7 @@ fMain(){
 	## reads the newest. Rotate the dir first, then tee. Best-effort: if the log can't
 	## be created the run just goes uncaptured.
 	## Inside the container the outer run already logs all of this.
-	declare dirPath_ArtifactsLint="${dirPath_Base}/cicd/artifacts/lint"
+	declare dirPath_ArtifactsLint="${NGDB_LOG_DIR:-${dirPath_Base}/cicd/artifacts/lint}"
 	if ((! inContainer))  &&  mkdir -p "${dirPath_ArtifactsLint}" 2>/dev/null; then
 		gfs_rotate "${dirPath_ArtifactsLint}" run log >/dev/null 2>&1 || true
 		## tee ignores Ctrl+C, or the cleanup at exit writes into a dead pipe and dies.
@@ -392,6 +400,26 @@ fMain(){
 	fi
 	## The rest needs this machine, so the run inside stops here.
 	((! inContainer))  ||  return 0
+
+	if fStep "Race tests"; then
+		fEcho_Clean "go test -race ${racePkgs[*]}"
+		( cd "${dirPath_Source}"  &&  CGO_ENABLED=1 go test -race -json -mod=vendor -p "${NGDB_JOBS}" -parallel "${NGDB_JOBS}" "${racePkgs[@]}" ) \
+			| GOFLAGS='' go -C "${dirPath_Base}/cicd/utility/testid" run . report "${dirPath_Base}"
+		fStep_End
+	fi
+
+	## Some of these start cicd.bash itself, so one at a time, after the build.
+	if fStep "Pipeline tests"; then
+		local testScript
+		local -a testScripts=() failedScripts=()
+		fPipelineTests testScripts
+		for testScript in "${testScripts[@]}"; do
+			fEcho_Clean "${testScript##*/}"
+			nice -n 19 bash "${testScript}"  ||  failedScripts+=("${testScript##*/}")
+		done
+		((${#failedScripts[@]} == 0))  ||  fThrowError "Pipeline tests failed: ${failedScripts[*]}"
+		fStep_End
+	fi
 
 	## Tests on the other boxes, native and outside the container, since they need
 	## this machine's host lock and ssh. A box that's away is a SKIP, not a failure.
@@ -509,6 +537,13 @@ fSteps_PlanAll(){
 	## The rest runs on this machine, never in the container.
 	((! inContainer))  ||  return 0
 
+	fRaceWhy;  why="${bq:-${raceWhy}}"
+	fStep_Plan "Race tests" "${why}"
+	local -a testScripts=()
+	fPipelineTests testScripts
+	why="";  ((${#testScripts[@]}))  ||  why="no cicd/utility/*-test.bash";  why="${bq:-${quick:-${why}}}"
+	fStep_Plan "Pipeline tests" "${why}"
+
 	why="${bq:-${quick}}";  ((doRemote))  ||  why="--no-remote"
 	fStep_Plan "Remote tests" "${why}"
 	why="";  ((doInstall))  ||  { fOff --no-install; why="${off}"; }
@@ -524,6 +559,25 @@ fSteps_PlanAll(){
 }
 
 fIsHandsOff(){ [[ "${runMode}" == backlog-* || "${runMode}" == "merge-gate" ]]; }
+## The pipeline's own tests: every *-test.bash beside cicd.bash, so a new one
+## can't be left out, but remote-test.bash, which is the Remote tests step.
+fPipelineTests(){
+	local -n scripts_p7x="${1}"
+	local f
+	scripts_p7x=()
+	for f in "${dirPath_Base}"/cicd/utility/*-test.bash; do
+		[[ ! -f "${f}" || "${f##*/}" == "remote-test.bash" ]]  ||  scripts_p7x+=("${f}")
+	done
+	return 0
+}
+## Sets raceWhy when this host can't run -race, which needs go and a C compiler.
+fRaceWhy(){
+	local cc=""
+	raceWhy=""
+	if ! command -v go &> /dev/null; then raceWhy="no go on this host"; return 0; fi
+	read -r cc _ <<< "$(go env CC 2> /dev/null)"
+	command -v "${cc:-gcc}" &> /dev/null  ||  raceWhy="no ${cc:-gcc} for -race"
+}
 ## Sets the caller's off: the flag a person would give, or the hands-off mode that turned it off.
 fOff(){ if fIsHandsOff; then off="--${runMode/#backlog-/backlog-run-}"; else off="${1}"; fi; }
 
@@ -565,6 +619,26 @@ fList(){
 			[[ "${name}" == Fuzz* ]]  &&  fEcho_Clean "${id} ${pkg#"${modPath}/"} ${name}"
 		done <<< "${ids}"
 	fi
+	if fStep_IsOn "Race tests"; then
+		fEcho_Clean "Race tests:"
+		prefixes=()
+		for pkg in "${racePkgs[@]}"; do pkg="${pkg#./}"; prefixes+=("${modPath}/${pkg%/...}"); done
+		while read -r pkg name id; do
+			for s in "${prefixes[@]}"; do
+				[[ "${pkg}" != "${s}" && "${pkg}" != "${s}/"* ]]  ||  { fEcho_Clean "${id} ${pkg#"${modPath}/"} ${name}"; break; }
+			done
+		done <<< "${ids}"
+	fi
+	if fStep_IsOn "Pipeline tests"; then
+		fEcho_Clean "Pipeline tests:"
+		local testScript
+		local -a testScripts=()
+		fPipelineTests testScripts
+		for testScript in "${testScripts[@]}"; do
+			while read -r _ id; do fEcho_Clean "${id} ${testScript##*/}"; done \
+				< <(grep -oE '(fCheck|fCase|PASS) [0-9a-hjkmnp-tv-z]{5} ' "${testScript}" | sort -u -k2,2)
+		done
+	fi
 	! fStep_IsOn "Build (native release)"  ||  fEcho_Clean "Build (native release) runs the CLI smoke, cicd/utility/smoke-cli.bash, which has no per-test IDs."
 	! fStep_IsOn "Remote tests"            ||  fEcho_Clean "Remote tests: the module's tests above and the CLI smoke, on each box."
 	return 0
@@ -572,12 +646,12 @@ fList(){
 
 fStep_IsOn(){ local s; for s in "${stepsOn[@]}"; do [[ "${s}" != "${1}" ]]  ||  return 0; done; return 1; }
 
-## Opens a step that's planned, after checking the load again. Fuzz gets a
-## quarter of the CPUs, busy or not.
+## Opens a step that's planned, after checking the load again. Fuzz and -race
+## get a quarter of the CPUs, busy or not.
 fStep(){
 	fStep_Start "${1}"  ||  return 1
 	local busy=""
-	if [[ "${1}" == "Fuzz" ]]; then fCpuLimit heavy; else fCpuLimit; fi
+	if [[ "${1}" == "Fuzz" || "${1}" == "Race tests" ]]; then fCpuLimit heavy; else fCpuLimit; fi
 	((! NGDB_BUSY))  ||  busy=", busy"
 	fEcho_Clean "Jobs: ${NGDB_JOBS} of ${NGDB_CORES} CPUs, load ${NGDB_LOAD}${busy}"
 }
@@ -812,11 +886,14 @@ fStage_Container(){
 	[[ "${gitCommon}" == "${dirPath_Base}/"* ]]  ||  runArgs+=(-v "${gitCommon}:${gitCommon}")
 
 	## In the background, since Ctrl+C would only reach the container's init, and
-	## the run inside would finish its current step first. A wait returns at once,
-	## and the cleanup at exit removes the container.
+	## the run inside would finish its current step first. Ctrl+C kills the short
+	## sleep below at once, and the cleanup at exit removes the container. Not a
+	## bare wait, which once sat out the whole container after a Ctrl+C (2026102520025738).
 	fEcho_Clean "Container: running ${projectName}-${runStamp}-pipeline"
 	"${containerEngine}" run "${runArgs[@]}" "${containerTag}" nice -n 19 bash "${dirPath_Base}/cicd/cicd.bash" "${innerArgs[@]}" &
-	wait "$!"  ||  fThrowError "The run in the container failed; its output is above."
+	local ctrPid=$!
+	while kill -0 "${ctrPid}" 2> /dev/null; do sleep 0.5; done
+	wait "${ctrPid}"  ||  fThrowError "The run in the container failed; its output is above."
 	fEcho_WasLastEchoBlank_Set 1  ## the run inside closed its last step with a blank line
 	imagePassed=1
 }
@@ -1154,3 +1231,4 @@ fMain  "${@}"
 ##		- 20261025 JC: Step lines with the count, time and PASS or FAIL, planned up front; the load is checked before each step.
 ##		- 20261025 JC: The shared flags: --backlog-run-quick with areas, --backlog-run-full, --merge-gate, --long, --list, and the taken ones. --quick keeps fuzz and security. The CLI smoke after the release build.
 ##		- 20261025 JC: Remote sync first: fetch and fast-forward before the build, stop when diverged; --no-sync skips it.
+##		- 20261025 JC: Race tests (the TUI under -race) and Pipeline tests (cicd/utility/*-test.bash) on this host; NGDB_LOG_DIR; the container is polled, not waited on.
