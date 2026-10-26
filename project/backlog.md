@@ -40,7 +40,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-162100
 	- Opened by: JC
-	- Prereq IDs: 2026101303344552, 2026102416210001, 2026102416210006
+	- Prereq IDs: 2026102522324333
 		- `--no-container`, `--no-remote` and `--keep-temp` turn off what those 3 add, so they go in first.
 	- Related IDs: 2026102520025738
 	- Requirements [Feature]:
@@ -119,6 +119,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Hosted CI runs both steps, since `--merge-gate` is every check of the default run.
 	- Branch: r1025
 	- Test case: `cicd/utility/flags-test.bash` deef1, `steps-test.bash` deef2 and `container-fallback-test.bash` deef3, new here. The TUI tests under `-race`, such as d9e1p and dec9z, run in the Race tests step.
+	- Prereq IDs: 2026102522324333
 
 - `cleanup-test.bash` dedpb can take 30s to stop after Ctrl+C under load.
 	- ID: 2026102520025738
