@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jim-collier/nano-git-db/gate"
+	"github.com/yottacore/gitniblet/gate"
 )
 
 // frozen returns a clock stuck at t, so the gate's wait math is deterministic.

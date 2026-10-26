@@ -15,14 +15,14 @@
 ##	SPDX-License-Identifier: MIT
 
 set -euo pipefail
-source "$(dirname "$0")/utility/include/cpu-limit.bash"  ## NGDB_JOBS + GOMAXPROCS (<=half cores)
+source "$(dirname "$0")/utility/include/cpu-limit.bash"  ## GITNIBLET_JOBS + GOMAXPROCS (<=half cores)
 repoRoot="$(realpath -e "$(dirname "$0")/..")"
 idDir="${repoRoot}/cicd/utility/testid"   ## its own module, outside vendor mode, hence GOFLAGS=
 cd "${repoRoot}/source"
 declare -a pkgs=("$@")
 
 echo "go vet ..."
-go vet -mod=vendor -p "${NGDB_JOBS}" ./...
+go vet -mod=vendor -p "${GITNIBLET_JOBS}" ./...
 GOFLAGS=''  go -C "${idDir}" vet .
 
 echo "gofmt check ..."
@@ -35,8 +35,8 @@ GOFLAGS=''  go -C "${idDir}" run . check "${repoRoot}"
 echo "go test ..."
 fGoTests(){  ## Both go test exits count, since a go command that dies early says nothing in JSON.
 	local rc=0
-	go test -json -mod=vendor -p "${NGDB_JOBS}" -parallel "${NGDB_JOBS}" "${pkgs[@]:-./...}"  ||  rc=1
-	((${#pkgs[@]}))  ||  GOFLAGS=''  go -C "${idDir}" test -json -p "${NGDB_JOBS}" .        ||  rc=1
+	go test -json -mod=vendor -p "${GITNIBLET_JOBS}" -parallel "${GITNIBLET_JOBS}" "${pkgs[@]:-./...}"  ||  rc=1
+	((${#pkgs[@]}))  ||  GOFLAGS=''  go -C "${idDir}" test -json -p "${GITNIBLET_JOBS}" .        ||  rc=1
 	return "${rc}"
 }
 fGoTests | GOFLAGS='' go -C "${idDir}" run . report "${repoRoot}"

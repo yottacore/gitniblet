@@ -14,12 +14,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jim-collier/nano-git-db/donate"
-	"github.com/jim-collier/nano-git-db/enc"
-	"github.com/jim-collier/nano-git-db/internal/cli"
-	"github.com/jim-collier/nano-git-db/internal/core/config"
-	"github.com/jim-collier/nano-git-db/internal/tui"
-	"github.com/jim-collier/nano-git-db/internal/web"
+	"github.com/yottacore/gitniblet/donate"
+	"github.com/yottacore/gitniblet/enc"
+	"github.com/yottacore/gitniblet/internal/cli"
+	"github.com/yottacore/gitniblet/internal/core/config"
+	"github.com/yottacore/gitniblet/internal/tui"
+	"github.com/yottacore/gitniblet/internal/web"
 )
 
 // Version is the authoritative release version, bumped here in source before
@@ -61,10 +61,10 @@ func BuildNumber() string {
 	return string(b)
 }
 
-// VersionLine is what --version prints first: ngdb v<version> build <build>,
+// VersionLine is what --version prints first: gitniblet v<version> build <build>,
 // then the build date on a non-release build, in the viewer's own time zone.
 func VersionLine() string {
-	line := "ngdb v" + Version
+	line := "gitniblet v" + Version
 	if b := BuildNumber(); b != "" {
 		line += " build " + b
 	}

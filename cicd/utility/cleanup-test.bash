@@ -21,7 +21,7 @@ repoRoot="$(realpath -e "$(dirname "$0")/../..")"
 # shellcheck source=include/temp-run.bash
 source "${repoRoot}/cicd/utility/include/temp-run.bash"
 runDir="$(fTempDir_Make cleanup-test)"  ||  exit 1
-export NGDB_LOG_DIR="${runDir}/logs"
+export GITNIBLET_LOG_DIR="${runDir}/logs"
 fCleanup(){ jobs -p | xargs -r kill 2> /dev/null; fSafeRm "${runDir}" > /dev/null; }
 trap fCleanup EXIT
 
@@ -32,7 +32,7 @@ fCheck(){  ## id, name, then a command that passes or not
 }
 
 ## The include on its own, against a temp root of this test's.
-fInclude(){ env -u NGDB_RUN_DIR HOST_TEMP="${runDir}/inc" bash -c 'set -Eeuo pipefail; source "$1"; shift; "$@"' _ "${repoRoot}/cicd/utility/include/temp-run.bash" "$@"; }
+fInclude(){ env -u GITNIBLET_RUN_DIR HOST_TEMP="${runDir}/inc" bash -c 'set -Eeuo pipefail; source "$1"; shift; "$@"' _ "${repoRoot}/cicd/utility/include/temp-run.bash" "$@"; }
 mkdir -p "${runDir}/inc"
 incRoot="${runDir}/inc/${tempProject}"
 
@@ -40,7 +40,7 @@ made="$(fInclude fTempRun_Make)"
 fCheck dedp4 "run folder is <stamp>_<NNN> with run.pid" \
 	bash -c '[[ "$1" =~ /[0-9]{8}-[0-9]{6}_[0-9]{3}$ && -d "$1" ]] && read -r p < "$1/run.pid" && [[ "${p}" =~ ^[0-9]+$ ]]' _ "${made}"
 
-inner="$(NGDB_RUN_DIR="${made}" HOST_TEMP="${runDir}/inc" bash -c 'source "$1"; fTempDir_Make smoke' _ "${repoRoot}/cicd/utility/include/temp-run.bash")"
+inner="$(GITNIBLET_RUN_DIR="${made}" HOST_TEMP="${runDir}/inc" bash -c 'source "$1"; fTempDir_Make smoke' _ "${repoRoot}/cicd/utility/include/temp-run.bash")"
 fCheck dedp5 "helper folder goes inside the cicd run's" bash -c '[[ "$1" == "$2"/smoke.* && -d "$1" ]]' _ "${inner}" "${made}"
 
 ## Old and dead, old and alive, new and dead, old with an empty run.pid, and a
@@ -71,7 +71,7 @@ fCheck dedp8 "guard refuses bad, linked, missing and outside paths" fRefused
 
 ## cicd.bash with a docker stand-in. DMODE: pass, fail or hang at the run.
 mkdir -p "${runDir}/bin" "${runDir}/cicd"
-cur="nano-git-db-cicd:$(git -C "${repoRoot}" hash-object "${repoRoot}/cicd/container/Dockerfile" | cut -c1-12)"
+cur="gitniblet-cicd:$(git -C "${repoRoot}" hash-object "${repoRoot}/cicd/container/Dockerfile" | cut -c1-12)"
 cat > "${runDir}/bin/docker" <<- 'EOF'
 	#!/bin/bash
 	echo "$*" >> "${DLOG}"
@@ -82,7 +82,7 @@ cat > "${runDir}/bin/docker" <<- 'EOF'
 		rm)      [[ -f "${DLOG}.hang" ]] && kill "$(cat "${DLOG}.hang")" 2> /dev/null ;;
 		image)   [[ "$2" == ls ]] || exit 0
 		         if [[ "$*" == *dangling=true* ]]; then echo d1
-		         else printf '%s\n' "${DCUR}" nano-git-db-cicd:old1 nano-git-db-cicd:old2 nano-git-db-cicd:old3; fi ;;
+		         else printf '%s\n' "${DCUR}" gitniblet-cicd:old1 gitniblet-cicd:old2 gitniblet-cicd:old3; fi ;;
 		system)  if [[ -e "${DLOG}.df" ]]; then printf '1.5GB\n0B\n'; else touch "${DLOG}.df"; printf '2GB\n0B\n'; fi ;;
 	esac
 	exit 0
@@ -91,7 +91,7 @@ chmod +x "${runDir}/bin/docker"
 
 fCicd(){  ## mode, log, then extra args
 	local mode="$1" log="$2"; shift 2
-	env -u NGDB_RUN_DIR DMODE="${mode}" DLOG="${log}" DCUR="${cur}" NGDB_DOCKER="${runDir}/bin/docker" HOST_TEMP="${runDir}/cicd" \
+	env -u GITNIBLET_RUN_DIR DMODE="${mode}" DLOG="${log}" DCUR="${cur}" GITNIBLET_DOCKER="${runDir}/bin/docker" HOST_TEMP="${runDir}/cicd" \
 		nice -n 19 bash "${repoRoot}/cicd/cicd.bash" -q --quick --no-sync --no-remote --no-install --no-hooks --no-publish --no-demo --no-format "$@"
 }
 fLeft(){ find "${runDir}/cicd/${tempProject}" -mindepth 1 -maxdepth 1 2> /dev/null | wc -l; }
@@ -102,12 +102,12 @@ fPassed(){
 	local log="${runDir}/pass.log" stamp
 	stamp="$(grep -oE 'dev\.run=[0-9_-]+' "${log}" | head -1)"; stamp="${stamp#dev.run=}"
 	[[ "${stamp}" =~ ^[0-9]{8}-[0-9]{6}_[0-9]{3}$ ]]                                                || { echo "  no run stamp"; return 1; }
-	fRanWith "${log}" "--rm" && fRanWith "${log}" "--name nano-git-db-${stamp}-pipeline"             || { echo "  run args"; return 1; }
+	fRanWith "${log}" "--rm" && fRanWith "${log}" "--name gitniblet-${stamp}-pipeline"             || { echo "  run args"; return 1; }
 	fRanWith "${log}" "-v ${runDir}/cicd/${tempProject}/${stamp}:${runDir}/cicd/${tempProject}/${stamp}" || { echo "  no run folder mount"; return 1; }
-	grep -qxF -- "ps -aq --filter label=dev.project=nano-git-db --filter label=dev.run=${stamp}" "${log}" || { echo "  ps filter"; return 1; }
+	grep -qxF -- "ps -aq --filter label=dev.project=gitniblet --filter label=dev.run=${stamp}" "${log}" || { echo "  ps filter"; return 1; }
 	grep -qxF "rm -f c1 c2" "${log}" && grep -qxF "rmi d1" "${log}"                                   || { echo "  containers or dangling"; return 1; }
-	grep -qxF "rmi nano-git-db-cicd:old2" "${log}" && grep -qxF "rmi nano-git-db-cicd:old3" "${log}"  || { echo "  old tags kept"; return 1; }
-	! grep -qE "^rmi (${cur}|nano-git-db-cicd:old1)$" "${log}"                                        || { echo "  removed a kept tag"; return 1; }
+	grep -qxF "rmi gitniblet-cicd:old2" "${log}" && grep -qxF "rmi gitniblet-cicd:old3" "${log}"  || { echo "  old tags kept"; return 1; }
+	! grep -qE "^rmi (${cur}|gitniblet-cicd:old1)$" "${log}"                                        || { echo "  removed a kept tag"; return 1; }
 	grep -qxF "builder prune -f --filter until=168h" "${log}"                                         || { echo "  no builder prune"; return 1; }
 	grep -qE '^Docker cleanup: .*freed about 500MB\.$' "${runDir}/pass.out"                           || { echo "  no cleanup line"; return 1; }
 	(($(fLeft) == 0))                                                                                  || { echo "  run folder left"; return 1; }
@@ -118,7 +118,7 @@ fCicd fail "${runDir}/fail.log" > "${runDir}/fail.out" 2>&1
 fFailed(){
 	local log="${runDir}/fail.log"
 	grep -qxF "rm -f c1 c2" "${log}" && grep -qxF "rmi d1" "${log}"   || { echo "  containers or dangling"; return 1; }
-	! grep -qE '^rmi nano-git-db-cicd:' "${log}"                       || { echo "  pruned tags after a failure"; return 1; }
+	! grep -qE '^rmi gitniblet-cicd:' "${log}"                       || { echo "  pruned tags after a failure"; return 1; }
 	(($(fLeft) == 0))                                                  || { echo "  run folder left"; return 1; }
 }
 fCheck dedpa "failed run still cleans up, but keeps old tags" fFailed
@@ -157,7 +157,7 @@ fNoBroadRemoval(){
 	while IFS= read -r line; do
 		case "${line}" in
 			"rmi -f"*|*prune*)  [[ "${line}" == "builder prune -f --filter until=168h" ]]  ||  { echo "  ${line}"; return 1; } ;;
-			"ps "*|"image ls"*) [[ "${line}" == *"label=dev.project=nano-git-db"* ]]     ||  { echo "  ${line}"; return 1; } ;;
+			"ps "*|"image ls"*) [[ "${line}" == *"label=dev.project=gitniblet"* ]]     ||  { echo "  ${line}"; return 1; } ;;
 		esac
 	done < <(cat "${runDir}"/{pass,fail,hang,keep}.log)
 }

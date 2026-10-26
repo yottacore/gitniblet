@@ -21,12 +21,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jim-collier/nano-git-db/internal/core/config"
-	"github.com/jim-collier/nano-git-db/internal/core/crud"
-	"github.com/jim-collier/nano-git-db/internal/core/txlog"
+	"github.com/yottacore/gitniblet/internal/core/config"
+	"github.com/yottacore/gitniblet/internal/core/crud"
+	"github.com/yottacore/gitniblet/internal/core/txlog"
 )
 
-const sessionCookie = "ngdb_session"
+const sessionCookie = "gitniblet_session"
 const sessionTTL = 12 * time.Hour
 
 // authState carries the resolved login configuration for the running server.
@@ -57,7 +57,7 @@ func newAuth(settings *config.Settings, logDir string, api *crud.API) *authState
 }
 
 // localUser identifies the machine's user without a password: the git account of
-// the log dir's repo, else the default (NANOGITDB_USER or the OS user).
+// the log dir's repo, else the default (GITNIBLET_USER or the OS user).
 func localUser(logDir string) string {
 	if account := txlog.RepoAccount(logDir); account != "" {
 		return account

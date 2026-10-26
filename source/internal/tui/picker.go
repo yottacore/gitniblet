@@ -11,8 +11,8 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
-	"github.com/jim-collier/nano-git-db/donate"
-	"github.com/jim-collier/nano-git-db/internal/core/config"
+	"github.com/yottacore/gitniblet/donate"
+	"github.com/yottacore/gitniblet/internal/core/config"
 )
 
 // pickResult is the picker's outcome: the paths to open, plus the registry
@@ -64,7 +64,7 @@ func (p *picker) build() {
 	// reads as a menu instead of a packed grid.
 	p.list.ShowSecondaryText(true).
 		SetSelectedTextColor(tcell.ColorBlack).
-		SetBorder(true).SetTitle(" nano-git-db ").
+		SetBorder(true).SetTitle(" gitniblet ").
 		SetBorderPadding(1, 1, 3, 3)
 
 	p.populate()
@@ -175,7 +175,7 @@ func (p *picker) populate() {
 		entry{"Create new database", "register a new database and open it", p.createForm, nil},
 		entry{"Open existing ...", "open a DDL + tx-log without registering", p.openForm, nil})
 	if donate.Enabled { // open-source-only feature
-		entries = append(entries, entry{"Support nano-git-db", "ways to support the project", p.donateModal, nil})
+		entries = append(entries, entry{"Support gitniblet", "ways to support the project", p.donateModal, nil})
 	}
 	for i, ent := range entries {
 		if i > 0 {
@@ -279,7 +279,7 @@ func (p *picker) finish(result *pickResult) {
 
 // createForm registers a new database (name required, refuses duplicates) and
 // opens it. The DDL is an existing file the record points at; "location" is just
-// a repo or folder - the tx-log goes under `ngdb/<name>` inside a repo, or in
+// a repo or folder - the tx-log goes under `gitniblet/<name>` inside a repo, or in
 // the folder as-is otherwise - so there is no separate tx-log path to enter.
 func (p *picker) createForm() {
 	form := tview.NewForm()

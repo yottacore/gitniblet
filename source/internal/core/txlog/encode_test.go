@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jim-collier/nano-git-db/internal/core/ddl"
-	"github.com/jim-collier/nano-git-db/internal/core/store"
+	"github.com/yottacore/gitniblet/internal/core/ddl"
+	"github.com/yottacore/gitniblet/internal/core/store"
 )
 
 // ID: d9e0r

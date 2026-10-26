@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jim-collier/nano-git-db/enc"
-	"github.com/jim-collier/nano-git-db/internal/core/config"
-	"github.com/jim-collier/nano-git-db/internal/core/schema"
-	"github.com/jim-collier/nano-git-db/internal/core/txlog"
+	"github.com/yottacore/gitniblet/enc"
+	"github.com/yottacore/gitniblet/internal/core/config"
+	"github.com/yottacore/gitniblet/internal/core/schema"
+	"github.com/yottacore/gitniblet/internal/core/txlog"
 )
 
 // Init registers a new database in the config registry - the flag-driven twin
@@ -20,8 +20,8 @@ import (
 // current directory (its base name is the database name); the optional arg says
 // where the git-synced tx-log goes:
 //
-//	--init                in a git repo -> <repo-root>/ngdb/<name>; else $PWD
-//	--init <repo-root>    -> <repo-root>/ngdb/<name>
+//	--init                in a git repo -> <repo-root>/gitniblet/<name>; else $PWD
+//	--init <repo-root>    -> <repo-root>/gitniblet/<name>
 //	--init <explicit-dir> -> that dir, verbatim
 //
 // After registering it materializes the view (the same build/bootstrap/seed the

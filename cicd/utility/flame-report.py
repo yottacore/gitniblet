@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-##	Purpose: Summarize the newest nano-git-db profiler flamegraph - self-time hot
+##	Purpose: Summarize the newest gitniblet profiler flamegraph - self-time hot
 ##		spots, inclusive call buckets, subsystem attribution, and the caller chain
 ##		of the top leaves - by parsing the inferno SVG (its fg:w attribute = raw
 ##		sample counts). Runs two ways: plain (print the report, meant to run every
@@ -152,7 +152,7 @@ def main():
 	here = os.path.dirname(os.path.abspath(__file__))
 	default_dir = os.path.normpath(os.path.join(here, "..", "artifacts", "profiling"))
 
-	ap = argparse.ArgumentParser(description="Summarize the newest nano-git-db profiler flamegraph.")
+	ap = argparse.ArgumentParser(description="Summarize the newest gitniblet profiler flamegraph.")
 	ap.add_argument("--dir", default=default_dir, help="profiling directory (default: %(default)s)")
 	ap.add_argument("--file", help="analyze this SVG instead of the newest in --dir")
 	ap.add_argument("--top", type=int, default=SELF_TOP, help="self-time leaders to list")

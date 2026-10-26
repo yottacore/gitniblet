@@ -3,7 +3,7 @@
 ##	Purpose:
 ##		The test box's side of remote-test.bash, on FreeBSD, macOS and Linux.
 ##		Runs each Go test binary from its package folder, then the CLI smoke on
-##		the cross-built ngdb, and removes its work folder after.
+##		the cross-built gitniblet, and removes its work folder after.
 ##		- Each binary's -test.v=test2json output goes to stdout between a begin
 ##		  and an end line, for testid remote on the calling host, which prints
 ##		  one line per test with its ID.
@@ -26,7 +26,7 @@ work="${1:?work folder}"; jobCap="${2:-4}"; keep="${3:-0}"
 fCleanup(){
 	cd / || return
 	if [[ "${keep}" == "1" ]]; then echo "kept $(hostname):${work}"; return; fi
-	if [[ "${work}" =~ ^/[A-Za-z0-9._/-]+/nano-git-db-floss/[0-9]{8}-[0-9]{6}_[0-9]{3}$ && -d "${work}" && ! -L "${work}" ]]; then
+	if [[ "${work}" =~ ^/[A-Za-z0-9._/-]+/gitniblet-floss/[0-9]{8}-[0-9]{6}_[0-9]{3}$ && -d "${work}" && ! -L "${work}" ]]; then
 		if [[ "$(uname -s)" == "Linux" ]]; then rm -rf --one-file-system -- "${work}"; else rm -rf -x -- "${work}"; fi
 	else
 		echo "remote-unix: left ${work}, not a run folder" >&2
@@ -55,14 +55,14 @@ if command -v ionice > /dev/null 2>&1; then ionice -c 3 -p $$ > /dev/null 2>&1 |
 failed=0
 while read -r name dir pkg; do
 	[[ -n "${name}" ]] || continue
-	echo "@@ngdb-test begin ${pkg}"
+	echo "@@gitniblet-test begin ${pkg}"
 	rc=0
 	(cd "${work}/${dir}" && nice -n 19 "${work}/tests/${name}.test" -test.v=test2json -test.timeout 15m -test.parallel "${jobs}" 2>&1) || rc=$?
-	echo "@@ngdb-test end ${rc}"
+	echo "@@gitniblet-test end ${rc}"
 	((rc == 0)) || failed=$((failed + 1))
 done < "${work}/tests/manifest"
 
-if NGDB_SMOKE_EXPECT_DATE=1 nice -n 19 bash "${work}/cicd/utility/smoke-cli.bash" "${work}/ngdb" > "${work}/logs/smoke.log" 2>&1; then
+if GITNIBLET_SMOKE_EXPECT_DATE=1 nice -n 19 bash "${work}/cicd/utility/smoke-cli.bash" "${work}/gitniblet" > "${work}/logs/smoke.log" 2>&1; then
 	echo "PASS smoke-cli"
 else
 	echo "FAIL smoke-cli"

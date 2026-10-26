@@ -6,7 +6,7 @@ package web
 import (
 	"net/http"
 
-	"github.com/jim-collier/nano-git-db/donate"
+	"github.com/yottacore/gitniblet/donate"
 )
 
 // donate renders the support partial into #main: the blurb and a link to the

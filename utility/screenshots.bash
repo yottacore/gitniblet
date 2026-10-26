@@ -8,7 +8,7 @@
 ##		Run this after any significant visual change to the TUI.
 ##	Syntax:
 ##		screenshots.bash            ## build the binary if missing, then capture
-##		screenshots.bash --no-build ## use the existing bin/ngdb
+##		screenshots.bash --no-build ## use the existing bin/gitniblet
 ##	Notes:
 ##		Needs Xvfb + xterm + xdotool + ImageMagick (import/magick) - the same set
 ##		gui-headless.bash uses. All content is fake (demo user, /tmp paths) so no
@@ -26,7 +26,7 @@ dirPath_Repo="$(cd "$dirPath_Self/.." && pwd)"
 headless="$dirPath_Repo/cicd/utility/gui-headless.bash"
 # shellcheck source=../cicd/utility/include/temp-run.bash
 source "$dirPath_Repo/cicd/utility/include/temp-run.bash"   # fSafeRm
-exe="$dirPath_Repo/bin/ngdb"
+exe="$dirPath_Repo/bin/gitniblet"
 dirLarge="$dirPath_Repo/assets/screenshots/large"
 dirSmall="$dirPath_Repo/assets/screenshots"
 
@@ -52,10 +52,10 @@ fKillTerms() {
 fSetup() {
 	# A fixed, tidy path (not mktemp) so the picker screenshot shows clean,
 	# anonymous locations. Wiped first for a clean slate.
-	demo="/tmp/ngdb-demo"
+	demo="/tmp/gitniblet-demo"
 	if [[ -e "$demo" ]]; then fSafeRm "$demo" > /dev/null; fi
 	mkdir -p "$demo"/{cfg,empty,databases/team-issues,databases/reading-list,databases/recipes}
-	export NANOGITDB_USER=demo NANOGITDB_HOST=workstation
+	export GITNIBLET_USER=demo GITNIBLET_HOST=workstation
 
 	cat > "$demo/databases/team-issues/issues.shcl" <<'DDL'
 database:
@@ -137,7 +137,7 @@ trap fCleanup EXIT
 #	Capture - one xterm per shot, driven by a keystroke sequence.
 #•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
 
-# fShot <out> <cwd> <ngdb-args...> -- <xdotool keys...>
+# fShot <out> <cwd> <gitniblet-args...> -- <xdotool keys...>
 fShot() {
 	local out="$1" cwd="$2"; shift 2
 	local -a nargs=() keys=(); local seen=0 a
@@ -149,7 +149,7 @@ fShot() {
 	sleep 0.4
 	( cd "$cwd" && DISPLAY="$display" xterm -fa "$font" -fs "$fontSize" -geometry "${geometry}+0+0" \
 		-b 0 -bw 0 +sb -bg "$themeBg" -fg '#e4e4e4' \
-		-e env NANOGITDB_USER=demo NANOGITDB_HOST=workstation "$exe" "${nargs[@]}" ) &
+		-e env GITNIBLET_USER=demo GITNIBLET_HOST=workstation "$exe" "${nargs[@]}" ) &
 	sleep 2.5
 	local wid; wid=$(DISPLAY="$display" xdotool search --class xterm 2>/dev/null | head -1 || true)
 	DISPLAY="$display" xdotool windowfocus --sync "$wid" 2>/dev/null || true

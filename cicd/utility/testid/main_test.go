@@ -59,7 +59,7 @@ func fakeRepo(t *testing.T, goSrc, bashSrc string) string {
 	write("source/go.mod", "module example.com/m\n\ngo 1.25.0\n")
 	write("source/a/a_test.go", goSrc)
 	write("cicd/utility/x-test.bash", bashSrc)
-	write("cicd/utility/testid/go.mod", "module ngdb-testid\n")
+	write("cicd/utility/testid/go.mod", "module gitniblet-testid\n")
 	return repo
 }
 

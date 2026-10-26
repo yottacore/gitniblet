@@ -29,11 +29,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/jim-collier/nano-git-db/enc"
-	"github.com/jim-collier/nano-git-db/internal/core/ddl"
-	"github.com/jim-collier/nano-git-db/internal/core/guid"
-	"github.com/jim-collier/nano-git-db/internal/core/store"
-	"github.com/jim-collier/nano-git-db/internal/core/txlog"
+	"github.com/yottacore/gitniblet/enc"
+	"github.com/yottacore/gitniblet/internal/core/ddl"
+	"github.com/yottacore/gitniblet/internal/core/guid"
+	"github.com/yottacore/gitniblet/internal/core/store"
+	"github.com/yottacore/gitniblet/internal/core/txlog"
 )
 
 // API is the shared CRUD surface over a store (view) and its tx-log (truth).
@@ -123,9 +123,9 @@ func (a *API) SetReadOnly(ro bool) { a.readOnly.Store(ro) }
 func (a *API) ReadOnly() bool { return a.readOnly.Load() }
 
 // DefaultUserID is the stamp when a front-end has nothing better:
-// NANOGITDB_USER, else the OS username.
+// GITNIBLET_USER, else the OS username.
 func DefaultUserID() string {
-	if u := os.Getenv("NANOGITDB_USER"); u != "" {
+	if u := os.Getenv("GITNIBLET_USER"); u != "" {
 		return u
 	}
 	if u, err := user.Current(); err == nil && u.Username != "" {
@@ -134,9 +134,9 @@ func DefaultUserID() string {
 	return "unknown"
 }
 
-// DefaultHostID is the machine stamp: NANOGITDB_HOST, else the OS hostname.
+// DefaultHostID is the machine stamp: GITNIBLET_HOST, else the OS hostname.
 func DefaultHostID() string {
-	if h := os.Getenv("NANOGITDB_HOST"); h != "" {
+	if h := os.Getenv("GITNIBLET_HOST"); h != "" {
 		return h
 	}
 	if h, err := os.Hostname(); err == nil && h != "" {

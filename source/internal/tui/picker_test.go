@@ -13,7 +13,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
-	"github.com/jim-collier/nano-git-db/internal/core/config"
+	"github.com/yottacore/gitniblet/internal/core/config"
 )
 
 // isolateConfig points the registry at a throwaway config dir so the picker

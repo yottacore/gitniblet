@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jim-collier/nano-git-db/internal/core/ddl"
-	"github.com/jim-collier/nano-git-db/internal/core/store"
-	"github.com/jim-collier/nano-git-db/internal/core/txlog"
+	"github.com/yottacore/gitniblet/internal/core/ddl"
+	"github.com/yottacore/gitniblet/internal/core/store"
+	"github.com/yottacore/gitniblet/internal/core/txlog"
 )
 
 const personDDL = "tables:\n" +

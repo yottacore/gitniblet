@@ -4,7 +4,7 @@
 package tui
 
 import (
-	"github.com/jim-collier/nano-git-db/donate"
+	"github.com/yottacore/gitniblet/donate"
 )
 
 // donateModal shows the support appeal and the link to visit in a dismissable

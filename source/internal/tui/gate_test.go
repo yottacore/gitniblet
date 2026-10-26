@@ -11,7 +11,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 
-	"github.com/jim-collier/nano-git-db/gate"
+	"github.com/yottacore/gitniblet/gate"
 )
 
 // ID: d9hhm

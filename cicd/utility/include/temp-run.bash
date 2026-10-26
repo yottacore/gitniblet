@@ -5,10 +5,10 @@
 ##		Run folders and guarded removal, per the shared Temp files and Safe
 ##		removal rules. Sourced by cicd.bash, its helpers and the demo scripts.
 ##		Bash 3.2 safe, since smoke-cli.bash sources it on the macOS box.
-##		- fTempRun_Make: makes ${HOST_TEMP}/nano-git-db-floss/<stamp>_<NNN>/ with
+##		- fTempRun_Make: makes ${HOST_TEMP}/gitniblet-floss/<stamp>_<NNN>/ with
 ##		  run.pid in it, and prints its path.
 ##		- fTempDir_Make LABEL: a folder for a helper. Inside the cicd run's folder
-##		  (NGDB_RUN_DIR) when there is one, else a run folder of its own.
+##		  (GITNIBLET_RUN_DIR) when there is one, else a run folder of its own.
 ##		- fTempRun_Sweep: removes this project's run folders older than 2 days
 ##		  whose run.pid names no live process.
 ##		- fSafeRm PATH: the repo's copy of the safe removal guard. Takes one
@@ -19,7 +19,7 @@
 ##		https://mit-license.org/
 ##	SPDX-License-Identifier: MIT
 
-tempProject="nano-git-db-floss"
+tempProject="gitniblet-floss"
 
 ## Resolved once, since macOS's temp folder sits behind the /var link.
 HOST_TEMP="${HOST_TEMP:-${TMPDIR:-/tmp}}"
@@ -39,8 +39,8 @@ fTempRun_Make(){
 }
 
 fTempDir_Make(){
-	if [[ -n "${NGDB_RUN_DIR:-}" && -d "${NGDB_RUN_DIR}" ]]; then
-		mktemp -d "${NGDB_RUN_DIR}/${1:-tmp}.XXXXXX"
+	if [[ -n "${GITNIBLET_RUN_DIR:-}" && -d "${GITNIBLET_RUN_DIR}" ]]; then
+		mktemp -d "${GITNIBLET_RUN_DIR}/${1:-tmp}.XXXXXX"
 	else
 		fTempRun_Make
 	fi

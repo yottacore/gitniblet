@@ -26,9 +26,9 @@ declare stepOpen="" stepOpenNum=""
 
 fStep_Plan(){ if [[ -n "${2:-}" ]]; then stepsOff+=("${1} (${2})"); else stepsOn+=("${1}"); fi; }
 
-## For a nested run's environment: NGDB_STEPS, the names joined by |.
-fSteps_Export(){ local IFS='|'; NGDB_STEPS="${stepsOn[*]}"; export NGDB_STEPS; }
-fSteps_Import(){ IFS='|' read -r -a stepsOn <<< "${NGDB_STEPS:-}"; }
+## For a nested run's environment: GITNIBLET_STEPS, the names joined by |.
+fSteps_Export(){ local IFS='|'; GITNIBLET_STEPS="${stepsOn[*]}"; export GITNIBLET_STEPS; }
+fSteps_Import(){ IFS='|' read -r -a stepsOn <<< "${GITNIBLET_STEPS:-}"; }
 
 fStep_Stamp(){
 	local -n stamp_t8vq="${1}"

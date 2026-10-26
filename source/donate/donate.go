@@ -18,8 +18,8 @@ package donate
 var Enabled = true
 
 // Intro is the short appeal shown above the link in every front-end.
-const Intro = "If you find nano-git-db useful, please consider supporting its development."
+const Intro = "If you find gitniblet useful, please consider supporting its development."
 
 // URL is the page the front-ends open (or print): the project's DONATE.md, which
 // lists every way to help.
-const URL = "https://github.com/jim-collier/nano-git-db/blob/HEAD/DONATE.md"
+const URL = "https://github.com/yottacore/gitniblet/blob/HEAD/DONATE.md"

@@ -17,12 +17,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jim-collier/nano-git-db/donate"
-	"github.com/jim-collier/nano-git-db/gate"
-	"github.com/jim-collier/nano-git-db/internal/core/config"
-	"github.com/jim-collier/nano-git-db/internal/core/crud"
-	"github.com/jim-collier/nano-git-db/internal/core/schema"
-	"github.com/jim-collier/nano-git-db/script"
+	"github.com/yottacore/gitniblet/donate"
+	"github.com/yottacore/gitniblet/gate"
+	"github.com/yottacore/gitniblet/internal/core/config"
+	"github.com/yottacore/gitniblet/internal/core/crud"
+	"github.com/yottacore/gitniblet/internal/core/schema"
+	"github.com/yottacore/gitniblet/script"
 )
 
 // resolveArgs turns the front-end args into the open triple: a registered
@@ -45,7 +45,7 @@ func resolveArgs(args []string) (ddlPath, sqlitePath, logDir string, err error) 
 			return d, s, l, nil
 		}
 	}
-	return "", "", "", fmt.Errorf("usage: ngdb --serve <db> (or run from a directory containing a .shcl schema)")
+	return "", "", "", fmt.Errorf("usage: gitniblet --serve <db> (or run from a directory containing a .shcl schema)")
 }
 
 //go:embed assets
@@ -54,7 +54,7 @@ var assetsFS embed.FS
 //go:embed templates
 var tplFS embed.FS
 
-// Run serves the web UI: ngdb --serve <db>. With no name it uses a DDL in the
+// Run serves the web UI: gitniblet --serve <db>. With no name it uses a DDL in the
 // current directory; the web front-end has no picker, so with neither it
 // requires a database name.
 func Run(args []string) error {
@@ -115,7 +115,7 @@ func Run(args []string) error {
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 	}
-	fmt.Printf("ngdb web UI: http://%s\n", addr)
+	fmt.Printf("gitniblet web UI: http://%s\n", addr)
 	return httpSrv.ListenAndServe()
 }
 

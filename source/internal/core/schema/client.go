@@ -10,11 +10,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jim-collier/nano-git-db/enc"
-	"github.com/jim-collier/nano-git-db/internal/core/crud"
-	"github.com/jim-collier/nano-git-db/internal/core/ddl"
-	"github.com/jim-collier/nano-git-db/internal/core/store"
-	"github.com/jim-collier/nano-git-db/internal/core/txlog"
+	"github.com/yottacore/gitniblet/enc"
+	"github.com/yottacore/gitniblet/internal/core/crud"
+	"github.com/yottacore/gitniblet/internal/core/ddl"
+	"github.com/yottacore/gitniblet/internal/core/store"
+	"github.com/yottacore/gitniblet/internal/core/txlog"
 )
 
 // Client is one fully-opened database: view migrated, built-ins bootstrapped,

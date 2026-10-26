@@ -10,7 +10,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
-	"github.com/jim-collier/nano-git-db/gate"
+	"github.com/yottacore/gitniblet/gate"
 )
 
 // gateDecision is how the startup notice resolved for this launch.

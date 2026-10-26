@@ -3,7 +3,7 @@
 # shellcheck disable=2155  ## 'Declare and assign separately to avoid masking return values.' Cumbersome and unnecessary here.
 # shellcheck disable=2317  ## 'Command appears to be unreachable.' False hit on the exit inside fDie().
 
-##	Purpose: Download, verify and install the ngdb executable from a GitHub
+##	Purpose: Download, verify and install the gitniblet executable from a GitHub
 ##		release. Works on Linux, BSD, macOS and WSL. Safe to re-run.
 ##	History: At bottom of script.
 
@@ -20,8 +20,8 @@ set -u
 ## Settings
 
 declare -r repoOwner="jim-collier"
-declare -r repoName="nano-git-db"
-declare -r exeName="ngdb"
+declare -r repoName="gitniblet"
+declare -r exeName="gitniblet"
 declare -r apiBase="https://api.github.com/repos/${repoOwner}/${repoName}"
 declare -r dlBase="https://github.com/${repoOwner}/${repoName}/releases/download"
 
@@ -188,7 +188,7 @@ fInstallDir(){
 fInstalledVersion(){
 	local exe="$1"
 	[[ -x "${exe}" ]] || return 0
-	## "ngdb v1.0.0 build dedrq", or before that "ngdb 1.0.0 (abc1234)".
+	## "gitniblet v1.0.0 build dedrq", or before that "gitniblet 1.0.0 (abc1234)".
 	"${exe}" --version 2>/dev/null | awk 'NR == 1 { sub(/^v/, "", $2); print $2 }'
 }
 

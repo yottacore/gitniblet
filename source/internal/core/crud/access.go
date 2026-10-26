@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/jim-collier/nano-git-db/internal/core/ddl"
+	"github.com/yottacore/gitniblet/internal/core/ddl"
 )
 
 // UserGroups resolves the stamp user (UserID) to its group-name and group-id

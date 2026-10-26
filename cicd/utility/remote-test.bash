@@ -6,7 +6,7 @@
 
 ##	Purpose:
 ##		Run the Go tests and the CLI smoke on the test boxes, natively, for the
-##		platforms this box only cross-builds. Builds the test binaries and ngdb
+##		platforms this box only cross-builds. Builds the test binaries and gitniblet
 ##		per target here, then holds each box through the shared host lock's VM
 ##		wrap for the whole time it's used, which also puts a VM back as found.
 ##		Each box's test output goes through testid remote here, since the boxes
@@ -17,11 +17,11 @@
 ##	Notes:
 ##		- A box that doesn't answer, or can't be held, is a SKIP line, never a
 ##		  failure. Only a test that ran and failed fails the run.
-##		- The wrap helper is NGDB_VM_WRAP, else the *_vm-state.bash in the synced
+##		- The wrap helper is GITNIBLET_VM_WRAP, else the *_vm-state.bash in the synced
 ##		  util folder. Without one every target is skipped.
 ##		- vmKt6m ignores the ACPI shutdown, so when it was found off it's halted
 ##		  from inside, as collierjr, before the wrap puts it back.
-##		- NGDB_REMOTE_WAIT is how long to wait in line for a box, default 900s.
+##		- GITNIBLET_REMOTE_WAIT is how long to wait in line for a box, default 900s.
 ##	History: At bottom of this file.
 
 ##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
@@ -62,25 +62,25 @@ fParseRow(){
 }
 
 
-## Test binaries, ngdb, the source the tests read, and the box-side runner, in one tarball.
+## Test binaries, gitniblet, the source the tests read, and the box-side runner, in one tarball.
 fBuildBundle(){
 	local -r tgt="${1}" os="${2}" arch="${3}"
 	local -r stage="${runDir}/${tgt}/bundle"
 	mkdir -p "${stage}/tests" "${stage}/cicd/utility"
 	(	cd "${dirPath_Base}/source"
 		export CGO_ENABLED=0 GOOS="${os}" GOARCH="${arch}" GOFLAGS=-mod=vendor
-		nice -n 19 go test -c -p "${NGDB_JOBS}" -ldflags='-s -w' -o "${stage}/tests/" ./... > "${runDir}/${tgt}/build.log" 2>&1 \
+		nice -n 19 go test -c -p "${GITNIBLET_JOBS}" -ldflags='-s -w' -o "${stage}/tests/" ./... > "${runDir}/${tgt}/build.log" 2>&1 \
 			||  { grep -v 'no test files' "${runDir}/${tgt}/build.log" >&2; fDie "${tgt}: test build failed"; }
 		## Name -> folder, since a test binary runs from its own package folder, and the import path its test IDs go by.
 		go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.Name}} {{.Dir}} {{.ImportPath}}{{end}}' ./... | sed "s#${PWD}#source#" > "${stage}/tests/manifest"
 	)
-	## build.bash stamps the commit time and date, and names a cross build ngdb-<os>-<arch>.
+	## build.bash stamps the commit time and date, and names a cross build gitniblet-<os>-<arch>.
 	GOOS="${os}" GOARCH="${arch}" nice -n 19 bash "${dirPath_Base}/cicd/build.bash" > /dev/null
 	if [[ "${os}" == "windows" ]]; then
-		cp "${dirPath_Base}/bin/ngdb-${os}-${arch}.exe" "${stage}/ngdb.exe"
+		cp "${dirPath_Base}/bin/gitniblet-${os}-${arch}.exe" "${stage}/gitniblet.exe"
 		cp "${dirPath_Base}/cicd/utility/remote-windows.ps1" "${runDir}/${tgt}/"  ## it unpacks the bundle, so it goes on its own
 	else
-		cp "${dirPath_Base}/bin/ngdb-${os}-${arch}" "${stage}/ngdb"
+		cp "${dirPath_Base}/bin/gitniblet-${os}-${arch}" "${stage}/gitniblet"
 	fi
 	mkdir -p "${stage}/cicd/utility/include"
 	cp "${dirPath_Base}/cicd/utility/smoke-cli.bash" "${dirPath_Base}/cicd/utility/remote-unix.bash" "${stage}/cicd/utility/"
@@ -106,7 +106,7 @@ fOnBox(){
 	## The box's own temp root per Temp files, as sh, since a login shell may be csh.
 	local work
 	work="$(ssh "${sshOpts[@]}" "${dest}" sh -s <<- 'EOF'
-		r="${HOST_TEMP:-${TMPDIR:-/tmp}}"; r="${r%/}/nano-git-db-floss"
+		r="${HOST_TEMP:-${TMPDIR:-/tmp}}"; r="${r%/}/gitniblet-floss"
 		mkdir -p "${r}" && cd "${r}" && r="$(pwd -P)" || exit 1
 		s="$(date +%Y%m%d-%H%M%S)"; n=1
 		while ! mkdir "$(printf '%s/%s_%03d' "${r}" "${s}" "${n}")" 2> /dev/null; do
@@ -116,7 +116,7 @@ fOnBox(){
 	EOF
 	)" || { echo "fail" > "${statusFile}"; fWarn "${tgt}: couldn't make a work folder on ${dest}"; return 1; }
 	work="${work##*$'\n'}"  ## a noisy login can print first
-	[[ "${work}" =~ ^/[A-Za-z0-9._/-]+/nano-git-db-floss/[0-9]{8}-[0-9]{6}_[0-9]{3}$ ]]  ||  { echo "fail" > "${statusFile}"; fWarn "${tgt}: odd work folder '${work}'"; return 1; }
+	[[ "${work}" =~ ^/[A-Za-z0-9._/-]+/gitniblet-floss/[0-9]{8}-[0-9]{6}_[0-9]{3}$ ]]  ||  { echo "fail" > "${statusFile}"; fWarn "${tgt}: odd work folder '${work}'"; return 1; }
 	fEcho "${tgt}: ${dest}:${work}"
 
 	## cat, not scp: a login that prints breaks scp and sftp.
@@ -136,7 +136,7 @@ fOnBox_Windows(){
 	local -r tgt="${1}" dest="${2}" jobCap="${3}"
 	local -r statusFile="${runDir}/${tgt}/status"
 	local -r mkWork='$r = if ($env:HOST_TEMP) { $env:HOST_TEMP } else { $env:TEMP }
-		$r = Join-Path $r nano-git-db-floss; $null = New-Item -ItemType Directory -Force $r
+		$r = Join-Path $r gitniblet-floss; $null = New-Item -ItemType Directory -Force $r
 		$s = Get-Date -Format yyyyMMdd-HHmmss
 		for ($n = 1; $n -le 999; $n++) {
 			$p = "{0}\{1}_{2:d3}" -f $r, $s, $n
@@ -146,7 +146,7 @@ fOnBox_Windows(){
 	work="$(ssh "${sshOpts[@]}" "${dest}" pwsh -NoProfile -EncodedCommand "$(iconv -f utf-8 -t utf-16le <<< "${mkWork}" | base64 -w0)" < /dev/null 2> /dev/null | tr -d '\r')" \
 		||  { echo "fail" > "${statusFile}"; fWarn "${tgt}: couldn't make a work folder on ${dest}"; return 1; }
 	work="${work##*$'\n'}"
-	[[ "${work}" =~ ^[A-Za-z]:\\[A-Za-z0-9._~\\-]+\\nano-git-db-floss\\[0-9]{8}-[0-9]{6}_[0-9]{3}$ ]]  ||  { echo "fail" > "${statusFile}"; fWarn "${tgt}: odd work folder '${work}'"; return 1; }
+	[[ "${work}" =~ ^[A-Za-z]:\\[A-Za-z0-9._~\\-]+\\gitniblet-floss\\[0-9]{8}-[0-9]{6}_[0-9]{3}$ ]]  ||  { echo "fail" > "${statusFile}"; fWarn "${tgt}: odd work folder '${work}'"; return 1; }
 	fEcho "${tgt}: ${dest}:${work}"
 
 	local rc=0
@@ -169,7 +169,7 @@ fHaltIfFoundOff(){
 	local -r halter="${haltFromInside[${host}]:-}"
 	[[ -n "${halter}" ]]  ||  return 0
 	[[ "$(cat "${runDir}/${tgt}/status" 2> /dev/null)" != "noanswer" ]]  ||  return 0
-	[[ "$("${NGDB_VM_WRAP:?}" status "${host}" 2> /dev/null)" == *"put back to off"* ]]  ||  return 0
+	[[ "$("${GITNIBLET_VM_WRAP:?}" status "${host}" 2> /dev/null)" == *"put back to off"* ]]  ||  return 0
 	fEcho "${tgt}: halting ${host} from inside, since it ignores the ACPI shutdown"
 	local rc=0
 	## The link hangs as it goes down. ssh takes the first value given, so short keepalives go first.
@@ -206,12 +206,12 @@ fMain(){
 	done
 	((${#rows[@]}))  ||  fDie "no such target: ${want[*]}"
 
-	local vmWrap="${NGDB_VM_WRAP:-}"
+	local vmWrap="${GITNIBLET_VM_WRAP:-}"
 	if [[ -z "${vmWrap}" ]]; then
 		local -a found=("${HOME}"/synced/0-0/common/exec/util/linux/bash/*_vm-state.bash)
 		[[ -x "${found[0]}" ]]  &&  vmWrap="${found[0]}"
 	fi
-	export NGDB_VM_WRAP="${vmWrap}"  ## for the halt inside the wrap
+	export GITNIBLET_VM_WRAP="${vmWrap}"  ## for the halt inside the wrap
 	if [[ -z "${vmWrap}" ]] || ! command -v go &> /dev/null; then
 		local why="no VM and host lock wrap helper here"; [[ -n "${vmWrap}" ]] && why="no go here"
 		for row in "${rows[@]}"; do fParseRow "${row}"; summary+=("SKIP ${target}: ${why}"); fWarn "${target}: ${why}"; done
@@ -243,7 +243,7 @@ fMain(){
 			host="${dest#*@}"
 			rm -f "${runDir}/${target}/status"
 			wrapRc=0
-			"${vmWrap}" wrap "${host}" --wait "${NGDB_REMOTE_WAIT:-900}" -- \
+			"${vmWrap}" wrap "${host}" --wait "${GITNIBLET_REMOTE_WAIT:-900}" -- \
 				bash "${meFile}" --on-box "${runDir}" "${target}" "${dest}" "${keepTemp}" "${jobCap}" || wrapRc=$?
 			status="$(cat "${runDir}/${target}/status" 2> /dev/null || echo "unheld")"
 			case "${status}" in
@@ -277,6 +277,6 @@ fMain "${@}"
 
 ##	History:
 ##		- 20261025 JC: Created. FreeBSD, Linux arm64 and Intel macOS.
-##		- 20261025 JC: Run folders under nano-git-db-floss, here and on the boxes, through the shared guard.
+##		- 20261025 JC: Run folders under gitniblet-floss, here and on the boxes, through the shared guard.
 ##		- 20261025 JC: One line per test with its ID, through testid remote.
 ##		- 20261025 JC: vmKt6m is halted from inside when it was found off.

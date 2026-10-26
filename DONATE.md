@@ -1,6 +1,6 @@
-# Support nano-git-db
+# Support gitniblet
 
-nano-git-db is written and maintained by one programmer in his spare time. If you use it often, or it saves you time, sponsoring it keeps it moving.
+gitniblet is written and maintained by one programmer in his spare time. If you use it often, or it saves you time, sponsoring it keeps it moving.
 
 Even a few dollars a month is meaningful. Or just buy me a coffee.
 

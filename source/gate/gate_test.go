@@ -6,7 +6,7 @@ package gate_test
 import (
 	"testing"
 
-	"github.com/jim-collier/nano-git-db/gate"
+	"github.com/yottacore/gitniblet/gate"
 )
 
 // fakeProvider is a stand-in for the external build's real provider.

@@ -25,7 +25,7 @@ repoRoot="$(realpath -e "$(dirname "$0")/../..")"
 # shellcheck source=include/temp-run.bash
 source "${repoRoot}/cicd/utility/include/temp-run.bash"
 runDir="$(fTempDir_Make container-fallback)"  ||  exit 1
-export NGDB_LOG_DIR="${runDir}/logs"
+export GITNIBLET_LOG_DIR="${runDir}/logs"
 
 fCleanup(){ fSafeRm "${runDir}" > /dev/null; }
 trap fCleanup EXIT
@@ -41,8 +41,8 @@ flags=(-q --quick --no-sync --no-install --no-hooks --no-publish --no-demo --no-
 declare -i fails=0
 fCase(){  ## id, name, expected line, timeout or 0 to run to the end, docker stand-in
 	local id="$1" name="$2" want="$3" secs="$4" out rc
-	if ((secs)); then out="$(NGDB_DOCKER="$5" timeout "${secs}" nice -n 19 bash "${repoRoot}/cicd/cicd.bash" "${flags[@]}" 2>&1)"; rc=$?
-	else              out="$(NGDB_DOCKER="$5"                   nice -n 19 bash "${repoRoot}/cicd/cicd.bash" "${flags[@]}" 2>&1)"; rc=$?; fi
+	if ((secs)); then out="$(GITNIBLET_DOCKER="$5" timeout "${secs}" nice -n 19 bash "${repoRoot}/cicd/cicd.bash" "${flags[@]}" 2>&1)"; rc=$?
+	else              out="$(GITNIBLET_DOCKER="$5"                   nice -n 19 bash "${repoRoot}/cicd/cicd.bash" "${flags[@]}" 2>&1)"; rc=$?; fi
 	if grep -qF -- "${want}" <<< "${out}" && grep -qF 'Starting Build (native debug) ]' <<< "${out}" && ! grep -qF 'Container: running ' <<< "${out}" \
 		&& { ((secs)) || { ((rc == 0)) && grep -qF 'CI/CD: done' <<< "${out}"; }; }
 	then echo "PASS ${id} ${name}"
@@ -57,7 +57,7 @@ tree="${runDir}/tree"
 mkdir -p "${tree}/source"  &&  cp -p "${repoRoot}/source/go.mod" "${tree}/source/"
 git -C "${repoRoot}" ls-files -co --exclude-standard cicd | tar -C "${repoRoot}" -cf - -T - | tar -C "${tree}" -xf -
 sed -i 's/^ARG GO_VER=.*/ARG GO_VER=1.0.0/' "${tree}/cicd/container/Dockerfile"
-out="$(NGDB_DOCKER="${runDir}/nobuild" timeout 30 bash "${tree}/cicd/cicd.bash" "${flags[@]}" 2>&1)"; rc=$?
+out="$(GITNIBLET_DOCKER="${runDir}/nobuild" timeout 30 bash "${tree}/cicd/cicd.bash" "${flags[@]}" 2>&1)"; rc=$?
 if ((rc != 0)) && grep -qF "GO_VER in cicd/container/Dockerfile is '1.0.0'" <<< "${out}" && ! grep -qF 'Starting Build (native debug) ]' <<< "${out}"
 	then echo "PASS dedme stale GO_VER fails the run"
 	else echo "FAIL dedme stale GO_VER fails the run (exit ${rc})"; tail -20 <<< "${out}"; fails+=1; fi

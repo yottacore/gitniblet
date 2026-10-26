@@ -7,9 +7,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/jim-collier/nano-git-db/internal/core/crud"
-	"github.com/jim-collier/nano-git-db/internal/core/store"
-	"github.com/jim-collier/nano-git-db/internal/core/txlog"
+	"github.com/yottacore/gitniblet/internal/core/crud"
+	"github.com/yottacore/gitniblet/internal/core/store"
+	"github.com/yottacore/gitniblet/internal/core/txlog"
 )
 
 func lookupsAPI(t *testing.T) (*crud.API, *store.Store, *txlog.Log) {

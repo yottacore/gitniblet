@@ -16,11 +16,11 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
-	"github.com/jim-collier/nano-git-db/internal/core/config"
-	"github.com/jim-collier/nano-git-db/internal/core/crud"
-	"github.com/jim-collier/nano-git-db/internal/core/ddl"
-	"github.com/jim-collier/nano-git-db/internal/core/schema"
-	"github.com/jim-collier/nano-git-db/script"
+	"github.com/yottacore/gitniblet/internal/core/config"
+	"github.com/yottacore/gitniblet/internal/core/crud"
+	"github.com/yottacore/gitniblet/internal/core/ddl"
+	"github.com/yottacore/gitniblet/internal/core/schema"
+	"github.com/yottacore/gitniblet/script"
 )
 
 // Run is the TUI entry point. Given a registered database name it opens that
@@ -44,7 +44,7 @@ func Run(args []string) error {
 		return runOpen(args[0], args[1], args[2], nil, dec)
 	}
 	if len(args) != 0 { // 2 or 4+ args matches neither form
-		return fmt.Errorf("usage: ngdb --tui [<db>], or the explicit --tui <schema> <sqlite> <logdir>")
+		return fmt.Errorf("usage: gitniblet --tui [<db>], or the explicit --tui <schema> <sqlite> <logdir>")
 	}
 	if ddlPath, sqlitePath, logDir, ok := config.PWDTriple(); ok {
 		return runOpen(ddlPath, sqlitePath, logDir, nil, dec)

@@ -19,7 +19,7 @@ import (
 
 	_ "modernc.org/sqlite" // pure-Go driver, registered as "sqlite"
 
-	"github.com/jim-collier/nano-git-db/internal/core/ddl"
+	"github.com/yottacore/gitniblet/internal/core/ddl"
 )
 
 // Store is the handle to the local SQLite view.
@@ -38,7 +38,7 @@ type Store struct {
 //
 // The pragmas go in the DSN rather than through Exec: the driver replays them on
 // every pooled connection, while an Exec would only reach whichever one it
-// happened to get. busy_timeout matters most - a second ngdb process holding the
+// happened to get. busy_timeout matters most - a second gitniblet process holding the
 // file would otherwise fail a write immediately instead of waiting its turn.
 func Open(path string) (*Store, error) {
 	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"

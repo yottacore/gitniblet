@@ -9,7 +9,7 @@
 ##		sets for its own publish, after a run that passed the same checks.
 ##	Syntax:
 ##		Turn it on once per clone:  git config core.hooksPath cicd/utility/git-hooks
-##		NGDB_GATE_DRYRUN=1 prints what it would do and runs no gate.
+##		GITNIBLET_GATE_DRYRUN=1 prints what it would do and runs no gate.
 ##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 ##	Licensed under The MIT License (MIT). Full text at:
 ##		https://mit-license.org/
@@ -54,7 +54,7 @@ if [[ -z "${gatedPath}" ]]; then
 	exit 0
 fi
 echo "pre-push: gating the push to main with cicd.bash --merge-gate, for ${gatedPath} (SKIP_GATE=1 skips)" >&2
-[[ "${NGDB_GATE_DRYRUN:-0}" != "1" ]]  ||  exit 0
+[[ "${GITNIBLET_GATE_DRYRUN:-0}" != "1" ]]  ||  exit 0
 
 ## A run folder like cicd.bash's, removed only through the guard.
 # shellcheck source=cicd/utility/include/temp-run.bash

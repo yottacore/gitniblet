@@ -27,7 +27,7 @@ fRemoteSync(){
 		return 0
 	fi
 	## No prompt and a time limit, so an unattended run can't sit on a password or a dead link.
-	if ! GIT_TERMINAL_PROMPT=0 timeout "${NGDB_SYNC_TIMEOUT:-60}" git fetch --quiet 2> /dev/null; then
+	if ! GIT_TERMINAL_PROMPT=0 timeout "${GITNIBLET_SYNC_TIMEOUT:-60}" git fetch --quiet 2> /dev/null; then
 		fEcho_Clean "WARNING: couldn't fetch ${up}, so this run builds the tree as it is."
 		return 0
 	fi

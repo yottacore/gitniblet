@@ -13,11 +13,11 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
-	"github.com/jim-collier/nano-git-db/internal/core/crud"
-	"github.com/jim-collier/nano-git-db/internal/core/ddl"
-	"github.com/jim-collier/nano-git-db/internal/core/schema"
-	"github.com/jim-collier/nano-git-db/internal/core/store"
-	"github.com/jim-collier/nano-git-db/internal/core/txlog"
+	"github.com/yottacore/gitniblet/internal/core/crud"
+	"github.com/yottacore/gitniblet/internal/core/ddl"
+	"github.com/yottacore/gitniblet/internal/core/schema"
+	"github.com/yottacore/gitniblet/internal/core/store"
+	"github.com/yottacore/gitniblet/internal/core/txlog"
 )
 
 const personDDL = `

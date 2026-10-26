@@ -18,7 +18,7 @@ func resolve(p string) string {
 	return p
 }
 
-// A plain (non-repo) folder is used verbatim - no ngdb/<name> subfolder.
+// A plain (non-repo) folder is used verbatim - no gitniblet/<name> subfolder.
 // ID: d9ew9
 func TestLogDirForPlainFolder(t *testing.T) {
 	dir := t.TempDir()
@@ -31,7 +31,7 @@ func TestLogDirForPlainFolder(t *testing.T) {
 	}
 }
 
-// Pointing at a git repo's top level derives <root>/ngdb/<name>.
+// Pointing at a git repo's top level derives <root>/gitniblet/<name>.
 // ID: d9ewa
 func TestLogDirForRepoSubfolder(t *testing.T) {
 	repo := t.TempDir()
@@ -42,7 +42,7 @@ func TestLogDirForRepoSubfolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(resolve(repo), "ngdb", "todo")
+	want := filepath.Join(resolve(repo), "gitniblet", "todo")
 	if resolve(got) != want {
 		t.Fatalf("repo subfolder: got %q, want %q", resolve(got), want)
 	}

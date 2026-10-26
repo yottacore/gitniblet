@@ -3,7 +3,7 @@
 
 package txlog
 
-import "github.com/jim-collier/nano-git-db/internal/core/guid"
+import "github.com/yottacore/gitniblet/internal/core/guid"
 
 // testID renders a short fixture label as a valid id, so tests keep using
 // readable stand-ins like "01" against the format's fixed width.

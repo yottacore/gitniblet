@@ -163,6 +163,42 @@ func TestListValidatesRecords(t *testing.T) {
 	}
 }
 
+// ID: defbx
+func TestUserBaseMovesOldFolder(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
+	t.Setenv("AppData", home)
+	t.Setenv("HOME", home)
+	cfg, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(cfg, oldAppDir, "db1")
+	if err := os.MkdirAll(old, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	base, err := UserBase()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(base, "db1")); err != nil {
+		t.Fatalf("old record not moved: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cfg, oldAppDir)); !os.IsNotExist(err) {
+		t.Fatalf("old folder still there: %v", err)
+	}
+	// An old folder that turns up later is left alone.
+	if err := os.MkdirAll(old, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UserBase(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); err != nil {
+		t.Fatalf("old folder moved over an existing one: %v", err)
+	}
+}
+
 // ID: d9dz0
 func TestBaseOverride(t *testing.T) {
 	isolate(t)

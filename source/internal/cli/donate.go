@@ -6,7 +6,7 @@ package cli
 import (
 	"fmt"
 
-	"github.com/jim-collier/nano-git-db/donate"
+	"github.com/yottacore/gitniblet/donate"
 )
 
 // Donate prints the support blurb and the link to open. No database is involved.

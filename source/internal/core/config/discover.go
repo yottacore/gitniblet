@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jim-collier/nano-git-db/internal/core/ddl"
+	"github.com/yottacore/gitniblet/internal/core/ddl"
 )
 
 // Listed is one discovered registry entry. An unopenable record still appears -
@@ -191,7 +191,7 @@ func LocalKey(ddlPath string) string {
 // UnknownDatabase is the error every front-end reports for a name that is not
 // in the registry. One wording, so the CLI, TUI and web all say the same thing.
 func UnknownDatabase(name string) error {
-	return fmt.Errorf("unknown database %q; register it with --init, or run ngdb with no arguments to see the ones you have", name)
+	return fmt.Errorf("unknown database %q; register it with --init, or run gitniblet with no arguments to see the ones you have", name)
 }
 
 // PWDTriple resolves a database in the current directory to the
