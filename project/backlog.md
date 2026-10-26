@@ -32,201 +32,11 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 ## Issues
 
-- CICD reset: other hosts and VMs.
-	- ID: 2026102416210001
-	- Type: Task
-	- Status: Waiting on signoff
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261024-162100
-	- Opened by: JC
-	- Target OS: Windows, macOS, FreeBSD, and Linux on arm64
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per the shared CICD rules, Other hosts and VMs.
-		- The default run tests the builds made for other platforms on the test boxes: Windows on b29w, Intel macOS on vmKt6m or b26, FreeBSD on vmFreeBSD, and Linux arm64 on vmDebARM64. Today they're only cross-built, and only arm64 macOS gets tested, in hosted CI.
-		- Windows testing uses `b29w`, never `b29w-wif`. Nothing here needs vm925w's GPU.
-		- Each box is held through the shared host lock for the whole time it's used, in its `wrap` form, so a crash can't leave it held.
-		- A VM is put back the way it was found, through the VM state helper: resumed or started at the start, and paused or powered off again at the end.
-		- A box that doesn't answer is skipped with a warning and a `SKIP` line, in any mode, and the run goes on. `--no-remote` skips them all.
-		- Each box gets a work folder of this project's own, under its temp root.
-		- Overrides the line in the private round settings that leaves the Intel Mac checks as a by-hand option.
-	- Estimated effort: High
-	- Actual effort: Avg
-	- Progress log:
-		- 20261025: New `cicd/utility/remote-test.bash`. It cross-builds the Go test binaries and ngdb per target, then on each box runs them and the CLI smoke in a work folder of its own under the box's temp root, and removes it after. `remote-windows.ps1` is the Windows side, `remote-unix.bash` the rest.
-		- 20261025: `cicd.bash` runs it on the host after build and test, before dogfood. `--no-remote` skips it.
-		- 20261025: Verified: the full run's Remote tests stage passed windows on b29w, freebsd on vmFreeBSD and macos on vmKt6m, and showed SKIP for linux-arm64, since another session held vmDebARM64, in the stage and in the summary at the end. b26 was held too, so macos fell back to vmKt6m. A linux-arm64 run alone then passed on vmDebARM64, which went back to off.
-		- Departs from the requirements: vmKt6m stayed running after the run, with a warning, since it ignores the ACPI shutdown. It was shut down from inside afterwards. That's 2026102510392387.
-	- Decisions:
-		- Intel macOS tries b26 first, then vmKt6m. b26 is real hardware, and vmKt6m ignores the ACPI shutdown, so it doesn't go back to off by itself.
-		- Windows runs as `wintest`, which isn't an admin.
-		- `--quick` skips the stage, like the cross-builds.
-		- linux-arm64 runs at most 2 test jobs, since that VM is emulated.
-	- Branch: cicd1025
-	- Test case: All 4 targets passed on their boxes 20261025, and both VMs went back to off. `cicd/utility/remote-skip-test.bash`, IDs dedn7 to dednb, covers the SKIP and FAIL paths without a box.
-
-- CICD reset: CPU and priority.
-	- ID: 2026102416210003
-	- Type: Task
-	- Status: Waiting on signoff
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261024-162100
-	- Opened by: JC
-	- Related IDs: 2026102416210005
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per the shared CICD rules, Machine use.
-		- Every step is already capped at half the logical CPUs from one include. What's left is below.
-		- Check the 1-minute load at the start and again before each step, and drop to a quarter when it's over half the CPU count.
-		- Fuzz, `-race`, and the leak checks use a quarter, busy or not.
-		- Every step runs under `nice -n 19` and `ionice -c 3`. A container gets `--cpus` and `--cpu-shares 256`, plus `nice` inside it.
-		- Pass the count to every tool that runs in parallel, goreleaser's `--parallelism` included.
-		- The same rules apply on the test boxes, with each box's own CPU count and load.
-	- Estimated effort: Low
-	- Actual effort: Low
-	- Progress log:
-		- 20261025: The job count is worked out again before each step from the 1-minute load: half the CPUs, or a quarter when the load is over half the CPU count. Fuzz takes a quarter either way. Each step prints its count and the load.
-		- The run drops itself to nice 19 and the idle I/O class at the start, so every step inherits both. The helper scripts do the same when run alone.
-		- The container gets `--cpus` at half the CPUs, `--cpu-shares 256`, and `nice` inside. The run inside checks the load before each of its steps, and never goes past the container's `--cpus`.
-		- The count now also goes to goreleaser's `--parallelism`, to gosec's `-concurrency`, which went by the core count before, and to `go test -parallel`. The boxes get idle I/O where they have `ionice`, and `-test.parallel`.
-		- design.md's CI/CD pipeline section and `--help` say so.
-		- Verified: `steps-test.bash` dedq2, dedq3 and dedq9 pass, and fail on the old include and `cicd.bash`. `cleanup-test.bash`, `container-fallback-test.bash`, `remote-skip-test.bash`, a short fuzz run, `test.bash`, the wide gofmt, and the CLI smoke pass. A quick run through the container passed, with 8 jobs per step at load 38 to 70 on 32 CPUs.
-		- Swept: every `go build`, `go test`, `go vet` and `go run` tool in `cicd/`, goreleaser, gosec, staticcheck and govulncheck (which follow `GOMAXPROCS`), the container run, and the box side on Unix and Windows.
-		- 20261025: Verified: in the full run each step printed its count and load, 8 of 32 CPUs at load 51 to 62, with the container at `--cpus 16`. Fuzz took 8 inside the container, and goreleaser and gosec passed with that count. The boxes ran 4 test jobs, and linux-arm64 2. Idle I/O on the boxes doesn't show in the log, so it's unverified.
-		- Departs from the requirements: b29w printed `load ?%`, since WMI refuses the `wintest` logon, so it never drops to a quarter when busy. That's 2026102510392398.
-	- Decisions:
-		- The container's `--cpus` is half the CPUs, the most any step gets, rather than the count when it starts. So a step inside can still take half once the load drops.
-		- Nothing in the pipeline runs `-race` or a leak check yet, so fuzz is the only heavy step.
-		- `docker build` runs in the daemon, so `nice` on it reaches only the client. The image is rebuilt only when its recipe changes.
-		- The Windows box keeps its CPU percent as its load, since it has no load average. It already ran at `BelowNormal`.
-	- Branch: cicd1025
-	- Test case: `cicd/utility/steps-test.bash`, dedq2, dedq3 and dedq9.
-
-- CICD reset: step output.
-	- ID: 2026102416210005
-	- Type: Task
-	- Status: Waiting on signoff
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261024-162100
-	- Opened by: JC
-	- Related IDs: 2026102416210003
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per the shared CICD rules, the step lines in the CICD style guide.
-		- Each step opens under a 79-character rule with `[ <time>: Step N of M; Starting <name> ]`, and closes with the same line saying `PASS` or `FAIL`. The time is local, as `YYYYmmDD-HHMMSS.NN`.
-		- Today a section prints a 74-character rule and a bare title, with no count, time, or result.
-		- A step that's turned off isn't counted, and the first section lists those with the flag or reason for each.
-		- One blank line between sections, and one at the end.
-	- Estimated effort: Low
-	- Actual effort: Low
-	- Progress log:
-		- 20261025: Every step is planned before the first one runs. The first section gives the count, lists each step that's off with its flag or reason, and says whether build and test run in the container. Each step then opens under a 79-character rule with `[ <time>: Step N of M; Starting <name> ]` in local time, and closes with `PASS` or `FAIL`.
-		- A step that fails, or is stopped with Ctrl+C, closes with `FAIL` from the exit trap.
-		- The run in the container takes the outer run's list, so its steps carry on the same numbers. It gets the host's time zone, since its clock read UTC.
-		- The last section says `done; PASS` with the count, and holds the remote tests' summary.
-		- Verified: `steps-test.bash` dedq4 to dedq8 pass, and dedq4, dedq7 and dedq8 fail on the old `cicd.bash`. Without the `FAIL` line in the exit trap, dedq8 fails. A quick run through the container numbered all 5 steps across it.
-		- Swept: every section title in `cicd.bash`. Only the first and last sections are left. The helper scripts print plain lines inside a step, so their output stays.
-		- 20261025: Verified: the full run listed the 4 steps that were off with their flags, numbered 9 steps across the container and this host, opened and closed each with its time and `PASS`, and ended with `done; PASS, 9 steps` and the remote summary.
-		- Departs from the requirements: the switch from the container's step 7 to this host's step 8 left 2 blank lines in place of 1. That's 2026102510392392.
-	- Decisions:
-		- Building the container image is part of the first section, not a step, since it doesn't change the count. If it fails, the same steps run on this host.
-		- 20261025: `container-fallback-test.bash` matched the old section titles. dedmb to dedme now look for `Starting Build (native debug) ]` in place of `[ Build (native debug) ]`, and `Container: running ` in place of `[ Container (`. What they check is the same.
-		- Ctrl+C while the container runs is expected to leave the step inside without a `FAIL` line, since the container is removed first. Not checked.
-		- The summary shown before the commit message prompt still lists what's skipped, as before.
-	- Branch: cicd1025
-	- Test case: `cicd/utility/steps-test.bash`, dedq4 to dedq8.
-
-- Tests wrote to the real database registry on macOS.
-	- ID: 2026102318473520
-	- Type: Bug
-	- Status: Waiting on signoff
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261023-184735
-	- Opened by: JC
-	- Target OS: macOS
-	- Incorrect behavior [Bug]: The config and TUI tests set `XDG_CONFIG_HOME` and `AppData` to a temp dir, but macOS reads neither, so the tests registered databases under the real `~/Library/Application Support/ngdb`. The cli init tests also failed there, since `/var` is a link to `/private/var`.
-	- Expected behavior [Bug]: Tests never touch the real registry on any OS.
-	- Reproduced [Bug]: 20261023, on the first arm64 macOS CI run.
-	- Actual fix [Bug]: The test helpers set `HOME` too, and the init tests compare against the resolved temp dir.
-	- Test case: The same tests, now passing on the macOS CI job. Checked on Intel macOS too, where the real registry folder never appeared.
-	- Related IDs: 2026102318473519
-	- Branch: macci
-
-- Run CI on GitHub's free arm64 macOS runners.
-	- ID: 2026102318473519
-	- Type: Task
-	- Status: Waiting on signoff
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261023-184735
-	- Opened by: JC
-	- Target OS: macOS
-	- Requirements [Feature]:
-		- Build, run the tests, and smoke-test the CLI on the built binary.
-	- Progress log:
-		- 20261023: New `macos` job in `ci.yml`. It checks it's on arm64, runs the tests, builds with `cicd/build.bash`, then runs `cicd/utility/smoke-cli.bash`. The Linux job runs the smoke test too. Only floss gets it, since macOS minutes on the private repos aren't free.
-	- Test case: `cicd/utility/smoke-cli.bash`, also passing under stock bash 3.2 on Intel macOS.
-	- Branch: macci
-
-- Show the build date on non-release builds.
-	- ID: 2026102318473518
-	- Type: Enhancement
-	- Status: Waiting on signoff
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261023-184735
-	- Opened by: JC
-	- Requirements [Feature]:
-		- Add " (YYYY-mm-DD)" after the build number.
-		- Show the date in the local time zone of whoever views the version.
-	- Progress log:
-		- 20261023: `cicd/build.bash` stamps the UTC build time, and `--version` shows it as a local date, as in `ngdb 1.0.0-beta.2 (c6cc12b) (2026-10-23)`. Release builds from goreleaser don't stamp it, so they show no date. The enterprise build doesn't stamp it yet.
-		- 20261024: The version line's form here is superseded by 2026102416210007.
-	- Test case: `TestVersionLine` in `source/app/app_test.go`, and the date check in `smoke-cli.bash`.
-	- Branch: macci
-
-- CICD reset: temp files and safe removal.
-	- ID: 2026102416210006
-	- Type: Task
-	- Status: Waiting on signoff
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-162100
-	- Opened by: JC
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per the shared CICD rules, Temp files and Safe removal.
-		- Each run makes its own folder, `${HOST_TEMP}/nano-git-db-floss/<YYYYmmDD-HHMMSS>_<NNN>/`, writes `run.pid` there, and points `TMPDIR`, `TEMP`, and `TMP` at it. Today the fuzz, profile, smoke, and demo helpers each pick their own spot under `/tmp` or `TMPDIR`, and the demo and seed scripts use fixed `/tmp` paths.
-		- A trap removes the folder at the end, on failure and Ctrl+C too. `--keep-temp` keeps it and prints its path.
-		- Each run also removes this project's own stale run folders, older than 2 days with no live process from their `run.pid`.
-		- Every recursive removal goes through the repo's own copy of the safe removal guard. 9 are unguarded today, in 8 scripts, with the file list in the private notes.
-		- The demo recorder stops everything it starts. On 2026-10-24 it left 2 sets of `dbus-daemon`, `gvfsd`, and at-spi processes running on display `:97`, with HOME in its temp folder.
-		- Check it the way a gate is checked: run the pipeline twice, kill one run partway, and see that nothing new piles up.
-	- Estimated effort: Avg
-	- Actual effort: Avg
-	- Progress log:
-		- 20261025: `cicd/utility/include/temp-run.bash` holds the run folder, the stale sweep, and the repo's copy of the safe removal guard, which also runs on macOS and the BSDs. cicd.bash, fuzz, profile, the smoke, the demo recorder and `demo-db.bash`, the remote, skip and fallback tests, `seed.bash` and `screenshots.bash` use it.
-		- Each `cicd.bash` run makes `${HOST_TEMP}/nano-git-db-floss/<stamp>_<NNN>/` with `run.pid`, points `TMPDIR`, `TEMP` and `TMP` at it, and mounts it into the container. A helper makes its folder inside it, or a run folder of its own when run alone.
-		- A trap removes it at the end, on failure and Ctrl+C too, and `--keep-temp` keeps it and prints its path. Run folders older than 2 days with no live `run.pid` process go at the start.
-		- The run log's `tee` ignores Ctrl+C. Without that, the cleanup wrote into a closed pipe and died.
-		- The installers are fetched on their own, so each got its own check: only its own temp folder, never a link.
-		- The demo recorder stops every process still running with its fake HOME, which covers what `dbus-run-session` started.
-		- The remote boxes' work folders moved to `nano-git-db-floss` too, in all 4 places that name them.
-		- Verified: `cleanup-test.bash` dedp4 to dedpb pass. The run-twice check, with one run stopped by Ctrl+C, left nothing new. A `dbus-daemon` outlived a stopped `dbus-run-session`, and the recorder's cleanup stopped it. fuzz, profile, `demo-db.bash`, `seed.bash`, the CLI smoke, the remote skip test and the fallback test ran and left no folder.
-		- Swept: every `rm -r`, `rmtree`, `Remove-Item -Recurse` and `mktemp` outside `vendor/`.
-		- 20261025: Verified: the full run ran fuzz, the profiler and the remote tests, and left no run folder of its own. The demo check recorded with `--no-build`, and afterwards `:97` was gone, no `dbus-daemon`, `gvfsd` or at-spi process outside the desktop's was left, and no run folder. `assets/demo.gif` was restored by copy.
-		- Departs from the requirements: `seed.bash` and `screenshots.bash` keep their fixed `/tmp` paths, per the decisions below.
-	- Decisions:
-		- The temp root is `nano-git-db-floss`, as asked, while the docker labels stay `nano-git-db`.
-		- `seed.bash` and `screenshots.bash` keep their fixed `/tmp` paths, since the walkthrough and the screenshots show them, and the folder outlives the run. Their wipe goes through the guard, so a stray argument can't remove anything outside a tmp folder.
-		- `gui-headless.bash` keeps its state at `/tmp/rpd-gui-headless` across its start and stop calls, so it stays.
-		- `walkthrough.md` still tells the presenter to `rm -rf` the two demo folders by hand. It's a user doc, so it was left alone.
-	- Branch: cicd1025
-	- Test case: `cicd/utility/cleanup-test.bash`, dedp4 to dedpb.
-
 - CICD reset: standard flags.
 	- ID: 2026102416210004
 	- Type: Task
 	- Status: Waiting on automated testing
-	- Needs local test suite run?: `cicd/cicd.bash --backlog-run-full`, from the round worktree, with the container and the boxes. It's the full run line from now on, and runs the same steps as `--merge-gate`.
-	- Needs external testing: `ci.yml` on the round branch, by `workflow_dispatch`. Its Linux job now runs `cicd.bash --merge-gate --no-container --no-remote`, with nsis.
+	- Needs external testing: `ci.yml` on the round branch again, once 2026102522324333 is fixed.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-162100
 	- Opened by: JC
@@ -259,6 +69,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Departs from the requirements: `project/example.shcl` stays gated, since the tests read it. The rest of `project/` is `.md` and skips the gate.
 		- 20261025: `steps-test.bash` dedq7 now checks for `Off: Cross-compile + package (--quick)` in place of `Off: Fuzz (--quick)`, since `--quick` keeps fuzz. The rest of it is the same.
 		- Swept: every `--quick`, `doQuick` and `fStep` site in `cicd.bash`, the 4 test scripts that run it, `ci.yml`, `release.yml`, which doesn't call it, and the docs that name the flags. Enterprise `cicd.bash` has none of these stages, and vendor has no `cicd.bash`.
+		- 20261025: Verified: `--backlog-run-full` passed all 11 steps on the frozen commit 21bc082, with the container and all 4 boxes, and `--backlog-run-quick` passed its 3. flags-test deecd to deeck and deee3 passed in its Pipeline tests step.
+		- 20261025: Hosted CI run 40272702133 failed. Its Linux merge gate passed steps 1 to 8, nsis packaging included, then failed Pipeline tests on flags-test deece and deee3. The runner has no `../../private/cicd-hooks`, so the plan lists Local hooks as off, and both checks expect it on. That's 2026102522324333.
 	- Decisions:
 		- `--backlog-run-quick` leaves out the debug build, fuzz and the security scan, to stay well under 4 minutes. `--backlog-run-full` has them.
 		- Areas narrow only the tests. Lint and the build take seconds, so they stay whole.
@@ -273,8 +85,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- ID: 2026102520474880
 	- Type: Task
 	- Status: Waiting on automated testing
-	- Needs local test suite run?: `cicd/cicd.bash --backlog-run-full`. The Race tests and Pipeline tests steps pass, with a `PASS` line for each ID in the 6 scripts, deef1 to deef3 included.
-	- Needs external testing: `ci.yml` on the round branch. Its Linux merge gate now runs Race tests, which needs gcc on the runner, and Pipeline tests. Check both pass, and how much longer the job takes.
+	- Needs external testing: `ci.yml` on the round branch again, once 2026102522324333 is fixed. Check Pipeline tests passes.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261025-204748
 	- Opened by: JC
@@ -295,6 +106,9 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Verified: all 6 scripts pass, alone and under the environment the step gives them. The TUI tests passed under `-race` in 26s wall at load 2. A quick host run passed with Race tests in it. `--backlog-run-quick`, `testid check` and shellcheck pass.
 		- 20261025: `flags-test.bash` deecd's `--backlog-run-full` plan went from `...|Security + supply-chain|Remote tests|Profiler` to `...|Security + supply-chain|Race tests|Pipeline tests|Remote tests|Profiler`. deece's `--quick` plan went from `|Fuzz|Security + supply-chain|Dogfood|` to `|Fuzz|Security + supply-chain|Race tests|Dogfood|`, and its off list gained `Pipeline tests (--quick)` after `Cross-compile + package (--quick)`. The rest of both is the same.
 		- Swept: every `cicd.bash` run the 6 scripts start, for the run log and tracked edits. `flags-test.bash` runs only `--list`, and `sync-test.bash` runs in a copy, so both already wrote nothing. `remote-skip-test.bash` starts `remote-test.bash`, which writes no run log.
+		- 20261025: Verified: the full run on 21bc082 passed Race tests, 22 tests in 26s, and Pipeline tests in 6m27s, with a `PASS` line for each of the 52 IDs in the 6 scripts, deef1 to deef3 included.
+		- 20261025: Hosted CI run 40272702133 passed Race tests in 66s, so the runner has gcc. Pipeline tests failed on flags-test deece and deee3 after 6m46s, with the other 5 scripts passing. That's 2026102522324333.
+		- The Linux job ran 18m30s and stopped before the Profiler, against about 2 minutes before `--merge-gate` took over. Race and Pipeline tests are about 8 minutes of that, cross-compile and packaging 4m38s, and fuzz 2m17s.
 	- Decisions:
 		- 20261025: Notes for whoever takes it. `steps-test.bash` and `container-fallback-test.bash` run `cicd.bash` itself, and `container-fallback-test.bash` edits the tracked Dockerfile and puts it back, which the hands-off modes rule out. `-race` needs cgo, which the container and the build keep off.
 		- Both steps run on the host, not in the container. The image has no C compiler, and adding one grows it for one step. The pipeline tests start `cicd.bash` with docker and ssh stand-ins, which have to run outside it anyway.
@@ -309,8 +123,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - `cleanup-test.bash` dedpb can take 30s to stop after Ctrl+C under load.
 	- ID: 2026102520025738
 	- Type: Bug
-	- Status: Waiting on automated testing
-	- Needs local test suite run?: `cicd/utility/cleanup-test.bash` 10 times in a row on a busy box, load over 24 on 32 CPUs. dedpb passes every time.
+	- Status: Can't reproduce
+		- The polled wait stays in. dedpb runs in every full run's Pipeline tests step, so a recurrence shows there.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Low
 	- Opened: 20261025-200257
 	- Opened by: JC
@@ -332,205 +146,12 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- 20261025: `cicd.bash` no longer waits on the container's client with a bare `wait`. It polls it with a short `sleep`, which Ctrl+C kills at once, then reads its exit with `wait`.
 		- Verified: dedpb passed in 30 runs of the Ctrl+C case at load 11 to 18, each stopping in under 1s, and in every `cleanup-test.bash` run since. It never failed before the change either, so the change is unproven.
 		- Swept: every `wait` in `cicd/`. That was the only one in `cicd.bash`.
+		- 20261025: Verified: dedpb passed in 10 `cleanup-test.bash` runs in a row at load 24 to 37 on 32 CPUs, about 28s each, on the frozen commit 21bc082. It also passed in the full run's Pipeline tests step and in hosted CI run 40272702133.
+	- Decisions:
+		- 20261025: Can't reproduce. It failed once in 3 runs before the change, and not in 65 more before it or 40 after it.
 	- Actual fix [Bug]: A polled wait on the container's client, in place of a bare `wait`.
 	- Branch: r1025
 	- Test case: `cicd/utility/cleanup-test.bash` dedpb, which the Pipeline tests step now runs.
-
-- A `null_ok: no` field with no default makes its table drop every row, silently.
-	- ID: 2026102407331876
-	- Type: Bug
-	- Status: Waiting on UAT
-		- For a look at the Decisions: the view no longer holds NOT NULL for any field.
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261024-073318
-	- Opened by: JC
-	- Related IDs: 2026102407295324
-	- Steps to reproduce [Bug]:
-		- Give a table a `null_ok: no` field with no `defaultval`, then create a row with that field set.
-	- Incorrect behavior [Bug]: The create succeeds and the row is in the log, but not in the view. No error or warning.
-	- Expected behavior [Bug]: The row reaches the view, or the write is refused up front.
-	- Reproduced [Bug]: 20261024, with the built-in `lookups` table while working 2026102407295324.
-	- Possible cause [Bug]: Replay inserts a create as the bare id with `INSERT OR IGNORE`, and SQLite's OR IGNORE also skips a NOT NULL failure. The field values come after it as updates, against no row.
-		- Once fixed, put `null_ok: n` back on the built-in lookups' `title` and `lookups_idx`.
-	- Actual cause [Bug]:
-		- As guessed. The view made `null_ok: no` a NOT NULL column, and OR IGNORE dropped the bare-id insert.
-		- Same shape: a logged null on a NOT NULL column that has a default, or on a system column, failed the whole replay. `SetFieldNull` on one wrote the log first, so the database then failed to open.
-	- Estimated effort: Avg
-	- Actual effort: Avg
-	- Progress log:
-		- 20261024: The view no longer makes any field NOT NULL. A view built before has those columns relaxed on the next open, keeping its rows and columns, and the replay then fills them.
-		- crud checks `null_ok: no` on write. A create that leaves such a field out with no static default is refused, and so is `SetFieldNull` on one, or on a system column. An empty string still goes through, since that's `empty_ok`.
-		- Replay's bare-id insert only ignores an id clash now, so any other refusal warns. A NOT NULL failure skips with a warning, like a unique clash.
-		- `null_ok: n` is back on lookups `title`, and on lookup_values `lookups_idx` and `title`, as in example.shcl. design.md's DDL section says where `null_ok` is checked.
-		- Verified: the new tests fail before the fix and pass after. `test.bash`, the CLI smoke, staticcheck and gosec pass, and the new tests pass under `-race`. Through the CLI, a view the old build left empty showed both rows after one replay with the new one.
-		- Swept: every crud write path (Create, Update, SetField, SetFieldNull). Only SetFieldNull can write a null. Both bare-id inserts in replay, and every NOT NULL in `store.go`. Only the system columns keep one, and they all have defaults.
-	- Decisions:
-		- The SQLite view doesn't enforce `null_ok`. The rule lives at write time, as the lookup value check will, and replay never re-checks.
-		- A `@previous` or function default doesn't count as filling a field, since no front-end computes them yet. Such a field is refused when left out.
-	- Actual fix [Bug]: `null_ok: no` is checked by crud on write instead of as NOT NULL in the view. Old views are relaxed on open.
-	- Branch: round1024
-	- Test case: `TestNotNullRowReachesView`, `TestNotNullRefusedUpFront` and `TestNotNullReplayKeepsLoggedNull` in `source/internal/core/crud/notnull_test.go`, `TestBuildRelaxesOldNotNull` in `store_test.go`, `TestReplayWarnsOnRefusedCreate` in `txlog/replay_test.go`, and `TestLookupsNotNull` in `schema/lookups_test.go`.
-
-- Two clients that create the same unique value before syncing both keep it in the view, one with that field empty.
-	- ID: 2026102407584270
-	- Type: Bug
-	- Status: Waiting on UAT
-		- For a look at the Decisions: a create whose unique value is already taken now leaves no row in the view at all.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-075842
-	- Opened by: JC
-	- Related IDs: 2026102407295329, 2026102407295324
-	- Steps to reproduce [Bug]:
-		- Open a new database whose schema has `seed:` rows from two clones, before either syncs. Sync both, then open one.
-	- Incorrect behavior [Bug]: Each seeded value is listed twice. The second copy has an empty idx and the rest of its fields set.
-	- Expected behavior [Bug]: One copy, as design.md's Lookups says: the unique index drops one at replay with a warning.
-	- Reproduced [Bug]: 20261024, on `round1024`, by replaying two clients' merged logs into a fresh view. The default groups' `name` updates warn the same way at that replay, so they likely get twins too.
-	- Possible cause [Bug]: Replay applies a create as an id-only insert, then one update per field. The unique clash refuses only the update, so the row stays.
-		- Two fixes to weigh: derive a seed row's id from its table and idx, so both clients log the same row, or have replay drop a create when one of its own field updates hits a unique clash. The second also covers runtime idx minting and the default groups.
-	- Actual cause [Bug]:
-		- As guessed. The log had no way to tell a row's starting values from later edits, so replay could only skip the field.
-		- Same shape: a view kept from an earlier pass kept its own client's row, so 2 clients could each keep a different one.
-	- Estimated effort: Avg
-	- Actual effort: Avg
-	- Progress log:
-		- 20261024: crud logs a create's starting values as `create` entries, not `update`. Replay already read that form, so older builds apply it the same way.
-		- On a unique clash with a starting value, replay drops the row created later in log order, whole, with a warning. Its later edits are skipped too, so it can't come back as a stub.
-		- When the view already holds the later row from an earlier pass, that row is the one dropped. So every client keeps the same row as a fresh rebuild.
-		- design.md's Transaction log section says how creates are logged and settled.
-		- Verified: the new tests fail before the fix and pass after. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass, and the new tests pass under `-race`. Taking out the earlier-pass check makes the "view held B" case fail.
-		- Swept: every path that logs a new row (`Create`, which seeding and the default groups go through, and the audit records, which have no unique field). Every replay caller (`OpenClientWith`, CLI `replay`, autosync, the live write) goes through `txlog.Apply`.
-	- Decisions:
-		- Replay drops the clashing create, rather than seed rows getting an id from their table and idx. That also covers runtime idx minting and the default groups.
-		- 20261024: `TestCreateReportsAFieldTheViewRefused` in `crud/write_test.go` asserted the second row stays with an empty `name`. It now asserts the row isn't in the view. The id and the refusal still come back.
-		- Logs written before this keep starting values as updates, so their clashes still skip only the field. Twins those logs already made stay.
-		- For a unique group over several fields, the earlier-pass check only spots a later row that sets the clashing field itself at create.
-		- Refusing a clashing create up front, before it's logged, is filed as 2026102408084809.
-	- Actual fix [Bug]: A create's values are logged as create entries, and replay drops the later of 2 rows that clash on one.
-	- Branch: round1024
-	- Test case: `TestReplayDropsCreateTwin` in `source/internal/core/txlog/replay_test.go`, `TestSeedRowsTwoClients` in `source/internal/core/schema/seed_test.go`, and the updated `TestCreateReportsAFieldTheViewRefused` in `source/internal/core/crud/write_test.go`.
-
-- Built-in `lookups` and `lookup_values` tables, with an auto-assigned `idx`.
-	- ID: 2026102407295324
-	- Type: Enhancement
-	- Status: Waiting on UAT
-	- Test environment: b23 runs `ngdb 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
-	- Needs hand testing: A look at both UIs, which now list the two tables after the user's own.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-072953
-	- Opened by: JC
-	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
-	- Related IDs: 2026102407331876
-	- Requirements [Feature]:
-		- Both tables exist in every database, shaped as in example.shcl, and list like normal tables.
-		- `idx` is a unique int, assigned max+1 on create when not given. A given one is kept, so seeds can name theirs.
-		- `idx` can't be changed once set.
-	- Estimated effort: Avg
-	- Actual effort: Low
-	- Progress log:
-		- 20261024: Both tables are built-in and always-on. Creating a row mints max+1 per table, and deleted rows count, so an idx is never handed out twice.
-		- A given idx must be a whole number above 0 and not taken by a live row. Changing a set idx is refused, and writing the same one back is let through, as a form save does.
-		- Verified: the new tests fail without the crud change and pass with it, the concurrent one under `-race` too. `test.bash`, the CLI smoke, staticcheck and gosec pass. Create, refuse and replay checked through the CLI.
-		- Swept: every crud write path (Create, Update, SetField, SetFieldNull). The TUI, web, CLI and scripts all write through those. Replay doesn't check, by design.
-	- Decisions:
-		- Departs from the wording: `title` and `lookups_idx` aren't NOT NULL yet, unlike example.shcl, since bug 2026102407331876 makes such a table drop every row. They stay `required: y`.
-		- 20261024: That bug is fixed in d459e1f, and `title` and `lookups_idx` are `null_ok: n` again.
-		- A user schema that restates either table, as example.shcl does, keeps its own shape and warns, as for any built-in name. The idx rules apply either way.
-		- 20261024 JC: A restated built-in should merge into the built-in, as a system field does, so example.shcl can keep documenting both tables. Filed as 2026102409431186.
-	- Branch: round1024
-	- Test case: `TestLookupsIdx` and `TestLookupsIdxConcurrent` in `source/internal/core/schema/lookups_test.go`.
-
-- Show lookup values per `lookup_in_lists` and `lookup_in_forms`.
-	- ID: 2026102407295335
-	- Type: Enhancement
-	- Status: Waiting on UAT
-	- Test environment: b23 runs `ngdb 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
-		- For a look at the Decisions: an edit form keeps the idx in its input, with the value shown beside it.
-	- Needs hand testing: A look at both UIs with a few emoji symbols, in the usual terminal and font.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-072953
-	- Opened by: JC
-	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
-	- Prereq IDs: 2026102407295324
-	- Requirements [Feature]:
-		- A `list_type: lookup` field shows its stored idx as symbol, title or both, in the TUI and web.
-		- Lists default to symbol, falling back to title. Forms default to both, symbol first.
-		- The TUI handles double-width and unrenderable symbols, falling back to title.
-		- Inactive values still render on existing rows.
-	- Estimated effort: Avg
-	- Actual effort: Avg
-	- Progress log:
-		- 20261024: Table lists, view grids and tree grids show a lookup field per `lookup_in_lists`, and view form blocks per `lookup_in_forms`, in both UIs. Edit forms show the value beside the idx.
-		- A value with no symbol shows its title. A value from another group, or one that isn't there, shows the stored idx.
-		- The TUI shows the title for a symbol that's bad UTF-8, zero width, or has a control char, or a glyph the terminal's charset can't draw. A double-width symbol keeps the next column in line.
-		- A `list_source` that isn't a group idx warns at open, and the field shows as stored.
-		- syntax.md's Fields section has the new keys.
-		- Verified: the new tests fail with the display turned off and pass with it, and the charset test fails without the screen check. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass. The real TUI under a pty shows the symbol with a UTF-8 locale, and the title with `C`.
-		- Swept: every place the TUI and web render a table row (table grid, view grid, tree grid, form block, edit form). Named query results are left as the SQL returns them, since their columns aren't tied to a field.
-	- Decisions:
-		- An edit form keeps the idx editable, since the picker is 2026102407295340. The value shows beside it, from the stored idx, so it doesn't follow typing.
-			- 20261024: The picker is in now, through 2026102408470113, so an edit form picks from a list.
-		- Soft-deleted values still show, like inactive ones. An idx is never handed out twice, so the label can't be wrong.
-		- Only values in the field's own group show. Another group's value shows as the stored idx, rather than a title that looks right.
-		- The TUI now starts its own terminal screen before handing it to tview, so the charset check works before the first draw.
-	- Branch: round1024
-	- Test case: `TestLookupShow` in `source/internal/core/schema/lookupshow_test.go`, `TestLookupsShowInTUI` and `TestLookupsFallBackToTitleInTUI` in `source/internal/tui/lookups_test.go`, and `TestLookupsShowInWeb` in `source/internal/web/lookups_test.go`.
-
-- Edit a `list_type: lookup` field through a picker, in the TUI and web.
-	- ID: 2026102408470113
-	- Type: Enhancement
-	- Status: Waiting on UAT
-	- Test environment: b23 runs `ngdb 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
-	- Needs hand testing: A look at both pickers with a few emoji symbols, in the usual terminal and font.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-084701
-	- Opened by: JC
-	- Parent ID: 2026102407295340
-	- Prereq IDs: 2026102408470107
-	- Requirements [Feature]:
-		- The edit form offers the group's active values, in sort order, shown per `lookup_in_forms`.
-		- A row that holds an inactive or deleted value keeps it until another is picked.
-	- Estimated effort: Avg
-	- Actual effort: Low
-	- Progress log:
-		- 20261024: Edit forms in both UIs pick a lookup field from a list: none first, then the group's active values by `sort`, then idx, labeled per `lookup_in_forms`. Values with no sort come last. The TUI's labels fall back to the title for a symbol the terminal can't draw, as lists do.
-		- A value the row holds that isn't offered, such as an inactive or deleted one, or one from an older build, is listed second and stays picked. A save that leaves it alone doesn't write it.
-		- A user schema that restates `lookup_values` with no `sort` field orders by idx.
-		- syntax.md's lookup line says what the form offers.
-		- 20261024: `TestLookupsShowInTUI` waited for the label `status (🔘`, and now checks the picker shows the value. `TestLookupsShowInWeb` checked for `name="status" value="7"` and a `<span>` label, and now checks for `<option value="7" selected>`. Both were the stand-in until this picker.
-		- Verified: the new and changed tests fail with the picker turned off and pass with it, 3 runs under `-race` too. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass.
-		- Swept: every edit form (the TUI's table grid and view blocks both go through `editFormThen`, and the web's through `form.html`). View form blocks only display.
-	- Decisions:
-		- The none entry stays on every form, so a field can be cleared. A `null_ok: no` field then gets the crud refusal on save.
-	- Branch: round1024
-	- Test case: `TestLookupChoices` in `source/internal/core/schema/lookupshow_test.go`, `TestLookupPickerInTUI` and the updated `TestLookupsShowInTUI` in `source/internal/tui/lookups_test.go`, and `TestLookupPickerInWeb` and the updated `TestLookupsShowInWeb` in `source/internal/web/lookups_test.go`.
-
-- Pickers for `list_type: literal` and `list_type: sql` fields.
-	- ID: 2026102408470118
-	- Type: Enhancement
-	- Status: Waiting on UAT
-	- Test environment: b23 runs `ngdb 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
-	- Needs hand testing: A look at the `lookup_values` form's group picker in both UIs.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261024-084701
-	- Opened by: JC
-	- Parent ID: 2026102407295340
-	- Prereq IDs: 2026102408470113
-	- Requirements [Feature]:
-		- Same picker as for lookups, fed from the literal list or the query in `list_source`. The built-in `lookup_values.lookups_idx` is one.
-	- Estimated effort: Avg
-	- Actual effort: Low
-	- Progress log:
-		- 20261024: Edit forms in both UIs pick a `literal` or `sql` field from its `list_source`, with none first and a held value that isn't listed kept second, as for lookups.
-		- A literal list splits on commas outside quotes. A query gives the value in its first column and the label in its second, or the value again. It runs when a form opens, never for a list.
-		- A query that fails stops the form with an error naming the field. A `list_type` with no `list_source` warns at open.
-		- syntax.md has a line for both, with an example.
-		- Verified: the new tests fail with the pickers turned off and pass with them, 3 runs under `-race` too. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass.
-		- Swept: the same edit forms as 2026102408470113. No demo schema uses `list_type`.
-	- Decisions:
-		- Lists still show a `literal` or `sql` field as stored, not the query's label.
-		- A write isn't checked against the list, unlike a lookup. The requirement didn't ask for it, and a query's rows can change under a held value.
-	- Branch: round1024
-	- Test case: `TestPickerChoices` in `source/internal/core/schema/picker_test.go`, `TestLiteralPickerInTUI` in `source/internal/tui/lookups_test.go`, and `TestListPickersInWeb` in `source/internal/web/lookups_test.go`.
 
 - Bump enterprise and vendor to the floss Go toolchain and `x/text`.
 	- ID: 2026102407133557
@@ -607,6 +228,23 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- 20261025: Split into 4 children by part of the backlog: 2026102520454994 (new-format Done items), 2026102520454999 (old-format Done bugs), 2026102520455004 and 2026102520455009 (old-format Done features, in 2 halves). A 5th, 2026102520474880, runs the tests no pipeline step runs yet. This item closes with the last of them.
 	- Decisions:
 		- Only the floss backlog. Enterprise and vendor have their own items for this, 2026101915313001 and 2026101915313002.
+
+- `flags-test.bash` deece and deee3 fail where `../../private/cicd-hooks` doesn't exist, as on a hosted runner.
+	- ID: 2026102522324333
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-223243
+	- Opened by: JC
+	- Related IDs: 2026102416210004, 2026102520474880
+	- Steps to reproduce [Bug]:
+		- Run `cicd/utility/flags-test.bash` from a checkout with no `../../private/cicd-hooks` beside it.
+	- Incorrect behavior [Bug]: deece and deee3 fail. The default and `--quick` plans list `Local hooks (no <dir>)` as off, and both checks expect only the flag-driven off steps. Hosted CI run 40272702133 failed its Linux merge gate on it.
+	- Expected behavior [Bug]: Both pass whether or not the private hooks folder exists.
+	- Reproduced [Bug]: 20261025, from an export of 21bc082 with no private folder beside it, and in hosted CI run 40272702133. Both pass in the floss checkout and its worktrees, which have the folder.
+	- Possible cause [Bug]: The test reads the real plan, where Local hooks is on only when `hooksDir` exists. Point `hooksDir` at a folder the test makes, or leave Local hooks out of the compared lists.
+	- Estimated effort: Low
+	- Test case: `flags-test.bash` deece and deee3 themselves, from a checkout with no private folder beside it.
 
 - Regression tests the old-format Done items still lack.
 	- ID: 2026102521481107
@@ -843,6 +481,414 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- `id` and `date_created` show read-only and are never written from a form. That likely means honoring `ui: readonly` first.
 	- Progress log:
 		- 20261024: Lists already honor `visible_list` on system fields. The example DDL's built-in `lookups` and `lookup_values` tables ask for `id` on forms, read-only.
+
+- A `null_ok: no` field with no default makes its table drop every row, silently.
+	- ID: 2026102407331876
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-073318
+	- Opened by: JC
+	- Related IDs: 2026102407295324
+	- Steps to reproduce [Bug]:
+		- Give a table a `null_ok: no` field with no `defaultval`, then create a row with that field set.
+	- Incorrect behavior [Bug]: The create succeeds and the row is in the log, but not in the view. No error or warning.
+	- Expected behavior [Bug]: The row reaches the view, or the write is refused up front.
+	- Reproduced [Bug]: 20261024, with the built-in `lookups` table while working 2026102407295324.
+	- Possible cause [Bug]: Replay inserts a create as the bare id with `INSERT OR IGNORE`, and SQLite's OR IGNORE also skips a NOT NULL failure. The field values come after it as updates, against no row.
+		- Once fixed, put `null_ok: n` back on the built-in lookups' `title` and `lookups_idx`.
+	- Actual cause [Bug]:
+		- As guessed. The view made `null_ok: no` a NOT NULL column, and OR IGNORE dropped the bare-id insert.
+		- Same shape: a logged null on a NOT NULL column that has a default, or on a system column, failed the whole replay. `SetFieldNull` on one wrote the log first, so the database then failed to open.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261024: The view no longer makes any field NOT NULL. A view built before has those columns relaxed on the next open, keeping its rows and columns, and the replay then fills them.
+		- crud checks `null_ok: no` on write. A create that leaves such a field out with no static default is refused, and so is `SetFieldNull` on one, or on a system column. An empty string still goes through, since that's `empty_ok`.
+		- Replay's bare-id insert only ignores an id clash now, so any other refusal warns. A NOT NULL failure skips with a warning, like a unique clash.
+		- `null_ok: n` is back on lookups `title`, and on lookup_values `lookups_idx` and `title`, as in example.shcl. design.md's DDL section says where `null_ok` is checked.
+		- Verified: the new tests fail before the fix and pass after. `test.bash`, the CLI smoke, staticcheck and gosec pass, and the new tests pass under `-race`. Through the CLI, a view the old build left empty showed both rows after one replay with the new one.
+		- Swept: every crud write path (Create, Update, SetField, SetFieldNull). Only SetFieldNull can write a null. Both bare-id inserts in replay, and every NOT NULL in `store.go`. Only the system columns keep one, and they all have defaults.
+		- 20261025: Verified: the 6 named tests passed in the full run on 21bc082, here and on the 4 boxes.
+	- Decisions:
+		- The SQLite view doesn't enforce `null_ok`. The rule lives at write time, as the lookup value check will, and replay never re-checks.
+		- A `@previous` or function default doesn't count as filling a field, since no front-end computes them yet. Such a field is refused when left out.
+		- 20261025: Closed on the Decisions as they stand. design.md's DDL section already says `null_ok` is checked on write, and the view is a local copy of the log.
+	- Actual fix [Bug]: `null_ok: no` is checked by crud on write instead of as NOT NULL in the view. Old views are relaxed on open.
+	- Branch: round1024
+	- Test case: `TestNotNullRowReachesView`, `TestNotNullRefusedUpFront` and `TestNotNullReplayKeepsLoggedNull` in `source/internal/core/crud/notnull_test.go`, `TestBuildRelaxesOldNotNull` in `store_test.go`, `TestReplayWarnsOnRefusedCreate` in `txlog/replay_test.go`, and `TestLookupsNotNull` in `schema/lookups_test.go`.
+	- Closed: 20261025-223453
+
+- CICD reset: other hosts and VMs.
+	- ID: 2026102416210001
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Target OS: Windows, macOS, FreeBSD, and Linux on arm64
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, Other hosts and VMs.
+		- The default run tests the builds made for other platforms on the test boxes: Windows on b29w, Intel macOS on vmKt6m or b26, FreeBSD on vmFreeBSD, and Linux arm64 on vmDebARM64. Today they're only cross-built, and only arm64 macOS gets tested, in hosted CI.
+		- Windows testing uses `b29w`, never `b29w-wif`. Nothing here needs vm925w's GPU.
+		- Each box is held through the shared host lock for the whole time it's used, in its `wrap` form, so a crash can't leave it held.
+		- A VM is put back the way it was found, through the VM state helper: resumed or started at the start, and paused or powered off again at the end.
+		- A box that doesn't answer is skipped with a warning and a `SKIP` line, in any mode, and the run goes on. `--no-remote` skips them all.
+		- Each box gets a work folder of this project's own, under its temp root.
+		- Overrides the line in the private round settings that leaves the Intel Mac checks as a by-hand option.
+	- Estimated effort: High
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: New `cicd/utility/remote-test.bash`. It cross-builds the Go test binaries and ngdb per target, then on each box runs them and the CLI smoke in a work folder of its own under the box's temp root, and removes it after. `remote-windows.ps1` is the Windows side, `remote-unix.bash` the rest.
+		- 20261025: `cicd.bash` runs it on the host after build and test, before dogfood. `--no-remote` skips it.
+		- 20261025: Verified: the full run's Remote tests stage passed windows on b29w, freebsd on vmFreeBSD and macos on vmKt6m, and showed SKIP for linux-arm64, since another session held vmDebARM64, in the stage and in the summary at the end. b26 was held too, so macos fell back to vmKt6m. A linux-arm64 run alone then passed on vmDebARM64, which went back to off.
+		- Departs from the requirements: vmKt6m stayed running after the run, with a warning, since it ignores the ACPI shutdown. It was shut down from inside afterwards. That's 2026102510392387.
+		- 20261025: Verified: the full run on 21bc082 passed windows on b29w, freebsd on vmFreeBSD, linux-arm64 on vmDebARM64 and macos on b26, each in a `nano-git-db-floss` work folder under the box's temp root. Both VMs were started from off and put back to off. b26 was free, so vmKt6m wasn't used, and its shutdown was fixed in 2026102510392387. remote-skip-test dedn7 to dednb passed in the Pipeline tests step.
+	- Decisions:
+		- Intel macOS tries b26 first, then vmKt6m. b26 is real hardware, and vmKt6m ignores the ACPI shutdown, so it doesn't go back to off by itself.
+		- Windows runs as `wintest`, which isn't an admin.
+		- `--quick` skips the stage, like the cross-builds.
+		- linux-arm64 runs at most 2 test jobs, since that VM is emulated.
+	- Branch: cicd1025
+	- Test case: All 4 targets passed on their boxes 20261025, and both VMs went back to off. `cicd/utility/remote-skip-test.bash`, IDs dedn7 to dednb, covers the SKIP and FAIL paths without a box.
+	- Closed: 20261025-223453
+
+- CICD reset: CPU and priority.
+	- ID: 2026102416210003
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Related IDs: 2026102416210005
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, Machine use.
+		- Every step is already capped at half the logical CPUs from one include. What's left is below.
+		- Check the 1-minute load at the start and again before each step, and drop to a quarter when it's over half the CPU count.
+		- Fuzz, `-race`, and the leak checks use a quarter, busy or not.
+		- Every step runs under `nice -n 19` and `ionice -c 3`. A container gets `--cpus` and `--cpu-shares 256`, plus `nice` inside it.
+		- Pass the count to every tool that runs in parallel, goreleaser's `--parallelism` included.
+		- The same rules apply on the test boxes, with each box's own CPU count and load.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: The job count is worked out again before each step from the 1-minute load: half the CPUs, or a quarter when the load is over half the CPU count. Fuzz takes a quarter either way. Each step prints its count and the load.
+		- The run drops itself to nice 19 and the idle I/O class at the start, so every step inherits both. The helper scripts do the same when run alone.
+		- The container gets `--cpus` at half the CPUs, `--cpu-shares 256`, and `nice` inside. The run inside checks the load before each of its steps, and never goes past the container's `--cpus`.
+		- The count now also goes to goreleaser's `--parallelism`, to gosec's `-concurrency`, which went by the core count before, and to `go test -parallel`. The boxes get idle I/O where they have `ionice`, and `-test.parallel`.
+		- design.md's CI/CD pipeline section and `--help` say so.
+		- Verified: `steps-test.bash` dedq2, dedq3 and dedq9 pass, and fail on the old include and `cicd.bash`. `cleanup-test.bash`, `container-fallback-test.bash`, `remote-skip-test.bash`, a short fuzz run, `test.bash`, the wide gofmt, and the CLI smoke pass. A quick run through the container passed, with 8 jobs per step at load 38 to 70 on 32 CPUs.
+		- Swept: every `go build`, `go test`, `go vet` and `go run` tool in `cicd/`, goreleaser, gosec, staticcheck and govulncheck (which follow `GOMAXPROCS`), the container run, and the box side on Unix and Windows.
+		- 20261025: Verified: in the full run each step printed its count and load, 8 of 32 CPUs at load 51 to 62, with the container at `--cpus 16`. Fuzz took 8 inside the container, and goreleaser and gosec passed with that count. The boxes ran 4 test jobs, and linux-arm64 2. Idle I/O on the boxes doesn't show in the log, so it's unverified.
+		- Departs from the requirements: b29w printed `load ?%`, since WMI refuses the `wintest` logon, so it never drops to a quarter when busy. That's 2026102510392398.
+		- 20261025: Verified: in the full run on 21bc082 each step printed its count and load, 16 of 32 CPUs at load 6 to 10, and 8 for fuzz and Race tests, with the container at `--cpus 16`. b29w printed `load 12%`, so the `load ?%` departure above is fixed, by 2026102510392398. steps-test dedq2, dedq3 and dedq9 passed in the Pipeline tests step.
+	- Decisions:
+		- The container's `--cpus` is half the CPUs, the most any step gets, rather than the count when it starts. So a step inside can still take half once the load drops.
+		- Nothing in the pipeline runs `-race` or a leak check yet, so fuzz is the only heavy step.
+		- `docker build` runs in the daemon, so `nice` on it reaches only the client. The image is rebuilt only when its recipe changes.
+		- The Windows box keeps its CPU percent as its load, since it has no load average. It already ran at `BelowNormal`.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/steps-test.bash`, dedq2, dedq3 and dedq9.
+	- Closed: 20261025-223453
+
+- CICD reset: step output.
+	- ID: 2026102416210005
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Related IDs: 2026102416210003
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, the step lines in the CICD style guide.
+		- Each step opens under a 79-character rule with `[ <time>: Step N of M; Starting <name> ]`, and closes with the same line saying `PASS` or `FAIL`. The time is local, as `YYYYmmDD-HHMMSS.NN`.
+		- Today a section prints a 74-character rule and a bare title, with no count, time, or result.
+		- A step that's turned off isn't counted, and the first section lists those with the flag or reason for each.
+		- One blank line between sections, and one at the end.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: Every step is planned before the first one runs. The first section gives the count, lists each step that's off with its flag or reason, and says whether build and test run in the container. Each step then opens under a 79-character rule with `[ <time>: Step N of M; Starting <name> ]` in local time, and closes with `PASS` or `FAIL`.
+		- A step that fails, or is stopped with Ctrl+C, closes with `FAIL` from the exit trap.
+		- The run in the container takes the outer run's list, so its steps carry on the same numbers. It gets the host's time zone, since its clock read UTC.
+		- The last section says `done; PASS` with the count, and holds the remote tests' summary.
+		- Verified: `steps-test.bash` dedq4 to dedq8 pass, and dedq4, dedq7 and dedq8 fail on the old `cicd.bash`. Without the `FAIL` line in the exit trap, dedq8 fails. A quick run through the container numbered all 5 steps across it.
+		- Swept: every section title in `cicd.bash`. Only the first and last sections are left. The helper scripts print plain lines inside a step, so their output stays.
+		- 20261025: Verified: the full run listed the 4 steps that were off with their flags, numbered 9 steps across the container and this host, opened and closed each with its time and `PASS`, and ended with `done; PASS, 9 steps` and the remote summary.
+		- Departs from the requirements: the switch from the container's step 7 to this host's step 8 left 2 blank lines in place of 1. That's 2026102510392392.
+		- 20261025: Verified: the full run on 21bc082 listed its 5 off steps with their flags, numbered 11 steps across the container and this host, with one blank line at the switch from step 7 to 8, and ended with `done; PASS, 11 steps` and the remote summary. So the 2 blank lines departure above is fixed, by 2026102510392392, and steps-test deed8 passed.
+	- Decisions:
+		- Building the container image is part of the first section, not a step, since it doesn't change the count. If it fails, the same steps run on this host.
+		- 20261025: `container-fallback-test.bash` matched the old section titles. dedmb to dedme now look for `Starting Build (native debug) ]` in place of `[ Build (native debug) ]`, and `Container: running ` in place of `[ Container (`. What they check is the same.
+		- Ctrl+C while the container runs is expected to leave the step inside without a `FAIL` line, since the container is removed first. Not checked.
+		- The summary shown before the commit message prompt still lists what's skipped, as before.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/steps-test.bash`, dedq4 to dedq8.
+	- Closed: 20261025-223453
+
+- Tests wrote to the real database registry on macOS.
+	- ID: 2026102318473520
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261023-184735
+	- Opened by: JC
+	- Target OS: macOS
+	- Incorrect behavior [Bug]: The config and TUI tests set `XDG_CONFIG_HOME` and `AppData` to a temp dir, but macOS reads neither, so the tests registered databases under the real `~/Library/Application Support/ngdb`. The cli init tests also failed there, since `/var` is a link to `/private/var`.
+	- Expected behavior [Bug]: Tests never touch the real registry on any OS.
+	- Reproduced [Bug]: 20261023, on the first arm64 macOS CI run.
+	- Progress log:
+		- 20261025: Verified: the tests passed on b26, Intel macOS, in the full run on 21bc082, and on arm64 macOS in hosted CI run 40272702133. b26 had no `~/Library/Application Support/ngdb` afterwards.
+	- Actual fix [Bug]: The test helpers set `HOME` too, and the init tests compare against the resolved temp dir.
+	- Test case: The same tests, now passing on the macOS CI job. Checked on Intel macOS too, where the real registry folder never appeared.
+	- Related IDs: 2026102318473519
+	- Branch: macci
+	- Closed: 20261025-223453
+
+- Two clients that create the same unique value before syncing both keep it in the view, one with that field empty.
+	- ID: 2026102407584270
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-075842
+	- Opened by: JC
+	- Related IDs: 2026102407295329, 2026102407295324
+	- Steps to reproduce [Bug]:
+		- Open a new database whose schema has `seed:` rows from two clones, before either syncs. Sync both, then open one.
+	- Incorrect behavior [Bug]: Each seeded value is listed twice. The second copy has an empty idx and the rest of its fields set.
+	- Expected behavior [Bug]: One copy, as design.md's Lookups says: the unique index drops one at replay with a warning.
+	- Reproduced [Bug]: 20261024, on `round1024`, by replaying two clients' merged logs into a fresh view. The default groups' `name` updates warn the same way at that replay, so they likely get twins too.
+	- Possible cause [Bug]: Replay applies a create as an id-only insert, then one update per field. The unique clash refuses only the update, so the row stays.
+		- Two fixes to weigh: derive a seed row's id from its table and idx, so both clients log the same row, or have replay drop a create when one of its own field updates hits a unique clash. The second also covers runtime idx minting and the default groups.
+	- Actual cause [Bug]:
+		- As guessed. The log had no way to tell a row's starting values from later edits, so replay could only skip the field.
+		- Same shape: a view kept from an earlier pass kept its own client's row, so 2 clients could each keep a different one.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261024: crud logs a create's starting values as `create` entries, not `update`. Replay already read that form, so older builds apply it the same way.
+		- On a unique clash with a starting value, replay drops the row created later in log order, whole, with a warning. Its later edits are skipped too, so it can't come back as a stub.
+		- When the view already holds the later row from an earlier pass, that row is the one dropped. So every client keeps the same row as a fresh rebuild.
+		- design.md's Transaction log section says how creates are logged and settled.
+		- Verified: the new tests fail before the fix and pass after. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass, and the new tests pass under `-race`. Taking out the earlier-pass check makes the "view held B" case fail.
+		- Swept: every path that logs a new row (`Create`, which seeding and the default groups go through, and the audit records, which have no unique field). Every replay caller (`OpenClientWith`, CLI `replay`, autosync, the live write) goes through `txlog.Apply`.
+		- 20261025: Verified: the 3 named tests passed in the full run on 21bc082, here and on the 4 boxes.
+	- Decisions:
+		- Replay drops the clashing create, rather than seed rows getting an id from their table and idx. That also covers runtime idx minting and the default groups.
+		- 20261024: `TestCreateReportsAFieldTheViewRefused` in `crud/write_test.go` asserted the second row stays with an empty `name`. It now asserts the row isn't in the view. The id and the refusal still come back.
+		- Logs written before this keep starting values as updates, so their clashes still skip only the field. Twins those logs already made stay.
+		- For a unique group over several fields, the earlier-pass check only spots a later row that sets the clashing field itself at create.
+		- Refusing a clashing create up front, before it's logged, is filed as 2026102408084809.
+		- 20261025: Closed on the Decisions as they stand. design.md's Transaction log section already says the later create is dropped whole.
+	- Actual fix [Bug]: A create's values are logged as create entries, and replay drops the later of 2 rows that clash on one.
+	- Branch: round1024
+	- Test case: `TestReplayDropsCreateTwin` in `source/internal/core/txlog/replay_test.go`, `TestSeedRowsTwoClients` in `source/internal/core/schema/seed_test.go`, and the updated `TestCreateReportsAFieldTheViewRefused` in `source/internal/core/crud/write_test.go`.
+	- Closed: 20261025-223453
+
+- Run CI on GitHub's free arm64 macOS runners.
+	- ID: 2026102318473519
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261023-184735
+	- Opened by: JC
+	- Target OS: macOS
+	- Requirements [Feature]:
+		- Build, run the tests, and smoke-test the CLI on the built binary.
+	- Progress log:
+		- 20261023: New `macos` job in `ci.yml`. It checks it's on arm64, runs the tests, builds with `cicd/build.bash`, then runs `cicd/utility/smoke-cli.bash`. The Linux job runs the smoke test too. Only floss gets it, since macOS minutes on the private repos aren't free.
+		- 20261025: Verified: hosted CI run 40272702133's macos job ran on `macos-26-arm64`, passed the tests, built `ngdb v1.0.0-beta.2 build deeg3 (2026-10-26)`, and passed `smoke-cli.bash`, in 1m41s.
+	- Test case: `cicd/utility/smoke-cli.bash`, also passing under stock bash 3.2 on Intel macOS.
+	- Branch: macci
+	- Closed: 20261025-223453
+
+- Show the build date on non-release builds.
+	- ID: 2026102318473518
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261023-184735
+	- Opened by: JC
+	- Requirements [Feature]:
+		- Add " (YYYY-mm-DD)" after the build number.
+		- Show the date in the local time zone of whoever views the version.
+	- Progress log:
+		- 20261023: `cicd/build.bash` stamps the UTC build time, and `--version` shows it as a local date, as in `ngdb 1.0.0-beta.2 (c6cc12b) (2026-10-23)`. Release builds from goreleaser don't stamp it, so they show no date. The enterprise build doesn't stamp it yet.
+		- 20261024: The version line's form here is superseded by 2026102416210007.
+		- 20261025: Verified: the full run's builds print `ngdb v1.0.0-beta.2 build deefv (2026-10-25)` here, on Pacific time. Hosted CI's macos job, on UTC, printed `(2026-10-26)` at 22:10 Pacific on 2026-10-25, so the date follows the viewer's zone. TestVersionLine and the smoke's date check passed.
+	- Test case: `TestVersionLine` in `source/app/app_test.go`, and the date check in `smoke-cli.bash`.
+	- Branch: macci
+	- Closed: 20261025-223453
+
+- CICD reset: temp files and safe removal.
+	- ID: 2026102416210006
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, Temp files and Safe removal.
+		- Each run makes its own folder, `${HOST_TEMP}/nano-git-db-floss/<YYYYmmDD-HHMMSS>_<NNN>/`, writes `run.pid` there, and points `TMPDIR`, `TEMP`, and `TMP` at it. Today the fuzz, profile, smoke, and demo helpers each pick their own spot under `/tmp` or `TMPDIR`, and the demo and seed scripts use fixed `/tmp` paths.
+		- A trap removes the folder at the end, on failure and Ctrl+C too. `--keep-temp` keeps it and prints its path.
+		- Each run also removes this project's own stale run folders, older than 2 days with no live process from their `run.pid`.
+		- Every recursive removal goes through the repo's own copy of the safe removal guard. 9 are unguarded today, in 8 scripts, with the file list in the private notes.
+		- The demo recorder stops everything it starts. On 2026-10-24 it left 2 sets of `dbus-daemon`, `gvfsd`, and at-spi processes running on display `:97`, with HOME in its temp folder.
+		- Check it the way a gate is checked: run the pipeline twice, kill one run partway, and see that nothing new piles up.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: `cicd/utility/include/temp-run.bash` holds the run folder, the stale sweep, and the repo's copy of the safe removal guard, which also runs on macOS and the BSDs. cicd.bash, fuzz, profile, the smoke, the demo recorder and `demo-db.bash`, the remote, skip and fallback tests, `seed.bash` and `screenshots.bash` use it.
+		- Each `cicd.bash` run makes `${HOST_TEMP}/nano-git-db-floss/<stamp>_<NNN>/` with `run.pid`, points `TMPDIR`, `TEMP` and `TMP` at it, and mounts it into the container. A helper makes its folder inside it, or a run folder of its own when run alone.
+		- A trap removes it at the end, on failure and Ctrl+C too, and `--keep-temp` keeps it and prints its path. Run folders older than 2 days with no live `run.pid` process go at the start.
+		- The run log's `tee` ignores Ctrl+C. Without that, the cleanup wrote into a closed pipe and died.
+		- The installers are fetched on their own, so each got its own check: only its own temp folder, never a link.
+		- The demo recorder stops every process still running with its fake HOME, which covers what `dbus-run-session` started.
+		- The remote boxes' work folders moved to `nano-git-db-floss` too, in all 4 places that name them.
+		- Verified: `cleanup-test.bash` dedp4 to dedpb pass. The run-twice check, with one run stopped by Ctrl+C, left nothing new. A `dbus-daemon` outlived a stopped `dbus-run-session`, and the recorder's cleanup stopped it. fuzz, profile, `demo-db.bash`, `seed.bash`, the CLI smoke, the remote skip test and the fallback test ran and left no folder.
+		- Swept: every `rm -r`, `rmtree`, `Remove-Item -Recurse` and `mktemp` outside `vendor/`.
+		- 20261025: Verified: the full run ran fuzz, the profiler and the remote tests, and left no run folder of its own. The demo check recorded with `--no-build`, and afterwards `:97` was gone, no `dbus-daemon`, `gvfsd` or at-spi process outside the desktop's was left, and no run folder. `assets/demo.gif` was restored by copy.
+		- Departs from the requirements: `seed.bash` and `screenshots.bash` keep their fixed `/tmp` paths, per the decisions below.
+		- 20261025: Verified: after the full run on 21bc082, which ran fuzz, the profiler, the pipeline tests and the remote tests, `${HOST_TEMP}/nano-git-db-floss/` was empty and no labeled container was left. b26 had no work folder left. cleanup-test dedp4 to dedpd passed there, and in 10 runs in a row at load 24 to 37.
+	- Decisions:
+		- The temp root is `nano-git-db-floss`, as asked, while the docker labels stay `nano-git-db`.
+		- `seed.bash` and `screenshots.bash` keep their fixed `/tmp` paths, since the walkthrough and the screenshots show them, and the folder outlives the run. Their wipe goes through the guard, so a stray argument can't remove anything outside a tmp folder.
+		- `gui-headless.bash` keeps its state at `/tmp/rpd-gui-headless` across its start and stop calls, so it stays.
+		- `walkthrough.md` still tells the presenter to `rm -rf` the two demo folders by hand. It's a user doc, so it was left alone.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/cleanup-test.bash`, dedp4 to dedpb.
+	- Closed: 20261025-223453
+
+- Built-in `lookups` and `lookup_values` tables, with an auto-assigned `idx`.
+	- ID: 2026102407295324
+	- Type: Enhancement
+	- Status: Done
+	- Test environment: b23 runs `ngdb 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
+	- Stand-in: In place of a look on b23: build deefv, from the frozen commit 21bc082, on a scratch database. The TUI's table list and the web index both list `lookups` and `lookup_values` last, after the user's table and the system tables.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-072953
+	- Opened by: JC
+	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
+	- Related IDs: 2026102407331876
+	- Requirements [Feature]:
+		- Both tables exist in every database, shaped as in example.shcl, and list like normal tables.
+		- `idx` is a unique int, assigned max+1 on create when not given. A given one is kept, so seeds can name theirs.
+		- `idx` can't be changed once set.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: Both tables are built-in and always-on. Creating a row mints max+1 per table, and deleted rows count, so an idx is never handed out twice.
+		- A given idx must be a whole number above 0 and not taken by a live row. Changing a set idx is refused, and writing the same one back is let through, as a form save does.
+		- Verified: the new tests fail without the crud change and pass with it, the concurrent one under `-race` too. `test.bash`, the CLI smoke, staticcheck and gosec pass. Create, refuse and replay checked through the CLI.
+		- Swept: every crud write path (Create, Update, SetField, SetFieldNull). The TUI, web, CLI and scripts all write through those. Replay doesn't check, by design.
+	- Decisions:
+		- Departs from the wording: `title` and `lookups_idx` aren't NOT NULL yet, unlike example.shcl, since bug 2026102407331876 makes such a table drop every row. They stay `required: y`.
+		- 20261024: That bug is fixed in d459e1f, and `title` and `lookups_idx` are `null_ok: n` again.
+		- A user schema that restates either table, as example.shcl does, keeps its own shape and warns, as for any built-in name. The idx rules apply either way.
+		- 20261024 JC: A restated built-in should merge into the built-in, as a system field does, so example.shcl can keep documenting both tables. Filed as 2026102409431186.
+	- Branch: round1024
+	- Test case: `TestLookupsIdx` and `TestLookupsIdxConcurrent` in `source/internal/core/schema/lookups_test.go`.
+	- Closed: 20261025-223453
+
+- Show lookup values per `lookup_in_lists` and `lookup_in_forms`.
+	- ID: 2026102407295335
+	- Type: Enhancement
+	- Status: Done
+	- Test environment: b23 runs `ngdb 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
+	- Stand-in: In place of a look in the usual terminal: build deefv on a scratch database with 🔘, ✅, 🚫 and 🛠 symbols, in a 140-column UTF-8 terminal and the web UI. Lists showed the symbol, or the title with `lookup_in_lists: title`, and forms the symbol then the title. Columns after a double-width symbol stayed in line. A soft-deleted value still showed on its row.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-072953
+	- Opened by: JC
+	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
+	- Prereq IDs: 2026102407295324
+	- Requirements [Feature]:
+		- A `list_type: lookup` field shows its stored idx as symbol, title or both, in the TUI and web.
+		- Lists default to symbol, falling back to title. Forms default to both, symbol first.
+		- The TUI handles double-width and unrenderable symbols, falling back to title.
+		- Inactive values still render on existing rows.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261024: Table lists, view grids and tree grids show a lookup field per `lookup_in_lists`, and view form blocks per `lookup_in_forms`, in both UIs. Edit forms show the value beside the idx.
+		- A value with no symbol shows its title. A value from another group, or one that isn't there, shows the stored idx.
+		- The TUI shows the title for a symbol that's bad UTF-8, zero width, or has a control char, or a glyph the terminal's charset can't draw. A double-width symbol keeps the next column in line.
+		- A `list_source` that isn't a group idx warns at open, and the field shows as stored.
+		- syntax.md's Fields section has the new keys.
+		- Verified: the new tests fail with the display turned off and pass with it, and the charset test fails without the screen check. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass. The real TUI under a pty shows the symbol with a UTF-8 locale, and the title with `C`.
+		- Swept: every place the TUI and web render a table row (table grid, view grid, tree grid, form block, edit form). Named query results are left as the SQL returns them, since their columns aren't tied to a field.
+	- Decisions:
+		- An edit form keeps the idx editable, since the picker is 2026102407295340. The value shows beside it, from the stored idx, so it doesn't follow typing.
+			- 20261024: The picker is in now, through 2026102408470113, so an edit form picks from a list.
+		- Soft-deleted values still show, like inactive ones. An idx is never handed out twice, so the label can't be wrong.
+		- Only values in the field's own group show. Another group's value shows as the stored idx, rather than a title that looks right.
+		- The TUI now starts its own terminal screen before handing it to tview, so the charset check works before the first draw.
+		- 20261025: Closed on the stand-in. 🛠 has text presentation by default, so the TUI gives it 1 cell. A font that draws it as a wide emoji may overlap the next column, which only a look in that terminal shows.
+	- Branch: round1024
+	- Test case: `TestLookupShow` in `source/internal/core/schema/lookupshow_test.go`, `TestLookupsShowInTUI` and `TestLookupsFallBackToTitleInTUI` in `source/internal/tui/lookups_test.go`, and `TestLookupsShowInWeb` in `source/internal/web/lookups_test.go`.
+	- Closed: 20261025-223453
+
+- Edit a `list_type: lookup` field through a picker, in the TUI and web.
+	- ID: 2026102408470113
+	- Type: Enhancement
+	- Status: Done
+	- Test environment: b23 runs `ngdb 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
+	- Stand-in: Build deefv on the same scratch database, in the TUI and web. Both pickers listed none, then 🔘 Open, ✅ Done and 🚫 Blocked in sort order, with the held value selected. After 🚫 Blocked was soft-deleted, a row holding it listed it second, still selected, ahead of the active values.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-084701
+	- Opened by: JC
+	- Parent ID: 2026102407295340
+	- Prereq IDs: 2026102408470107
+	- Requirements [Feature]:
+		- The edit form offers the group's active values, in sort order, shown per `lookup_in_forms`.
+		- A row that holds an inactive or deleted value keeps it until another is picked.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: Edit forms in both UIs pick a lookup field from a list: none first, then the group's active values by `sort`, then idx, labeled per `lookup_in_forms`. Values with no sort come last. The TUI's labels fall back to the title for a symbol the terminal can't draw, as lists do.
+		- A value the row holds that isn't offered, such as an inactive or deleted one, or one from an older build, is listed second and stays picked. A save that leaves it alone doesn't write it.
+		- A user schema that restates `lookup_values` with no `sort` field orders by idx.
+		- syntax.md's lookup line says what the form offers.
+		- 20261024: `TestLookupsShowInTUI` waited for the label `status (🔘`, and now checks the picker shows the value. `TestLookupsShowInWeb` checked for `name="status" value="7"` and a `<span>` label, and now checks for `<option value="7" selected>`. Both were the stand-in until this picker.
+		- Verified: the new and changed tests fail with the picker turned off and pass with it, 3 runs under `-race` too. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass.
+		- Swept: every edit form (the TUI's table grid and view blocks both go through `editFormThen`, and the web's through `form.html`). View form blocks only display.
+	- Decisions:
+		- The none entry stays on every form, so a field can be cleared. A `null_ok: no` field then gets the crud refusal on save.
+	- Branch: round1024
+	- Test case: `TestLookupChoices` in `source/internal/core/schema/lookupshow_test.go`, `TestLookupPickerInTUI` and the updated `TestLookupsShowInTUI` in `source/internal/tui/lookups_test.go`, and `TestLookupPickerInWeb` and the updated `TestLookupsShowInWeb` in `source/internal/web/lookups_test.go`.
+	- Closed: 20261025-223453
+
+- Pickers for `list_type: literal` and `list_type: sql` fields.
+	- ID: 2026102408470118
+	- Type: Enhancement
+	- Status: Done
+	- Test environment: b23 runs `ngdb 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
+	- Stand-in: Build deefv on the same scratch database, in the TUI and web. The `lookup_values` form's group picker listed none, Size and Status, with the row's group selected. A literal picker listed `Chore, misc` whole, and an sql picker showed its query's titles and saved the picked idx.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-084701
+	- Opened by: JC
+	- Parent ID: 2026102407295340
+	- Prereq IDs: 2026102408470113
+	- Requirements [Feature]:
+		- Same picker as for lookups, fed from the literal list or the query in `list_source`. The built-in `lookup_values.lookups_idx` is one.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: Edit forms in both UIs pick a `literal` or `sql` field from its `list_source`, with none first and a held value that isn't listed kept second, as for lookups.
+		- A literal list splits on commas outside quotes. A query gives the value in its first column and the label in its second, or the value again. It runs when a form opens, never for a list.
+		- A query that fails stops the form with an error naming the field. A `list_type` with no `list_source` warns at open.
+		- syntax.md has a line for both, with an example.
+		- Verified: the new tests fail with the pickers turned off and pass with them, 3 runs under `-race` too. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass.
+		- Swept: the same edit forms as 2026102408470113. No demo schema uses `list_type`.
+	- Decisions:
+		- Lists still show a `literal` or `sql` field as stored, not the query's label.
+		- A write isn't checked against the list, unlike a lookup. The requirement didn't ask for it, and a query's rows can change under a held value.
+	- Branch: round1024
+	- Test case: `TestPickerChoices` in `source/internal/core/schema/picker_test.go`, `TestLiteralPickerInTUI` in `source/internal/tui/lookups_test.go`, and `TestListPickersInWeb` in `source/internal/web/lookups_test.go`.
+	- Closed: 20261025-223453
 
 - Regression tests: old-format Done bugs.
 	- ID: 2026102520454999
