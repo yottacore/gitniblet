@@ -161,7 +161,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - Bump enterprise and vendor to the floss Go toolchain and `x/text`.
 	- ID: 2026102407133557
 	- Type: Task
-	- Status: Queued
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-071335
 	- Opened by: JC
@@ -171,8 +171,11 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Enterprise requires `golang.org/x/text v0.21.0`, and builds floss through a `replace`, so its vendor tree needs the floss bump to v0.41.0 too.
 		- Then `go build ./...` and govulncheck pass in both.
 	- Progress log:
+	- Test case: enterprise d9djx and vendor d9f8q builds, and both repos' hosted CI on go1.26.10
+	- Closed: 20261026
 		- 20261024: Held for the uncommitted enterprise edits from 2026-10-19, in `go.mod`, `ci.yml` and `release.yml`, to be committed. Enterprise isn't in floss rounds.
 	- 2026-10-26: the hold is gone, since enterprise's tree is clean. The enterprise part is done there as 2026102522552218 (go1.26.10, x/text v0.41.0). Vendor is left.
+	- 2026-10-26: vendor's part is done there as 2026102601055332 (go1.26.10; vendor has no x/text). Hosted CI passed on both repos' dev after the bump.
 
 - CICD reset: version line.
 	- ID: 2026102416210007
