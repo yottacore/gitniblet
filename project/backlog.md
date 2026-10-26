@@ -487,6 +487,29 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Today `ci.yml` and `release.yml` pin Go on their own, and the release takes any goreleaser v2.
 		- Both read the Go version from `source/go.mod`'s `toolchain` line and goreleaser from `tool-versions.bash`.
 
+- Optional pessimistic record-level locking.
+	- ID: 2026102614444075
+	- Type: Feature
+	- Status: Queued
+	- Opened: 20261026-144440
+	- Opened by: JC
+	- Version and build: Pre-next-cut
+	- Related IDs: 2026102614444076
+	- Requirements [Feature]:
+		- Optional pessimistic record-level locking via `locks.shcl` that syncs to git, or named file in config.
+
+- Add testing setup on `--long`.
+	- ID: 2026102614444076
+	- Type: Task
+	- Status: Queued
+	- Opened: 20261026-144440
+	- Opened by: JC
+	- Version and build: Pre-next-cut
+	- Related IDs: 2026102614444075
+	- Requirements [Feature]:
+		- Runs on multiple instances of a repo, on multiple external hosts each, and exercises performance, correctness, and integrity; with and without pessimistic record-level locking.
+		- Operates on very large database (e.g. millions of rows) to test where performance starts tapping out.
+
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161870
 	- Type: Enhancement
