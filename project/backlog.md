@@ -686,6 +686,114 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- The hosted workflows read the Go and tool pins from the same place `cicd.bash` does. Today they pin Go on their own, and the release takes any goreleaser v2.
 		- Overrides the FreeBSD `.pkg` deferral in the private notes, under cicd-packaging.
 	- Estimated effort: Avg
+	- Progress log:
+		- 20261025: Split into children, one per part: 2026102520521019 (remote sync), 2026102520521021 (goleak), 2026102520521023 (soak test), 2026102520521025 (CodeQL), 2026102520521027 (dogfood folders), 2026102520521029 (dogfood script), 2026102520521031 (reproducible archives), 2026102520521033 (FreeBSD `.pkg`) and 2026102520521642 (hosted workflow pins). This item closes with the last of them.
+		- The CLI smoke in `cicd.bash` is done, by 2026102416210004. It runs after the release build in every mode.
+	- Decisions:
+		- The whole suite under `-race` in every full run gets no child here. It's 2026102520474880, which already runs the TUI tests under `-race` and has the same cgo problem to solve.
+
+- Go leak checks: `goleak.VerifyTestMain` in every package's tests.
+	- ID: 2026102520521021
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Requirements [Feature]:
+		- Every package with tests has a `TestMain` that calls `goleak.VerifyTestMain`, with `go.uber.org/goleak` vendored.
+		- Watched to fail first, with a test that leaks a goroutine on purpose.
+		- `--leakcheck` and `--no-leakcheck` turn something on and off once this is in, per the CICD style guide.
+
+- Go leak checks: a soak test on heap in use and goroutine count.
+	- ID: 2026102520521023
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Prereq IDs: 2026102520521021
+	- Requirements [Feature]:
+		- Repeat a realistic workload, such as open, write, sync and replay, and fail when heap in use or the goroutine count keeps climbing.
+		- A short run in every full run, and a long one under `--leakcheck`. It takes a quarter of the CPUs, per Machine use.
+		- Watched to fail first, with a leak put in on purpose.
+
+- CodeQL from a pinned CLI over the vendored tree.
+	- ID: 2026102520521025
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Requirements [Feature]:
+		- A `cicd.bash` step runs the CodeQL CLI at a pinned version, kept with the other pins, over the module and `vendor/`.
+		- Its findings go under `cicd/artifacts/lint/`. Watched to fail first.
+
+- Dogfood to `exec/app/<os>/`, and skip the copy when the binary is in use.
+	- ID: 2026102520521027
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Requirements [Feature]:
+		- Per the shared CICD rules, Dogfood. The Linux build goes to `~/synced/0-0/common/exec/app/linux/`, and the Windows and macOS builds to `mswin/` and `macos/` beside it, where the run built them.
+		- Skip the copy, with one line, when the binary there is in use.
+		- Today it goes to `exec/util/linux/bin/`, with a `/usr/local/sbin/` fallback through sudo.
+
+- A `dogfood_ngdb.ps1` script with its launchers.
+	- ID: 2026102520521029
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Prereq IDs: 2026102520521027
+		- The script reads from the dogfood folders that item sets up.
+	- Requirements [Feature]:
+		- Per the shared CICD rules, Dogfood script: one pwsh 7 script, plus Linux, Windows and macOS launchers, with the master copies in `utility/`.
+
+- Reproducible release archives.
+	- ID: 2026102520521031
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Related IDs: 2026102520521642
+	- Requirements [Feature]:
+		- goreleaser sets `mod_timestamp` from the commit time, for the binaries and the archive files, so 2 builds of one commit give the same bytes.
+		- A check builds twice and compares the checksums.
+
+- A FreeBSD `.pkg`.
+	- ID: 2026102520521033
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Requirements [Feature]:
+		- Package the FreeBSD builds as `.pkg`, beside the archives, and check it installs on vmFreeBSD.
+		- Overrides the FreeBSD `.pkg` deferral in the private notes, under cicd-packaging.
+
+- Hosted workflows read the Go and tool pins from where `cicd.bash` does.
+	- ID: 2026102520521642
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205216
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Related IDs: 2026102520521031
+	- Requirements [Feature]:
+		- Today `ci.yml` and `release.yml` pin Go on their own, and the release takes any goreleaser v2.
+		- Both read the Go version from `source/go.mod`'s `toolchain` line and goreleaser from `tool-versions.bash`.
 
 - Run on the last Core 2 Duo, and AMD CPUs from that era.
 	- ID: 2026101301161870
@@ -717,6 +825,34 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- `id` and `date_created` show read-only and are never written from a form. That likely means honoring `ui: readonly` first.
 	- Progress log:
 		- 20261024: Lists already honor `visible_list` on system fields. The example DDL's built-in `lookups` and `lookup_values` tables ask for `id` on forms, read-only.
+
+- Remote sync first: fetch and fast-forward before building.
+	- ID: 2026102520521019
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Requirements [Feature]:
+		- Per the shared CICD rules, Remote sync first. Before building, fetch, fast-forward when only behind, and stop early when diverged.
+		- Offline or no upstream warns and goes on. `--no-sync` skips it, and the hands-off modes never sync.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: `cicd.bash` has a first step, Remote sync, from `cicd/utility/include/sync.bash`. It fetches, fast-forwards with `--autostash` when only behind, and stops when diverged. No upstream, or a fetch that fails or takes over 60s, warns and goes on.
+		- It also stops when uncommitted edits clash with the fast-forward, since git then leaves conflict markers in the tree and still returns 0. And it stops when the fast-forward changes `cicd.bash`, its includes or the container recipe, which the run has already read, and says to run it again.
+		- `--no-sync` and the 3 hands-off modes list it as off. `--help`, design.md's CI/CD pipeline and the README say so.
+		- 20261025: `steps-test.bash`, `cleanup-test.bash` and `container-fallback-test.bash` now pass `--no-sync` to the `cicd.bash` runs they start, so they never fetch into the checkout they run from. What they check is the same.
+		- Verified: `sync-test.bash` deeea to deeei pass. deeeg fails on the old `cicd.bash`, and deeei with the step turned off. The others fail with the matching check taken out of `sync.bash`: no diverged check, no autostash, no clash check, no loaded-path check, and a failed fetch or no upstream made fatal.
+		- Verified: `--backlog-run-quick` (sync off), `flags-test.bash`, `steps-test.bash`, `cleanup-test.bash`, `container-fallback-test.bash`, `testid check` and shellcheck pass.
+		- Swept: every `cicd.bash` caller. The pre-push hook and `ci.yml` run `--merge-gate`, which doesn't sync. The 4 test scripts that start a real run pass `--no-sync`, and `flags-test.bash` only runs `--list` and a stand-in. Enterprise `cicd.bash` has no sync or step plan, and vendor has no `cicd.bash`.
+	- Decisions:
+		- A fast-forward that changes what the run already read stops it, rather than starting the run again. The run already holds its temp folder, its log and the commit message it asked for.
+		- It's a planned step, so it gets step lines and shows as off like the rest.
+	- Branch: r1025
+	- Test case: `cicd/utility/sync-test.bash`, deeea to deeei. No pipeline stage runs it yet.
+	- Closed: 20261025-210516
 
 - Regression tests: new-format Done items.
 	- ID: 2026102520454994

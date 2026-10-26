@@ -105,7 +105,7 @@ fCheck dedq6 "a nested run takes the outer run's step list" fNested
 
 ## cicd.bash itself, on this host. Every step opens and closes in order, the
 ## count matches, and the run ends on a blank line.
-flags=(-q --quick --no-remote --no-container --no-install --no-hooks --no-publish --no-demo --no-format)
+flags=(-q --quick --no-sync --no-remote --no-container --no-install --no-hooks --no-publish --no-demo --no-format)
 fRunShape(){  ## log, PASS|FAIL
 	awk -v want="$2" '
 		/^\[ [0-9]+-[0-9]+\.[0-9]+: .*; [0-9]+ steps/ { split($0, h, "; "); sub(/ steps.*/, "", h[2]); total = h[2] + 0; next }
@@ -148,7 +148,7 @@ printf '#!/bin/bash\necho "$*" >> "%s"\n[[ "$1" != version ]] || echo 29\n[[ "$1
 chmod +x "${runDir}/bin/docker"
 fContainerArgs(){
 	local run
-	local -a ctrFlags=(-q --quick --no-remote --no-install --no-hooks --no-publish --no-demo --no-format)
+	local -a ctrFlags=(-q --quick --no-sync --no-remote --no-install --no-hooks --no-publish --no-demo --no-format)
 	NGDB_DOCKER="${runDir}/bin/docker" nice -n 19 bash "${repoRoot}/cicd/cicd.bash" "${ctrFlags[@]}" > "${runDir}/ctr.out" 2>&1  ||  { tail -20 "${runDir}/ctr.out"; return 1; }
 	run="$(grep '^run ' "${runDir}/docker.log")"
 	[[ "${run}" =~ --cpus\ ([0-9]+)\ --cpu-shares\ 256\ .*-e\ NGDB_STEPS\ -e\ NGDB_JOBS_CAP=([0-9]+)\ .*/etc/localtime:/etc/localtime:ro.*\ nice\ -n\ 19\ bash\  ]] \

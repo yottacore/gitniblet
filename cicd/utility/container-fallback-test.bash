@@ -37,7 +37,7 @@ printf '#!/bin/bash\n[[ "$1" == version ]] && { echo 29; exit 0; }\nexit 1\n' > 
 printf '#!/bin/bash\nexit 1\n' > "${runDir}/deaf"
 chmod +x "${runDir}/nobuild" "${runDir}/deaf"
 
-flags=(-q --quick --no-install --no-hooks --no-publish --no-demo --no-format)
+flags=(-q --quick --no-sync --no-install --no-hooks --no-publish --no-demo --no-format)
 declare -i fails=0
 fCase(){  ## id, name, expected line, timeout or 0 to run to the end, docker stand-in
 	local id="$1" name="$2" want="$3" secs="$4" out rc

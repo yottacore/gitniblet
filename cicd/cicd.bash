@@ -57,7 +57,7 @@ if [[ -z "${doQuietly+x}" ]]; then
 	## no dogfood, publish, hooks, demo or gofmt -w, and no prompt.
 	declare     runMode="run"
 	declare  -a testAreas=()
-	declare  -i doList=0  doSync=1  ## No sync step yet, so --no-sync is only taken
+	declare  -i doList=0  doSync=1
 	declare     leakOpt=""            ## No leak checks yet, so this is only taken
 	declare     aliasNote=""
 	## --backlog-run-quick's areas, as "name|go packages", in --help order.
@@ -110,6 +110,7 @@ fAbout(){ { ((doQuietly)) || ((wasShown_About)); } && return; wasShown_About=1;
 	fEcho_Clean ""
 	#           X-------------------------------------------------------------------------------X
 	fEcho_Clean "CI/CD and dogfood:"
+	fEcho_Clean "  • Fast-forward from the remote, or stop if the branch has diverged."
 	if ((isCompileProject)); then
 		fEcho_Clean "  • Builds the program. If successful:"
 		fEcho_Clean "  • Cross-compile more versions. If those succeed:"
@@ -124,9 +125,10 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean ""
 	#           X-------------------------------------------------------------------------------X
 	fEcho_Clean "Usage: ${meName} [options]"
-	fEcho_Clean "  (no flags)          The default run, up to about an hour: builds, cross-builds"
-	fEcho_Clean "                      and packages, lint, tests, fuzz, security, remote tests,"
-	fEcho_Clean "                      dogfood, profiler, demo, hooks, then back up and publish."
+	fEcho_Clean "  (no flags)          The default run, up to about an hour: remote sync, builds,"
+	fEcho_Clean "                      cross-builds and packages, lint, tests, fuzz, security,"
+	fEcho_Clean "                      remote tests, dogfood, profiler, demo, hooks, then back up"
+	fEcho_Clean "                      and publish."
 	fEcho_Clean "      --quick         About 10 minutes. Skips cross-builds, packaging, remote"
 	fEcho_Clean "                      tests, profiler and demo. Still dogfoods the release build."
 	fEcho_Clean "      --long          Also --slow. The default run, since nothing here takes"
@@ -148,7 +150,8 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "      --list          Print the steps and test IDs the other flags would run,"
 	fEcho_Clean "                      and run nothing."
 	fEcho_Clean "  -q, --quiet         Run unattended (no prompt) and quiet; flows to publish."
-	fEcho_Clean "      --no-sync       Taken. There's no sync from the remote yet."
+	fEcho_Clean "      --no-sync       Skip the fetch and fast-forward from the remote before the"
+	fEcho_Clean "                      build. A diverged branch stops the run without it."
 	fEcho_Clean "      --no-arm        Build/package amd64 only (skip arm64) to trim a full run."
 	fEcho_Clean "      --no-install    Skip the dogfood install of the built binary."
 	fEcho_Clean "      --no-hooks      Skip the local pre-publish hooks (../private/cicd-hooks)."
@@ -375,6 +378,13 @@ fMain(){
 		fSteps_Header "${exeName} CI/CD, ${runMode}" "${headerLines[@]}" "${containerLine}" "CPUs: ${NGDB_CORES}, load ${NGDB_LOAD}. A step gets half, or a quarter for fuzz or when the load is over half."
 	fi
 
+	## First, so the rest tests what publish will push. Publish keeps its own pull.
+	## The paths are what this run has already read, so a change to one stops it.
+	if fStep "Remote sync"; then
+		fRemoteSync cicd/cicd.bash cicd/utility/include cicd/container  ||  fThrowError "Remote sync: ${syncWhy}"
+		fStep_End
+	fi
+
 	if ((useContainer))  &&  fContainer_Ready; then
 		fStage_Container
 	else
@@ -483,6 +493,10 @@ fSteps_PlanAll(){
 	local why quick=""  bq=""  off
 	((! doQuick))  ||  quick="--quick"
 	[[ "${runMode}" != "backlog-quick" ]]  ||  bq="--backlog-run-quick"
+	if ((! inContainer)); then
+		why="";  ((doSync))  ||  { fOff --no-sync; why="${off}"; }
+		fStep_Plan "Remote sync" "${why}"
+	fi
 	if ((isCompileProject)); then
 		fStep_Plan "Build (native debug)" "${bq}"
 		fStep_Plan "Build (native release)"
@@ -1102,6 +1116,9 @@ source "${meDir}/utility/include/temp-run.bash"
 ## Step lines (fStep_Plan, fStep_Start, fStep_End, fStep_Fail)
 source "${meDir}/utility/include/steps.bash"
 
+## Fetch and fast-forward before the build (fRemoteSync)
+source "${meDir}/utility/include/sync.bash"
+
 ## Invoke main
 fMain  "${@}"
 
@@ -1136,3 +1153,4 @@ fMain  "${@}"
 ##		- 20261025 JC: Each run gets its own temp folder, removed at the end along with its containers, dangling images and old image tags; --keep-temp keeps them.
 ##		- 20261025 JC: Step lines with the count, time and PASS or FAIL, planned up front; the load is checked before each step.
 ##		- 20261025 JC: The shared flags: --backlog-run-quick with areas, --backlog-run-full, --merge-gate, --long, --list, and the taken ones. --quick keeps fuzz and security. The CLI smoke after the release build.
+##		- 20261025 JC: Remote sync first: fetch and fast-forward before the build, stop when diverged; --no-sync skips it.

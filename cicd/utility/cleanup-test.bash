@@ -91,7 +91,7 @@ chmod +x "${runDir}/bin/docker"
 fCicd(){  ## mode, log, then extra args
 	local mode="$1" log="$2"; shift 2
 	env -u NGDB_RUN_DIR DMODE="${mode}" DLOG="${log}" DCUR="${cur}" NGDB_DOCKER="${runDir}/bin/docker" HOST_TEMP="${runDir}/cicd" \
-		nice -n 19 bash "${repoRoot}/cicd/cicd.bash" -q --quick --no-remote --no-install --no-hooks --no-publish --no-demo --no-format "$@"
+		nice -n 19 bash "${repoRoot}/cicd/cicd.bash" -q --quick --no-sync --no-remote --no-install --no-hooks --no-publish --no-demo --no-format "$@"
 }
 fLeft(){ find "${runDir}/cicd/${tempProject}" -mindepth 1 -maxdepth 1 2> /dev/null | wc -l; }
 fRanWith(){ grep -E '^run ' "$1" | grep -qF -- "$2"; }
