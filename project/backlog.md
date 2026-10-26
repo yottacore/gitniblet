@@ -35,8 +35,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - CICD reset: standard flags.
 	- ID: 2026102416210004
 	- Type: Task
-	- Status: Waiting on automated testing
-	- Needs external testing: `ci.yml` on the round branch again, once 2026102522324333 is fixed.
+	- Status: Done
+	- Needs external testing: None
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261024-162100
 	- Opened by: JC
@@ -80,12 +80,14 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- The remote sync and the leak checks are 2026102416210008's. The CLI smoke in `cicd.bash`, also on that item, is done here.
 	- Branch: r1025
 	- Test case: `cicd/utility/flags-test.bash`, deecd to deeck. No pipeline stage runs it.
+	- Closed: 20261025
+	- Verified: 2026-10-25, hosted CI run 40275457653 on r1025 (7a190ea) passed, the Linux merge gate with Pipeline tests in 20m1s and macOS in 50s.
 
 - Regression tests: run the ones no pipeline step runs yet.
 	- ID: 2026102520474880
 	- Type: Task
-	- Status: Waiting on automated testing
-	- Needs external testing: `ci.yml` on the round branch again, once 2026102522324333 is fixed. Check Pipeline tests passes.
+	- Status: Done
+	- Needs external testing: None
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261025-204748
 	- Opened by: JC
@@ -120,6 +122,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: r1025
 	- Test case: `cicd/utility/flags-test.bash` deef1, `steps-test.bash` deef2 and `container-fallback-test.bash` deef3, new here. The TUI tests under `-race`, such as d9e1p and dec9z, run in the Race tests step.
 	- Prereq IDs: 2026102522324333
+	- Closed: 20261025
+	- Verified: 2026-10-25, hosted CI run 40275457653 on r1025 (7a190ea) passed, the Linux merge gate with Pipeline tests in 20m1s and macOS in 50s.
 
 - `cleanup-test.bash` dedpb can take 30s to stop after Ctrl+C under load.
 	- ID: 2026102520025738
@@ -157,7 +161,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - Bump enterprise and vendor to the floss Go toolchain and `x/text`.
 	- ID: 2026102407133557
 	- Type: Task
-	- Status: Stalled
+	- Status: Queued
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261024-071335
 	- Opened by: JC
@@ -168,6 +172,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Then `go build ./...` and govulncheck pass in both.
 	- Progress log:
 		- 20261024: Held for the uncommitted enterprise edits from 2026-10-19, in `go.mod`, `ci.yml` and `release.yml`, to be committed. Enterprise isn't in floss rounds.
+	- 2026-10-26: the hold is gone, since enterprise's tree is clean. The enterprise part is done there as 2026102522552218 (go1.26.10, x/text v0.41.0). Vendor is left.
 
 - CICD reset: version line.
 	- ID: 2026102416210007
