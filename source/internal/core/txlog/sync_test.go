@@ -4,8 +4,11 @@
 package txlog
 
 import (
+	"os"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -166,5 +169,44 @@ func TestRepoAccount(t *testing.T) {
 	mustGit(t, dir, "config", "--unset", "user.name")
 	if got := RepoAccount(dir); got != "test@example.invalid" {
 		t.Fatalf("RepoAccount email fallback = %q", got)
+	}
+}
+
+// With the view and a key file in the log folder, sync commits neither
+// (Code Review 20260805 item 12).
+// ID: defpv
+func TestSyncLeavesViewAndKeyOut(t *testing.T) {
+	dir := t.TempDir()
+	gitInit(t, dir)
+	lg, _ := Open(dir)
+	if err := lg.Append(Entry{TxID: "a1", Date: "2026-07-01T00:00:00.000Z", Table: "person", RowID: "0a0a", Op: "create"}); err != nil {
+		t.Fatal(err)
+	}
+	kept := []string{"db.sqlite", "db.sqlite-journal", "db.sqlite-wal", "db.key"}
+	for _, name := range kept {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 {
+		if _, err := NewSyncer(lg, time.Minute).Sync(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := strings.Fields(mustGit(t, dir, "ls-files"))
+	if !slices.Contains(files, filepath.Base(lg.Path())) {
+		t.Fatalf("log file not committed: %v", files)
+	}
+	for _, name := range kept {
+		if slices.Contains(files, name) {
+			t.Fatalf("%s was committed: %v", name, files)
+		}
+	}
+	b, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(b), "*.key\n"); n != 1 {
+		t.Fatalf(".gitignore has *.key %d times after 2 syncs:\n%s", n, b)
 	}
 }

@@ -86,8 +86,8 @@ fBuildBundle(){
 	cp "${dirPath_Base}/cicd/utility/smoke-cli.bash" "${dirPath_Base}/cicd/utility/remote-unix.bash" "${stage}/cicd/utility/"
 	cp -r "${dirPath_Base}/cicd/utility/smoke" "${stage}/cicd/utility/"
 	cp "${dirPath_Base}/cicd/utility/include/temp-run.bash" "${dirPath_Base}/cicd/utility/include/build-number.bash" "${stage}/cicd/utility/include/"
-	## The ddl and seed tests parse project/example.shcl, from 4 levels up their package folder.
-	tar -C "${dirPath_Base}" --exclude=./source/vendor -cf - ./source ./project/example.shcl | tar -C "${stage}" -xf -
+	## The ddl and seed tests parse project/example.shcl, README.md and syntax.md, found above their package folder.
+	tar -C "${dirPath_Base}" --exclude=./source/vendor -cf - ./source ./project/example.shcl ./README.md ./syntax.md | tar -C "${stage}" -xf -
 	tar -C "${stage}" -czf "${runDir}/${tgt}/bundle.tgz" .
 	[[ -s "${stage}/tests/manifest" ]]  ||  fDie "${tgt}: no test packages found"
 }
@@ -280,3 +280,4 @@ fMain "${@}"
 ##		- 20261025 JC: Run folders under gitniblet-floss, here and on the boxes, through the shared guard.
 ##		- 20261025 JC: One line per test with its ID, through testid remote.
 ##		- 20261025 JC: vmKt6m is halted from inside when it was found off.
+##		- 20261026 JC: The bundle carries README.md and syntax.md.

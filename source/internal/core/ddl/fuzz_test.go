@@ -11,7 +11,7 @@ import (
 
 // The schema parser reads whatever a user hands it, so it must degrade to
 // warnings or an error on any input, never panic or hang. The seed corpus pulls
-// in the real example.shcl when present, plus a few shapes that stress
+// in the real example.shcl, plus a few shapes that stress
 // indentation, restated sections and the path shorthand.
 
 func seedDDL(f *testing.F) {
@@ -26,9 +26,13 @@ func seedDDL(f *testing.F) {
 	} {
 		f.Add([]byte(s))
 	}
-	if b, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "project", "example.shcl")); err == nil {
-		f.Add(b)
+	// A missing example fails rather than skips, or a rename leaves the
+	// fuzzer seeded with only the shapes above (Code Review 20260805 item 11).
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "project", "example.shcl"))
+	if err != nil {
+		f.Fatalf("seed: %v", err)
 	}
+	f.Add(b)
 }
 
 // ID: d9nwj

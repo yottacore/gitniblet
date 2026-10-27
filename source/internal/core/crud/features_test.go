@@ -254,3 +254,38 @@ func TestRowAccessGrants(t *testing.T) {
 		t.Fatal("malformed id was accepted")
 	}
 }
+
+// A record names its own working copy, so a name with path parts must still
+// land in the temp folder (Code Review 20260805 item 5).
+// ID: defpr
+func TestAttachmentWorkingCopyStaysInTemp(t *testing.T) {
+	tmp := t.TempDir()
+	for _, k := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(k, tmp)
+	}
+	api := newFeatAPI(t)
+	id, _ := api.Create("person", map[string]string{"name": "Ann"})
+	src := filepath.Join(t.TempDir(), "photo.jpg")
+	if err := os.WriteFile(src, []byte("jpeg bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	attID, err := api.AttachFile("person", id, src, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"../../escape", "sub/dir/x", "/abs/x", "..", "/", `..\..\win`} {
+		if err := api.Update("attachments_copy", attID, map[string]string{"name": name}); err != nil {
+			t.Fatalf("set name %q: %v", name, err)
+		}
+		work, err := api.AttachmentWorkingCopy(attID)
+		if err != nil {
+			t.Fatalf("name %q: %v", name, err)
+		}
+		if filepath.Dir(work) != filepath.Clean(tmp) {
+			t.Fatalf("name %q: working copy at %q, want it in %q", name, work, tmp)
+		}
+		if got, err := os.ReadFile(work); err != nil || string(got) != "jpeg bytes" {
+			t.Fatalf("name %q: working copy %q err=%v", name, got, err)
+		}
+	}
+}

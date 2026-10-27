@@ -78,4 +78,4 @@ gitniblet query issues "SELECT title FROM issue WHERE id = id('${id}')" | grep -
 
 fConfigHome_Check "${work}/fake" || fail "the default config folder was used"
 
-echo "smoke-cli: PASS"
+echo "PASS defpw smoke-cli"

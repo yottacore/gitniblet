@@ -643,7 +643,7 @@ fList(){
 				< <(grep -oE '(fCheck|fCase|PASS) [0-9a-hjkmnp-tv-z]{5} ' "${testScript}" | sort -u -k2,2)
 		done
 	fi
-	! fStep_IsOn "Build (native release)"  ||  fEcho_Clean "Build (native release) runs the CLI smoke, cicd/utility/smoke-cli.bash, which has no per-test IDs."
+	! fStep_IsOn "Build (native release)"  ||  fEcho_Clean "Build (native release) runs the CLI smoke: defpw smoke-cli.bash."
 	! fStep_IsOn "Remote tests"            ||  fEcho_Clean "Remote tests: the module's tests above and the CLI smoke, on each box."
 	return 0
 }

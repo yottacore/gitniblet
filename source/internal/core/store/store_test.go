@@ -4,9 +4,11 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/yottacore/gitniblet/internal/core/ddl"
 )
@@ -301,5 +303,62 @@ func TestBuildRelaxesOldNotNull(t *testing.T) {
 	}
 	if cols := columns(t, st, "person__relaxed"); len(cols) > 0 {
 		t.Fatalf("temp table left behind: %v", cols)
+	}
+}
+
+// A second process writing while the first holds the file waits its turn
+// rather than failing at once (Code Review 20260805 item 6).
+// ID: defps
+func TestSecondWriterWaits(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.sqlite")
+	a, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	b, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	if _, err := a.DB().Exec("CREATE TABLE t (x INTEGER)"); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	conn, err := a.DB().Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.ExecContext(ctx, "INSERT INTO t VALUES (1)"); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := b.DB().Exec("INSERT INTO t VALUES (2)")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("second writer returned while the first held the file: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("second writer: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("second writer never finished")
+	}
+	var n int
+	if err := b.DB().QueryRow("SELECT count(*) FROM t").Scan(&n); err != nil || n != 2 {
+		t.Fatalf("rows = %d err=%v, want 2", n, err)
 	}
 }

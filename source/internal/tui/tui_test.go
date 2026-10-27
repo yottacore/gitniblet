@@ -294,3 +294,14 @@ tables:
 		t.Errorf("after save: %v", row)
 	}
 }
+
+// 2 or 4 arguments match neither form, so they say so rather than open the
+// picker (Code Review 20260805 item 9).
+// ID: defpt
+func TestRunWrongArgCountIsAnError(t *testing.T) {
+	for _, args := range [][]string{{"a", "b"}, {"a", "b", "c", "d"}} {
+		if err := Run(args); err == nil || !strings.Contains(err.Error(), "usage:") {
+			t.Fatalf("Run(%q) = %v, want a usage error", args, err)
+		}
+	}
+}

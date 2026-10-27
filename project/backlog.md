@@ -313,7 +313,9 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - Regression tests the old-format Done items still lack.
 	- ID: 2026102521481107
 	- Type: Task
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: the full run, for Remote tests: defpx and d9nwj on each box, now that the bundle carries README.md and syntax.md.
+	- Needs external testing: `ci.yml` on the round branch, for d9nwj and defpx on the hosted runners.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261025-214811
 	- Opened by: JC
@@ -328,6 +330,22 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Item 12: sync's `.gitignore` keeps the SQLite file and a key file out of the log folder (txlog).
 		- The README's "Add to README.md" item: the schema blocks in README.md and syntax.md still parse.
 		- The exe name item: `smoke-cli.bash` gets a test ID on its `PASS` line, so `testid check` sees it.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261026: New tests: defpr (item 5, crud), defps (item 6, store), defpt (item 9, tui), defpv (item 12, txlog), and defpx, which parses every block in README.md and syntax.md that opens with `database:`. The FuzzParse seed (d9nwj) fails when `project/example.shcl` is missing (item 11). `smoke-cli.bash` prints `PASS defpw smoke-cli`, and `--list` names it.
+		- `remote-test.bash` puts README.md and syntax.md in the box bundle, so defpx runs there rather than failing. New defpy in `remote-skip-test.bash` checks it.
+		- Each Done item's "Test case:" row names its new test.
+		- Verified: each new test passes, and fails with its fix taken out: defpr without `filepath.Base`, defps without `busy_timeout`, defpt without the arg-count check, defpv with no ignore lines, and d9nwj with the example path missing. defpx fails on an unknown key planted in a README block and in a syntax.md block. defpy fails on the old `remote-test.bash`, and the other 9 checks in `remote-skip-test.bash` pass.
+		- Verified: `--backlog-run-quick tui core` passed with a `PASS` line for each new ID, the smoke's included. `testid check` passes with 261 Go tests and 319 IDs, and drops by one without the smoke's ID. gofmt, vet and shellcheck find nothing new.
+		- Swept: every reader of the smoke's output (`cicd.bash`, `ci.yml`, both box runners), and the other tests that read `example.shcl`: d9dzs, dec94 and dec96 still skip when it's missing.
+	- Decisions:
+		- The box runners keep their own `PASS smoke-cli` line with no ID, as 2026102508574387 decided. `testid check` counts a bash ID found in 2 files as a clash.
+		- defpx takes only blocks whose first line is `database:`. The rest are fragments, CLI text or shell. Some are one section, such as relationships or seed rows, so it checks for no error and no warnings, not for tables.
+		- The docs go in the box bundle rather than defpx skipping there, since a quiet skip on the boxes is what item 11 and 2026102509132812 fixed.
+		- d9dzs, dec94 and dec96 are left as they are, since the issue names only the fuzz seed, and each says why it skipped.
+	- Branch: r1026
+	- Test case: defpr, defps, defpt, defpv, defpx, defpw (smoke), defpy (`remote-skip-test.bash`), and d9nwj.
 
 - Write lists in brackets in the docs and examples.
 	- ID: 2026102618065650
@@ -1710,14 +1728,14 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Item 2: `TestGateRoutesRefusedWhenNotGated` (davaf).
 		- Item 3: `TestUnknownUserStillCostsAKDFRun` (davaa).
 		- Item 4: none. A data race shows only under `-race`, and the Race tests step covers only the TUI.
-		- Item 5: none yet. 2026102521481107.
-		- Item 6: none yet. 2026102521481107.
+		- Item 5: `TestAttachmentWorkingCopyStaysInTemp` (defpr).
+		- Item 6: `TestSecondWriterWaits` (defps).
 		- Item 7: `TestUnrunnableCommandsFail` (dava8).
 		- Item 8: `TestTableFlagWithoutDatabase` (dava9).
-		- Item 9: none yet. 2026102521481107.
+		- Item 9: `TestRunWrongArgCountIsAnError` (defpt).
 		- Item 10: none. Whether a prompt echoes needs a real terminal, so it's a hand check.
-		- Item 11: `FuzzParse` (d9nwj) seeds from the example, and `TestParseExampleDDL` (d9dzs) fails without it. The seed still skips a missing file quietly, which is in 2026102521481107.
-		- Item 12: none yet. 2026102521481107.
+		- Item 11: `FuzzParse` (d9nwj) seeds from the example, and fails without it. `TestParseExampleDDL` (d9dzs) parses it, and skips without it.
+		- Item 12: `TestSyncLeavesViewAndKeyOut` (defpv).
 
 #### Done - Features and enhancements
 
@@ -1852,7 +1870,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 - ✅ Exe name should be 'gitniblet'.
 	- Done: the built binary and all user-facing references (CLI/TUI/web usage, version line, web title) are now `gitniblet`; `cmd/gitniblet` renamed to `cmd/gitniblet`. The module path `gitniblet` and the `GITNIBLET_USER`/`GITNIBLET_HOST` env vars are unchanged.
-	- Test case: `TestVersionLine` (debg5) checks the name in the version line, and `smoke-cli.bash` runs `bin/gitniblet`, with no ID yet (2026102521481107).
+	- Test case: `TestVersionLine` (debg5) checks the name in the version line, and `smoke-cli.bash` defpw runs `bin/gitniblet`.
 
 - ✅ Order of fields in txlog should NOT affect backward or forward schema compatibility.
 	- Done: the reader maps columns by the header row's names instead of fixed positions. A column can be reordered, added, or dropped - an unknown extra column is ignored, a missing one defaults to empty (this subsumes the old host_name legacy-width special-case). Header rows are detected by their reserved column names, so even the header order can change. A record just needs enough fields to carry the required columns, else it's flagged torn.
@@ -1894,7 +1912,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- ✅ Create that file.
 	- Done: README gained a "Quick start" with a minimal schema and a full hierarchical to-do example, plus a basic CLI walkthrough and a pointer to the full syntax reference. Both DDL blocks were parse-verified, and the to-do one runs end to end.
 	- Done: new `github/syntax.md` is the complete reference covering DDL grammar, types, system columns, uniques, features, access, renames, views, tunables, the sidecar files, all CLI verbs, run modes, and env vars. It documents only implemented behavior; example.ddl's not-yet-wired keys are flagged as forward-looking.
-	- Test case: none. Docs. A check that the README's schema blocks still parse is in 2026102521481107.
+	- Test case: `TestDocSchemasParse` (defpx) parses the schema blocks in README.md and syntax.md.
 
 - ✅ Partial flag list:
 	- ✅ `--init[=]["git repo root to auto-calculate subfolders for (e.g. 'gitniblet/dbname/'), or override default with specific 'git-repo-root-path/subfolder(s)/'"]`  ## If no arg specified, and already in a git root or DDL is in $PWD, use it. Otherwise error.
