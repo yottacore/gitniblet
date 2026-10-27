@@ -24,11 +24,23 @@ builds:
       - -s -w -X github.com/yottacore/gitniblet/app.CommitTime={{ .CommitTimestamp }}
     goos: [linux, darwin, windows, freebsd]
     goarch: [amd64, arm64]  # flow-style so cicd.bash --no-arm can filter this line
+    # Commit time, not build time, so 2 builds of one commit match byte for byte.
+    mod_timestamp: "{{ .CommitTimestamp }}"
 
 archives:
   - id: gitniblet
     formats: [tar.gz]
     name_template: "gitniblet-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+    builds_info:
+      mtime: "{{ .CommitDate }}"
+    # The default globs, spelled out so each file gets the commit's time.
+    files:
+      - src: README.md
+        info: {mtime: "{{ .CommitDate }}"}
+      - src: license.md
+        info: {mtime: "{{ .CommitDate }}"}
+      - src: changelog.md
+        info: {mtime: "{{ .CommitDate }}"}
     format_overrides:
       - goos: windows
         formats: [zip]
@@ -41,13 +53,16 @@ nfpms:
     maintainer: gitniblet maintainers <release@gitniblet.local>
     description: Local-first database on an append-only, git-syncable transaction log.
     license: AGPL-3.0-or-later
+    mtime: "{{ .CommitDate }}"
     homepage: https://github.com/yottacore/gitniblet
     bindir: /usr/bin
     contents:
       - src: ./license.md
         dst: /usr/share/doc/gitniblet/license.md
+        file_info: {mtime: "{{ .CommitDate }}"}
       - src: ./README.md
         dst: /usr/share/doc/gitniblet/README.md
+        file_info: {mtime: "{{ .CommitDate }}"}
 
 checksum:
   name_template: checksums.txt

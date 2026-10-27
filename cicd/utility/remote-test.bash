@@ -86,8 +86,8 @@ fBuildBundle(){
 	cp "${dirPath_Base}/cicd/utility/smoke-cli.bash" "${dirPath_Base}/cicd/utility/remote-unix.bash" "${stage}/cicd/utility/"
 	cp -r "${dirPath_Base}/cicd/utility/smoke" "${stage}/cicd/utility/"
 	cp "${dirPath_Base}/cicd/utility/include/temp-run.bash" "${dirPath_Base}/cicd/utility/include/build-number.bash" "${stage}/cicd/utility/include/"
-	## The ddl and seed tests parse project/example.shcl, from 4 levels up their package folder.
-	tar -C "${dirPath_Base}" --exclude=./source/vendor -cf - ./source ./project/example.shcl | tar -C "${stage}" -xf -
+	## The ddl and seed tests parse project/example.shcl, README.md and syntax.md, found above their package folder.
+	tar -C "${dirPath_Base}" --exclude=./source/vendor -cf - ./source ./project/example.shcl ./README.md ./syntax.md | tar -C "${stage}" -xf -
 	tar -C "${stage}" -czf "${runDir}/${tgt}/bundle.tgz" .
 	[[ -s "${stage}/tests/manifest" ]]  ||  fDie "${tgt}: no test packages found"
 }
@@ -120,11 +120,12 @@ fOnBox(){
 	fEcho "${tgt}: ${dest}:${work}"
 
 	## cat, not scp: a login that prints breaks scp and sftp.
-	local rc=0
+	local rc=0  leakEnv=""
+	[[ "${GITNIBLET_LEAKCHECK:-}" != "0" ]]  ||  leakEnv="env GITNIBLET_LEAKCHECK=0 "  ## env, since a box's login shell may be csh
 	ssh "${sshOpts[@]}" "${dest}" "cat > '${work}/bundle.tgz'" < "${runDir}/${tgt}/bundle.tgz"  || rc=1
 	if ((rc == 0)); then
 		timeout 2400 ssh "${sshOpts[@]}" "${dest}" \
-			"cd '${work}' && tar -xzf bundle.tgz && bash ./cicd/utility/remote-unix.bash '${work}' ${jobCap} ${keepTemp}" < /dev/null \
+			"cd '${work}' && tar -xzf bundle.tgz && ${leakEnv}bash ./cicd/utility/remote-unix.bash '${work}' ${jobCap} ${keepTemp}" < /dev/null \
 			| "${runDir}/testid" remote "${dirPath_Base}"  ||  rc=$?
 	fi
 	if ((rc == 0)); then echo "pass" > "${statusFile}"; else echo "fail" > "${statusFile}"; fi
@@ -153,7 +154,7 @@ fOnBox_Windows(){
 	scp -q "${sshOpts[@]}" "${runDir}/${tgt}/bundle.tgz" "${runDir}/${tgt}/remote-windows.ps1" "${dest}:${work//\\//}/" 2> /dev/null  ||  rc=1
 	if ((rc == 0)); then
 		timeout 2400 ssh "${sshOpts[@]}" "${dest}" \
-			pwsh -NoProfile -ExecutionPolicy Bypass -File "${work}\\remote-windows.ps1" "${work}" "${jobCap}" "${keepTemp}" < /dev/null 2> >(grep -v '^\*\*' >&2) \
+			pwsh -NoProfile -ExecutionPolicy Bypass -File "${work}\\remote-windows.ps1" "${work}" "${jobCap}" "${keepTemp}" "${GITNIBLET_LEAKCHECK:-1}" < /dev/null 2> >(grep -v '^\*\*' >&2) \
 			| "${runDir}/testid" remote "${dirPath_Base}"  ||  rc=$?  ## it drops the CRs too
 	fi
 	if ((rc == 0)); then echo "pass" > "${statusFile}"; else echo "fail" > "${statusFile}"; fi
@@ -280,3 +281,5 @@ fMain "${@}"
 ##		- 20261025 JC: Run folders under gitniblet-floss, here and on the boxes, through the shared guard.
 ##		- 20261025 JC: One line per test with its ID, through testid remote.
 ##		- 20261025 JC: vmKt6m is halted from inside when it was found off.
+##		- 20261026 JC: The bundle carries README.md and syntax.md.
+##		- 20261026 JC: GITNIBLET_LEAKCHECK=0 goes to the boxes too.

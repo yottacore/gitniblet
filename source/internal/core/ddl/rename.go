@@ -5,16 +5,13 @@
 // the old name as an alias, so tx-log entries written before the rename still
 // resolve (schema.ApplyAliases does the replay-side mapping).
 //
-// This goes through shcl's Writer, which carries comments and blank-line
-// grouping across the edit and whose output is a formatter fixpoint. The file
-// comes back in canonical form, so a first rename normalizes any hand-tuned
-// column padding - comment text itself is never rewritten.
+// The file keeps its lines as typed, comments and column padding included,
+// apart from the lines the rename edits. A file from before shcl 3 comes back
+// in 3's form, with its format named.
 package ddl
 
 import (
-	"fmt"
-
-	shcl "github.com/jim-collier/shcl/source/go"
+	"github.com/yottacore/gitniblet/internal/core/shclio"
 )
 
 // tablePaths is where tables live. The DDL also accepts an unwrapped `tables:`
@@ -30,66 +27,62 @@ func tablePaths() []string {
 // RenameTable renames a table and records the old name on its aliases. Returns
 // the new text and whether the table was found.
 func RenameTable(src []byte, oldName, newName string) ([]byte, bool) {
-	doc := shcl.Parse(string(src))
+	doc, _ := shclio.Load(string(src), shclio.Standard, legacyRow)
 	for _, base := range tablePaths() {
-		i, ok := indexOf(doc, base, oldName)
+		at, ok := instanceOf(doc, base, oldName)
 		if !ok {
 			continue
 		}
-		at := fmt.Sprintf("%s[#%d]", base, i)
-		if !doc.SetString(at, newName) {
-			return src, false
-		}
-		addAlias(doc, at, oldName)
-		return []byte(doc.ToCanonical()), true
+		return renamed(src, doc, at, oldName, newName)
 	}
 	return src, false
 }
 
 // RenameField renames a field inside the named table, same contract.
 func RenameField(src []byte, table, oldName, newName string) ([]byte, bool) {
-	doc := shcl.Parse(string(src))
+	doc, _ := shclio.Load(string(src), shclio.Standard, legacyRow)
 	for _, base := range tablePaths() {
-		tableIdx, ok := indexOf(doc, base, table)
+		tableAt, ok := instanceOf(doc, base, table)
 		if !ok {
 			continue
 		}
-		fields := fmt.Sprintf("%s[#%d].fields.field", base, tableIdx)
-		i, ok := indexOf(doc, fields, oldName)
+		at, ok := instanceOf(doc, tableAt+".fields.field", oldName)
 		if !ok {
 			continue
 		}
-		at := fmt.Sprintf("%s[#%d]", fields, i)
-		if !doc.SetString(at, newName) {
-			return src, false
-		}
-		addAlias(doc, at, oldName)
-		return []byte(doc.ToCanonical()), true
+		return renamed(src, doc, at, oldName, newName)
 	}
 	return src, false
 }
 
-// indexOf finds the instance under path whose discriminator is name. Matching is
-// exact: a discriminator is a value, and shcl compares values case-sensitively.
-func indexOf(doc *shcl.Document, path, name string) (int, bool) {
-	for i, value := range doc.Instances(path) {
-		if value == name {
-			return i, true
+func renamed(src []byte, doc *shclio.Doc, at, oldName, newName string) ([]byte, bool) {
+	if doc.Put(at, newName) != nil || addAlias(doc, at, oldName) != nil {
+		return src, false
+	}
+	return []byte(shclio.Text(doc)), true
+}
+
+// instanceOf finds the instance under path whose discriminator is name. Matching
+// is exact: a discriminator is a value, and shcl compares values case-sensitively.
+func instanceOf(doc *shclio.Doc, path, name string) (string, bool) {
+	for _, n := range doc.Each(path) {
+		if n.Value == name {
+			return n.Path, true
 		}
 	}
-	return 0, false
+	return "", false
 }
 
 // addAlias appends the old name to an entity's aliases, creating the key when
 // absent. An already-listed name is not repeated, so renaming A->B->A leaves one
 // entry rather than two.
-func addAlias(doc *shcl.Document, entity, oldName string) {
+func addAlias(doc *shclio.Doc, entity, oldName string) error {
 	path := entity + ".aliases"
-	existing := doc.GetStringArrayOr(path, nil)
+	existing := doc.Strs(path, nil)
 	for _, alias := range existing {
 		if alias == oldName {
-			return
+			return nil
 		}
 	}
-	doc.SetStringArray(path, append(existing, oldName))
+	return doc.Put(path, append(existing, oldName))
 }

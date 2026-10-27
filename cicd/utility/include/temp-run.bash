@@ -9,6 +9,9 @@
 ##		  run.pid in it, and prints its path.
 ##		- fTempDir_Make LABEL: a folder for a helper. Inside the cicd run's folder
 ##		  (GITNIBLET_RUN_DIR) when there is one, else a run folder of its own.
+##		- fConfigHome_Use DIR: points HOME, XDG_CONFIG_HOME and AppData at
+##		  DIR/home, keeping Go's own caches, for anything that runs gitniblet or
+##		  its tests. fConfigHome_Check DIR fails if the default registry was used.
 ##		- fTempRun_Sweep: removes this project's run folders older than 2 days
 ##		  whose run.pid names no live process.
 ##		- fSafeRm PATH: the repo's copy of the safe removal guard. Takes one
@@ -44,6 +47,35 @@ fTempDir_Make(){
 	else
 		fTempRun_Make
 	fi
+}
+
+## The config folder name before the rename. gitniblet moves it on its first
+## lookup of the default registry, so a copy left in the fake home shows when
+## anything reached past --config or a test's own temp folder.
+__configCanary="ngdb"
+
+fConfigHome_Use(){
+	local home="${1:?fConfigHome_Use: no folder}/home" goCache='' goModCache='' goPath='' goEnv=''
+	mkdir -p -- "${home}/.config/${__configCanary}" "${home}/Library/Application Support/${__configCanary}"  ||  return 1
+	if command -v go > /dev/null 2>&1; then
+		## Go finds its caches and its env file through HOME. Keep the real ones.
+		{ read -r goCache; read -r goModCache; read -r goPath; read -r goEnv; } < <(go env GOCACHE GOMODCACHE GOPATH GOENV)
+		[[ -n "${goCache}" ]]  ||  { printf 'temp-run: no go env\n' >&2; return 1; }
+		export GOCACHE="${goCache}" GOMODCACHE="${goModCache}" GOPATH="${goPath}" GOENV="${goEnv}"
+	fi
+	export HOME="${home}" XDG_CONFIG_HOME="${home}/.config" AppData="${home}/.config"
+	## Git Bash hands Windows programs APPDATA too, and which one wins isn't ours to pick.
+	[[ -z "${APPDATA:-}" ]]  ||  export APPDATA="${home}/.config"
+}
+
+fConfigHome_Check(){
+	local home="${1:?fConfigHome_Check: no folder}/home" base
+	for base in "${home}/.config" "${home}/Library/Application Support"; do
+		if [[ ! -d "${base}/${__configCanary}" || -e "${base}/gitniblet" ]]; then
+			printf 'FAIL: the default config folder was used, under %s\n' "${base}" >&2
+			return 1
+		fi
+	done
 }
 
 fTempRun_Sweep(){
@@ -82,3 +114,4 @@ fSafeRm(){
 
 ##	History:
 ##		- 20261025 JC: Created, for the run folder and the guard every cicd script shares.
+##		- 20261026 JC: A fake home for runs of gitniblet and its tests, with a check.

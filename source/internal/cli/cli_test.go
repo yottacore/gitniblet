@@ -170,7 +170,7 @@ func TestRenameOpsEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"table: people", "aliases: person", "field: handle", "aliases: nick"} {
+	for _, want := range []string{"table: people", "aliases: [person]", "field: handle", "aliases: [nick]"} {
 		if !strings.Contains(string(src), want) {
 			t.Fatalf("DDL missing %q:\n%s", want, src)
 		}

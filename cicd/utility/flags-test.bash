@@ -123,6 +123,17 @@ fAliases(){
 }
 fCheck deecf "--gate and --ci say what they stand for, and the taken flags parse" fAliases
 
+fLeakFlags(){
+	local bad=0
+	fLeakLine(){ bash "${cicd}" --list --no-sync --no-container "$@" 2>&1 | grep '^Leak checks: ' ; }
+	[[ "$(unset GITNIBLET_LEAKCHECK; fLeakLine)" == "Leak checks: on" ]]  ||  { echo "  default isn't on"; bad=1; }
+	[[ "$(unset GITNIBLET_LEAKCHECK; fLeakLine --no-leakcheck)" == "Leak checks: off" ]]  ||  { echo "  --no-leakcheck isn't off"; bad=1; }
+	[[ "$(GITNIBLET_LEAKCHECK=0 fLeakLine)" == "Leak checks: off" ]]  ||  { echo "  GITNIBLET_LEAKCHECK=0 isn't off"; bad=1; }
+	[[ "$(GITNIBLET_LEAKCHECK=0 fLeakLine --leakcheck)" == "Leak checks: on" ]]  ||  { echo "  --leakcheck doesn't win over the env"; bad=1; }
+	return "${bad}"
+}
+fCheck defqc "--no-leakcheck and GITNIBLET_LEAKCHECK=0 turn the leak checks off, and --leakcheck back on" fLeakFlags
+
 fAreas(){
 	local out bad=0 area
 	out="$(bash "${cicd}" --list --backlog-run-quick cli 2>&1 | grep -E '^[0-9a-z]{5} ')"
@@ -200,3 +211,4 @@ echo "flags-test.bash: PASS"
 ##		- 20261025 JC: Created.
 ##		- 20261025 JC: Race tests and Pipeline tests in the plans.
 ##		- 20261025 JC: A stand-in hooks folder, so the plans match on a hosted runner.
+##		- 20261026 JC: The leak flags turn the leak checks on and off.

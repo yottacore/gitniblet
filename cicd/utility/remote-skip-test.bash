@@ -9,7 +9,7 @@
 ##		  helper at all are each a SKIP line, and the run exits 0.
 ##		- A box that answers and then fails is a FAIL, and the run exits 1.
 ##		- A box's test output becomes one line per test with its ID.
-##		- The bundle carries project/example.shcl, which some tests parse.
+##		- The bundle carries project/example.shcl, README.md and syntax.md, which some tests parse.
 ##		- vmKt6m is halted from inside only when it was found off.
 ##		- Each run removes its own run folder.
 ##	Syntax:
@@ -87,6 +87,15 @@ if grep -q shutdown "${runDir}/ssh-run.log"; then echo "FAIL deed7 vmKt6m found 
 ## Listed first, since grep -q quits early and pipefail would count tar's SIGPIPE.
 if grep -qx './project/example.shcl' <<< "$(tar -tzf "${runDir}/bundle.tgz" 2> /dev/null)"; then echo "PASS dedrg bundle carries project/example.shcl"
 else echo "FAIL dedrg bundle carries project/example.shcl"; fails+=1; fi
+if [[ "$(tar -tzf "${runDir}/bundle.tgz" 2> /dev/null | grep -cxE '\./(README|syntax)\.md')" == "2" ]]; then echo "PASS defpy bundle carries README.md and syntax.md"
+else echo "FAIL defpy bundle carries README.md and syntax.md"; fails+=1; fi
+## The box gets the leak check switch, and only when it's off. deed7's run is the one with it on, unless this whole run has it off.
+env "${stand[@]}" WRAP_MODE=run SSH_MODE=play BOX_OUT="${runDir}/box.out" GITNIBLET_LEAKCHECK=0 SSH_LOG="${runDir}/ssh-leak.log" \
+	bash "${repoRoot}/cicd/utility/remote-test.bash" freebsd &> /dev/null
+if grep -qF '&& env GITNIBLET_LEAKCHECK=0 bash ./cicd/utility/remote-unix.bash ' "${runDir}/ssh-leak.log" \
+	&&  { [[ "${GITNIBLET_LEAKCHECK:-}" == "0" ]]  ||  ! grep -qF GITNIBLET_LEAKCHECK "${runDir}/ssh-run.log" ; }
+then echo "PASS defqe GITNIBLET_LEAKCHECK=0 reaches the box"
+else echo "FAIL defqe GITNIBLET_LEAKCHECK=0 reaches the box"; fails+=1; fi
 
 left="$(find "${runDir}/temp/${tempProject}" -mindepth 1 -maxdepth 1 | wc -l)"
 if ((left == 0)); then echo "PASS dednb runs remove their own folders"
@@ -101,3 +110,5 @@ exit $((fails > 0))
 ##		- 20261025 JC: A stand-in box's test output, for one line per test with its ID.
 ##		- 20261025 JC: The bundle carries project/example.shcl.
 ##		- 20261025 JC: vmKt6m halted from inside only when found off.
+##		- 20261026 JC: The bundle carries README.md and syntax.md.
+##		- 20261026 JC: GITNIBLET_LEAKCHECK=0 reaches the box.

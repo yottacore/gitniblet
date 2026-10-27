@@ -4,10 +4,11 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 
-	shcl "github.com/jim-collier/shcl/source/go"
+	"github.com/yottacore/gitniblet/internal/core/shclio"
 )
 
 // settingsFile holds user-global (not per-database) preferences. It sits at the
@@ -48,8 +49,8 @@ func LoadSettings() *Settings {
 		return s
 	}
 	doc := loadLenient(path)
-	s.Theme = doc.GetStringOr("theme", "")
-	s.WebMode = doc.GetStringOr("web_mode", "")
+	s.Theme = doc.Str("theme", "")
+	s.WebMode = doc.Str("web_mode", "")
 	return s
 }
 
@@ -62,8 +63,9 @@ func (s *Settings) Save() error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	doc := shcl.New()
-	setIfSet(doc, "theme", s.Theme)
-	setIfSet(doc, "web_mode", s.WebMode)
+	doc := shclio.New()
+	if err := errors.Join(setIfSet(doc, "theme", s.Theme), setIfSet(doc, "web_mode", s.WebMode)); err != nil {
+		return err
+	}
 	return save(path, doc, 0o644)
 }

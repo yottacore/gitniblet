@@ -14,7 +14,7 @@ import (
 	"strings"
 	"sync"
 
-	shcl "github.com/jim-collier/shcl/source/go"
+	"github.com/yottacore/gitniblet/internal/core/shclio"
 )
 
 // NamedQuery is one predefined query.
@@ -42,29 +42,29 @@ func ScriptPath(ddlPath string) string {
 // queriesSchema is the sidecar's vocabulary. Small enough to live here rather
 // than in its own file, and it sits beside the reader so the two stay in step.
 const queriesSchema = `
-field: "query_name[*]"
+field: "query_name(*)"
 	type: string
-	repeat: 0, 4096
+	repeat: [0, 4096]
 	desc: One named query. Its value is the query name.
-field: "query_name[*].view"
+field: "query_name(*).view"
 	type: string
 	desc: View it is offered on; empty offers it on every view.
-field: "query_name[*].sort"
+field: "query_name(*).sort"
 	type: float
-	desc: Dropdown order; unspecified sorts first, in file order.
-field: "query_name[*].active"
+	desc: "Dropdown order; unspecified sorts first, in file order."
+field: "query_name(*).active"
 	type: bool
-field: "query_name[*].sql"
-	desc: Untyped: SQL is read verbatim, so commas stay content.
+field: "query_name(*).sql"
+	desc: "Untyped: SQL is read verbatim, so commas stay content."
 `
 
 var (
 	queriesOnce sync.Once
-	queriesDocV *shcl.Document
+	queriesDocV *shclio.Doc
 )
 
-func queriesSchemaDoc() *shcl.Document {
-	queriesOnce.Do(func() { queriesDocV = shcl.Parse(queriesSchema) })
+func queriesSchemaDoc() *shclio.Doc {
+	queriesOnce.Do(func() { queriesDocV, _ = shclio.Load(queriesSchema, shclio.Standard) })
 	return queriesDocV
 }
 
@@ -88,10 +88,10 @@ func ParseQueriesFile(path string) ([]NamedQuery, []string, error) {
 // drop the entry with a warning, matching DDL load validation. The result is
 // dropdown-ordered: by sort value, file order within ties.
 func ParseQueries(src []byte) ([]NamedQuery, []string, error) {
-	doc, _ := shcl.ParseWith(string(src), shcl.Loose) // same tolerance as the DDL
+	doc, _ := shclio.Load(string(src), shclio.Loose) // same tolerance as the DDL
 	var warns []string
-	report := func(diags []shcl.Diagnostic) {
-		for _, d := range shcl.SuppressDeclaredRepeats(queriesSchemaDoc(), diags) {
+	report := func(diags []shclio.Diag) {
+		for _, d := range queriesSchemaDoc().DropDeclared(diags) {
 			if isSchemaFault(d) {
 				warns = append(warns, "built-in schema fault: "+d.Message)
 				continue
@@ -99,8 +99,8 @@ func ParseQueries(src []byte) ([]NamedQuery, []string, error) {
 			warns = append(warns, fmt.Sprintf("line %d: %s", d.Line, d.Message))
 		}
 	}
-	report(doc.Diagnostics())
-	report(doc.Validate(queriesSchemaDoc()))
+	report(doc.Diags())
+	report(doc.Check(queriesSchemaDoc()))
 
 	// No duplicate-name check: two query_name instances with the same name are
 	// one node by SHCL's merge rule, so a repeat cannot reach here as a second

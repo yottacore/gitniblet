@@ -17,12 +17,14 @@
 param(
 	[Parameter(Mandatory)][string]$Work,
 	[int]$JobCap = 4,
-	[int]$Keep = 0
+	[int]$Keep = 0,
+	[string]$LeakCheck = '1'
 )
 $ErrorActionPreference = 'Stop'
 ## The test binaries write UTF-8. With no console this can throw, and the default then only garbles non-ASCII.
 try { [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false) } catch { }
 (Get-Process -Id $PID).PriorityClass = 'BelowNormal'
+if ($LeakCheck -eq '0') { $env:GITNIBLET_LEAKCHECK = '0' }
 
 ## Only the folder remote-test.bash made for this run, never a link.
 function Remove-RunFolder {
@@ -43,6 +45,11 @@ try {
 	if ($LASTEXITCODE -ne 0) { throw "tar failed" }
 	$null = New-Item -ItemType Directory tmp, logs
 	$env:TMP = $env:TEMP = $env:TMPDIR = "$Work\tmp"
+	## A fake home, as include/temp-run.bash's fConfigHome_Use makes. The old
+	## folder name is moved on any default registry lookup, which shows a leak.
+	$fakeCfg = "$Work\tmp\home\.config"
+	$null = New-Item -ItemType Directory "$fakeCfg\ngdb"
+	$env:HOME = "$Work\tmp\home"; $env:XDG_CONFIG_HOME = $env:AppData = $fakeCfg
 
 	## Half the cores, a quarter when busy, never past the caller's cap.
 	$cores = [Environment]::ProcessorCount
@@ -78,6 +85,8 @@ try {
 		"@@gitniblet-test end $rc"
 		if ($rc -ne 0) { $failed++ }
 	}
+	if ((Test-Path -LiteralPath "$fakeCfg\ngdb") -and -not (Test-Path -LiteralPath "$fakeCfg\gitniblet")) { "PASS config-home" }
+	else { "FAIL config-home: the default config folder was used"; $failed++ }
 
 	## The smoke script is bash. Git for Windows brings one; it isn't on PATH.
 	$bash = "$env:ProgramFiles\Git\bin\bash.exe"
@@ -103,3 +112,5 @@ exit [int]($failed -ne 0)
 ##		- 20261025 JC: -test.parallel passed.
 ##		- 20261025 JC: Raw test2json output per binary, for one line per test on the host.
 ##		- 20261025 JC: Load from GetSystemTimes, which a non-admin logon can read.
+##		- 20261026 JC: Tests run with a fake home, checked after.
+##		- 20261026 JC: LeakCheck 0 turns goleak off in the test binaries.

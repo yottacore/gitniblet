@@ -24,7 +24,7 @@ import (
 	"os"
 	"strings"
 
-	shcl "github.com/jim-collier/shcl/source/go"
+	"github.com/yottacore/gitniblet/internal/core/shclio"
 )
 
 // Schema is a parsed DDL file.
@@ -182,10 +182,10 @@ type View struct {
 // load over one bad line: the rest of the file still opens, so a typo costs a
 // line rather than the whole schema. Nothing passes silently.
 func Parse(src []byte) (*Schema, error) {
-	doc, _ := shcl.ParseWith(string(src), shcl.Loose) // only Strict can fail a load
+	doc, _ := shclio.Load(string(src), shclio.Loose, legacyRow) // only Strict can fail a load
 	s := &Schema{AppCode: map[string]string{}, Tunables: map[string]string{}}
-	s.addDiagnostics(doc.Diagnostics())
-	s.addDiagnostics(doc.Validate(schemaDoc()))
+	s.addDiagnostics(doc.Diags())
+	s.addDiagnostics(doc.Check(schemaDoc()))
 
 	root := cursor{doc: doc}
 	s.mapCode(root)
@@ -212,7 +212,7 @@ func ParseFile(path string) (*Schema, error) {
 // an array, or a section that silently combined with an earlier one, are
 // exactly the near-misses this DDL's audience needs told about.
 //
-// SuppressDeclaredRepeats drops the repeated-leaf hint for keys the schema
+// DropDeclared drops the repeated-leaf hint for keys the schema
 // declares as repeating - `unique:`, `index:`, `row:` - where recurring IS the
 // design and the hint would fire on every correct DDL.
 // The merged-with-an-earlier-section hint is deliberately NOT filtered, even
@@ -221,8 +221,8 @@ func ParseFile(path string) (*Schema, error) {
 // wrappers would also silence two far-apart `table: t` sections quietly becoming
 // one table, which is the thing worth catching. A schema laid out in one pass
 // never sees it; project/example.shcl is written that way for the same reason.
-func (s *Schema) addDiagnostics(diags []shcl.Diagnostic) {
-	for _, d := range shcl.SuppressDeclaredRepeats(schemaDoc(), diags) {
+func (s *Schema) addDiagnostics(diags []shclio.Diag) {
+	for _, d := range schemaDoc().DropDeclared(diags) {
 		if isSchemaFault(d) {
 			// A fault's line is a line of the built-in vocabulary, not of the
 			// DDL in front of the user, so it must not read like one. Only a
@@ -233,7 +233,7 @@ func (s *Schema) addDiagnostics(diags []shcl.Diagnostic) {
 			continue
 		}
 		s.Warnings = append(s.Warnings, fmt.Sprintf("line %d: %s", d.Line, d.Message))
-		if d.Severity == shcl.SeverityError {
+		if shclio.IsError(d) {
 			s.Errors++
 		}
 	}
@@ -242,7 +242,7 @@ func (s *Schema) addDiagnostics(diags []shcl.Diagnostic) {
 // isSchemaFault tells a complaint about the validation schema (V09x) from one
 // about the document being loaded. They share a diagnostics list but not a line
 // numbering.
-func isSchemaFault(d shcl.Diagnostic) bool { return strings.HasPrefix(d.Code, "V09") }
+func isSchemaFault(d shclio.Diag) bool { return strings.HasPrefix(d.Code, "V09") }
 
 // warn records a cross-cutting problem: one about the relationship between
 // lines rather than about a single line. It still cites the entity's own line
@@ -306,7 +306,7 @@ func (s *Schema) mapTunables(root cursor) {
 		if _, dup := s.Tunables[key]; dup {
 			continue // first wins, like every other merge
 		}
-		s.Tunables[key] = at.str(shcl.QuoteSegment(key))
+		s.Tunables[key] = at.str(shclio.Quote(key))
 	}
 }
 

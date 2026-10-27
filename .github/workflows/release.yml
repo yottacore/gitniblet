@@ -21,7 +21,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.26.10'
+          go-version-file: source/go.mod
           cache-dependency-path: source/go.sum
       - name: Guard version and badge
         id: v
@@ -74,11 +74,20 @@ jobs:
           source cicd/utility/include/build-number.bash
           build="$(fBuildNumber)"
           echo "GITNIBLET_BUILD=${build}" >> "$GITHUB_ENV"
+      # The same goreleaser cicd.bash runs.
+      - name: Tool pins
+        id: pins
+        if: steps.v.outputs.skip != '1'
+        run: |
+          source cicd/utility/include/tool-versions.bash
+          goreleaser="${GITNIBLET_GORELEASER##*@}"
+          [[ "$goreleaser" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::no goreleaser version in tool-versions.bash: '$GITNIBLET_GORELEASER'"; exit 1; }
+          echo "goreleaser=${goreleaser}" >> "$GITHUB_OUTPUT"
       - name: goreleaser
         if: steps.v.outputs.skip != '1'
         uses: goreleaser/goreleaser-action@v7
         with:
-          version: '~> v2'
+          version: ${{ steps.pins.outputs.goreleaser }}
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

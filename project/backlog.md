@@ -32,10 +32,369 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 ## Issues
 
+- Dogfood to `exec/app/<os>/`, and skip the copy when the binary is in use.
+	- ID: 2026102520521027
+	- Type: Task
+	- Status: Waiting on UAT
+	- Needs local test suite run?: No
+	- Needs external testing: No
+	- Needs hand testing: the next default run on b23, to see the build land in `exec/app/linux/`, and a run with cross-compile for `mswin/` and `macos/`.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Requirements [Feature]:
+		- Per the shared CICD rules, Dogfood. The Linux build goes to `~/synced/0-0/common/exec/app/linux/`, and the Windows and macOS builds to `mswin/` and `macos/` beside it, where the run built them.
+		- Skip the copy, with one line, when the binary there is in use.
+		- Today it goes to `exec/util/linux/bin/`, with a `/usr/local/sbin/` fallback through sudo.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261026: The Dogfood step copies the release build to `exec/app/linux/`. When the run cross-built, it also copies the amd64 Windows and macOS builds from `dist/` to `mswin/` and `macos/`. The `exec/util/linux/bin/` path and the sudo fallback are gone.
+		- A copy that a process here runs or holds open is skipped with one line, and so is a missing folder or one that already has the same bytes. The new copy goes in beside the old one and is renamed over it.
+		- The logic is in the new `cicd/utility/include/dogfood.bash`. design.md and `--help` say so.
+		- Verified: `dogfood-test.bash` defr4 to defra pass, and each fails with its part broken: the in-use check off (defr5, defr6), arm64 globs (defr7), the cross-built check ignored (defr8), no same-bytes skip (defr9), and the folder pick (defr4). defra runs `cicd.bash`'s own step, and fails on the old `cicd.bash` and with cross-built forced on. The /proc pass, for a box with no fuser, is checked in defr5 and defr6.
+		- Verified: `--backlog-run-quick`, `flags-test.bash` and shellcheck pass, and `--list` names the 7 new IDs.
+		- Not verified: a real dogfood copy, since a round never dogfoods.
+		- Swept: every dogfood and install path in `cicd.bash`, the scripts under `cicd/utility/`, the workflows and the docs. `preferredInstallPaths_Bash` is declared but read by nothing, so it stays as it was. Enterprise's `cicd.bash` has no Dogfood step, and vendor has no `cicd.bash`.
+	- Decisions:
+		- amd64 for Windows and macOS, since b29w and the Intel Mac boxes are amd64, and one binary name per folder leaves no room for both.
+		- Windows and macOS are copied only when Cross-compile + package is in this run's plan, so a `--quick` run never copies an older `dist/`.
+		- In use means a process on this box runs it or holds it open, through `fuser`, or one pass over /proc where there's no fuser. A copy in use on another box through the synced folder can't be seen from here.
+		- A missing folder is a skip, not a failure or a `mkdir`, per "first available location" in the shared rules.
+		- Same bytes, not mtime, decides "already this build", which replaces `cp --update=older`.
+		- A failed copy fails the step, now that there's no sudo fallback.
+		- `exec/app/linux/` isn't on PATH here, as for silkterm. The old `exec/util/linux/bin/ngdb` is left alone. The dogfood script, 2026102520521029, is what puts a launcher on PATH.
+	- Branch: r1026
+	- Test case: `cicd/utility/dogfood-test.bash` defr4 to defra.
+	- 2026-10-26 Verified: cicd.bash --backlog-run-full passed all 11 steps at r1026 (run 20261026-193900; Windows, FreeBSD and macOS passed, vmDebARM64 didn't answer and was skipped), and hosted ci.yml run 40439675727 passed both jobs. defr4 to defra passed. Only the hand row is left: the next default run on b23, since a round never dogfoods.
+
+- `cleanup-test.bash` dedpb can take 30s to stop after Ctrl+C under load.
+	- ID: 2026102520025738
+	- Type: Bug
+	- Status: Can't reproduce
+		- The polled wait stays in. dedpb runs in every full run's Pipeline tests step, so a recurrence shows there.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261025-200257
+	- Opened by: JC
+	- Related IDs: 2026102416210006, 2026102416210004, 2026102520474880
+	- Steps to reproduce [Bug]:
+		- Run `cicd/utility/cleanup-test.bash` with the box busy, at load 31 on 32 CPUs.
+	- Incorrect behavior [Bug]: dedpb fails with "took 30s to stop". The run waited out the hanging docker stand-in rather than stopping on Ctrl+C.
+	- Expected behavior [Bug]: The run stops within 10 seconds of Ctrl+C every time.
+	- Reproduced [Bug]: Once in 3 runs on 20261025, while testing 2026102416210004. The other 2 passed. Not again in 65 runs of the Ctrl+C case on 20261025, at load 2 to 32.
+	- Possible cause [Bug]: The test sends Ctrl+C as soon as the stand-in logs `run`, which may be before `cicd.bash` reaches its `wait`. Not checked.
+	- Actual cause [Bug]:
+		- Not found. Only `cicd.bash` sitting in `wait` until the stand-in exits explains exactly 30s.
+		- Ruled out: a Ctrl+C before the `wait`. Bash 5.2 runs a pending trap before `wait` starts, and the run stopped at once in every try.
+		- Ruled out: the stand-in's pid file being late. With a 1s delay before it, the run still stopped at once, leaving the stand-in behind.
+		- Likely: a race inside bash's `wait`, when the signal lands between its check and the blocking call.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: `cicd.bash` no longer waits on the container's client with a bare `wait`. It polls it with a short `sleep`, which Ctrl+C kills at once, then reads its exit with `wait`.
+		- Verified: dedpb passed in 30 runs of the Ctrl+C case at load 11 to 18, each stopping in under 1s, and in every `cleanup-test.bash` run since. It never failed before the change either, so the change is unproven.
+		- Swept: every `wait` in `cicd/`. That was the only one in `cicd.bash`.
+		- 20261025: Verified: dedpb passed in 10 `cleanup-test.bash` runs in a row at load 24 to 37 on 32 CPUs, about 28s each, on the frozen commit 21bc082. It also passed in the full run's Pipeline tests step and in hosted CI run 40272702133.
+	- Decisions:
+		- 20261025: Can't reproduce. It failed once in 3 runs before the change, and not in 65 more before it or 40 after it.
+	- Actual fix [Bug]: A polled wait on the container's client, in place of a bare `wait`.
+	- Branch: r1025
+	- Test case: `cicd/utility/cleanup-test.bash` dedpb, which the Pipeline tests step now runs.
+
+- Hosted workflows read the Go and tool pins from where `cicd.bash` does.
+	- ID: 2026102520521642
+	- Type: Task
+	- Status: Stalled
+		- After `ci.yml` passes, it goes to Stalled, held for the next release cut, for `release.yml`.
+	- Needs external testing: release.yml at the next release cut, for the pinned goreleaser.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205216
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Related IDs: 2026102520521031
+	- Requirements [Feature]:
+		- Today `ci.yml` and `release.yml` pin Go on their own, and the release takes any goreleaser v2.
+		- Both read the Go version from `source/go.mod`'s `toolchain` line and goreleaser from `tool-versions.bash`.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261026: All 3 `setup-go` steps take `go-version-file: source/go.mod`, which uses the `toolchain` line when there is one. A new `Tool pins` step in `release.yml` sources `tool-versions.bash` and hands the goreleaser action `v2.17.0`, and fails if it finds no version there.
+		- `cicd/utility/pins-test.bash` checks every `setup-go` reads `go.mod`, no workflow pins Go itself, and the goreleaser action takes the pins step's output. It runs that step's own text with a stand-in `GITHUB_OUTPUT`.
+		- Verified: defqw to defqz pass. All 4 fail on the old workflows. The pins step follows a changed pin. Both workflows parse. `--backlog-run-quick` and `flags-test.bash` pass.
+		- Not verified: the hosted runs.
+		- design.md says so, under CI/CD pipeline.
+		- Swept: every `go-version` and goreleaser pin in `.github/`, `cicd/`, `.goreleaser.yaml` and the docs. `cla.yml` has no Go. `ci.yml`'s merge gate already runs goreleaser through `cicd.bash` at the pin. `dependabot.yml` bumps only the action versions in the workflows, so nothing there pins Go now.
+	- Decisions:
+		- `go-version-file` over a step that parses `go.mod`, since `setup-go` reads the `toolchain` line itself.
+		- The pin stays in `tool-versions.bash` as a `go run` path. The workflow cuts the version off its end, so the file keeps one form.
+	- Branch: r1026
+	- Commit: c063c25
+	- Test case: defqw to defqz in `cicd/utility/pins-test.bash`.
+	- 2026-10-26 Verified: cicd.bash --backlog-run-full passed all 11 steps at r1026 (run 20261026-193900; Windows, FreeBSD and macOS passed, vmDebARM64 didn't answer and was skipped), and hosted ci.yml run 40439675727 passed both jobs, with Go from go.mod in both jobs. defqw to defqz passed.
+	- Held for the next release cut, when release.yml first runs.
+
+- CICD reset: version line.
+	- ID: 2026102416210007
+	- Type: Task
+	- Status: Stalled
+		- Held for the next release cut, for the notes' header.
+	- Needs external testing: `release.yml` at the next release cut, for the notes' first line.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Related IDs: 2026102318473518, 2026101915293585
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, the build number in Branches and releases.
+		- The date on non-release builds is already in. What's left is below.
+		- `--version` prints `gitniblet v<version> build <build>`, then the copyright line, and `--about` and the release notes show the same.
+		- The build number is the commit's time in minutes since 2000, in lowercase Crockford base 32. It comes from the commit, not the wall clock. Today that spot shows the short commit and a dirty flag.
+		- Release builds from goreleaser stamp the build number too, and leave the date off.
+		- Overrides the `gitniblet <version> (<commit>) (<date>)` form in 2026102318473518, and the commit stamp in the private notes, under cicd-branch-model.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: `--version` prints `gitniblet v1.0.0-beta.2 build dedrq (2026-10-25)`, then `Copyright © 2025-26 Jim Collier.` A release build leaves the date off.
+		- `app.Build` is gone. Builds stamp `app.CommitTime`, the commit's unix time, and `app.BuildNumber` turns it into the number. `build.bash` takes it from `git log`, goreleaser from `.CommitTimestamp`. A plain `go build` shows no build number.
+		- The release notes start with the same line, through goreleaser's `release.header`. `release.yml` works the number out with `cicd/utility/include/build-number.bash`.
+		- The smoke checks the new form, the copyright line, and that the number is HEAD's. It also checks `install.bash` still reads the installed version. Both installers read only the first line now and drop the `v`, so old binaries still parse.
+		- 20261025: `TestVersionLine` (debg5) changed for the new form. Old: `gitniblet 1.0.0-beta.2 (abc1234) (2026-10-24)`. New: `gitniblet v1.0.0-beta.2 build decp8 (2026-10-24)`. The date and time zone cases are as they were.
+		- Verified: `TestBuildNumber` (dedrs) and `TestVersionLine` pass, and fail to build on the old `app.go`. The smoke passes, and fails on a binary with no commit time, one with the wrong commit time, the installed b23 build, and the old `install.bash`. The new installer code reads both forms, in bash and pwsh. A goreleaser release run without publish stamped the same number as `build-number.bash`. `test.bash`, the wide gofmt, staticcheck, `remote-skip-test.bash` and goreleaser's check pass.
+		- Not verified: the notes header, since goreleaser renders it only when it publishes.
+		- `--about` isn't in the FLOSS build yet. 2026101915293585 adds it, and can print `app.VersionLine` and `app.Copyright`.
+		- Swept: every `--version` reader in the repo (both installers, the smoke, `cicd.bash`, `remote-unix.bash`, `remote-windows.ps1`), every `app.Build` stamp (`build.bash`, goreleaser), and the docs.
+		- 20261025: Verified: the full run's goreleaser packaging passed, and the smoke passed on all 4 boxes. `ci.yml` run 40212963323 passed the smoke on Linux and arm64 macOS, with `gitniblet v1.0.0-beta.2 build deds3 (2026-10-25)`.
+	- Decisions:
+		- The binary works the number out from the stamped commit time, so goreleaser needs no help for it. Only the notes use the bash copy, and the smoke checks the two agree.
+		- The dirty flag is dropped with the short commit, per the requirements.
+		- The notes' header has the version line only, not the copyright line.
+	- Branch: cicd1025
+	- Commit: e37fe11
+	- Test case: `TestBuildNumber` (dedrs) and `TestVersionLine` (debg5) in `source/app/app_test.go`, and the version checks in `smoke-cli.bash`.
+
+- steps-test deef2 fails when the outer run's own log is written mid-test.
+	- ID: 2026102619384200
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261026-193842
+	- Opened by: JC
+	- Steps to reproduce [Bug]: Run `cicd/cicd.bash --backlog-run-full`, so `steps-test.bash` runs inside a run that tees to `cicd/artifacts/lint/`.
+	- Incorrect behavior [Bug]: `FAIL deef2`, "a new log in cicd/artifacts/lint". It failed once in round r1026's full run, and passed when `steps-test.bash` ran alone.
+	- Expected behavior [Bug]: deef2 fails only when the nested run writes its log to the lint folder.
+	- Possible cause [Bug]: It counts `run_*.log` files newer than its run folder before dedq7 and again after. The outer run's own log is open and growing, so it can be older at the first count and newer at the second. Compare the set of file names instead, or leave out the outer run's log.
+	- Test case: deef2.
+
+- A config file of any name and path names the database's files.
+	- ID: 2026102509202821
+	- Type: Feature
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-092028
+	- Opened by: JC
+	- Related IDs: 2026102509204445
+	- Requirements [Feature]:
+		- The config declares the schema, the tx-log, and the view, each with any name and path. Today the tx-log is always `txlog.csv` inside `log_dir`.
+		- `--config` takes a folder, where gitniblet looks for `config.shcl`, or a config file by name. Today it takes only a registry folder.
+		- A relative path is relative to the config file, and `${HOME}` works. Today a record needs absolute paths.
+		- gitniblet doesn't write state such as `last_opened` into that file, so it can be tracked in git.
+		- Found in gitniblet-issue-tracker, which works around it with a wrapper that writes a registry record from its own config.
+
+- Lookup picker and write-time value check.
+	- ID: 2026102407295340
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-072953
+	- Opened by: JC
+	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
+	- Prereq IDs: 2026102407295324
+	- Requirements [Feature]:
+		- A `list_type: lookup` field edits through a picker of the group's active values, in sort order.
+		- A write refuses a value that isn't in the group. Replay never re-checks.
+		- Per design.md, Lookups. No UI has a `list_type` picker yet, so this may need one for `literal` and `sql` too.
+	- Estimated effort: Avg
+	- Progress log:
+		- 20261024: Split into 2026102408470107 (write check), 2026102408470113 (lookup picker) and 2026102408470118 (`literal` and `sql` pickers). This item closes with the last of them.
+		- 20261024: All 3 are in. The write check is Done, and the 2 pickers wait on a look by eye.
+
+- Support `--help`, `--about`, and `--donate` flags in the FLOSS version.
+	- ID: 2026101915293585
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261019-152935
+	- Opened by: JC
+	- Prereq IDs: 2026102416210007
+		- `--about` shows the same version and copyright lines as `--version`, from `app.VersionLine()` and `app.Copyright`.
+	- Version and build: Pre-next-cut
+	- Requirements [Feature]:
+		- FLOSS version: Support `--help`|`--about`|`--donate`, in a similar way as sister project shcl.
+
+- CICD reset: CICD process gaps.
+	- ID: 2026102416210008
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- What else the shared CICD rules ask for that the other reset items don't cover.
+		- Go leak checks: `goleak.VerifyTestMain` in every package's tests, the whole suite under `-race` in every full run, a soak test on heap in use and goroutine count, and CodeQL from a pinned CLI over the vendored tree. Each new gate is watched to fail first.
+		- Remote sync first: fetch and fast-forward before building, and stop early when diverged.
+		- The CLI smoke test runs in `cicd.bash` too, not only in hosted CI.
+		- Dogfood goes to `~/synced/0-0/common/exec/app/linux/` and its Windows and macOS siblings, and skips the copy when the binary is in use.
+		- A `dogfood_gitniblet.ps1` script with its launchers, per Dogfood script.
+		- Release archives are reproducible: goreleaser sets `mod_timestamp` from the commit.
+		- A FreeBSD `.pkg`.
+		- The hosted workflows read the Go and tool pins from the same place `cicd.bash` does. Today they pin Go on their own, and the release takes any goreleaser v2.
+		- Overrides the FreeBSD `.pkg` deferral in the private notes, under cicd-packaging.
+	- Estimated effort: Avg
+	- Progress log:
+		- 20261025: Split into children, one per part: 2026102520521019 (remote sync), 2026102520521021 (goleak), 2026102520521023 (soak test), 2026102520521025 (CodeQL), 2026102520521027 (dogfood folders), 2026102520521029 (dogfood script), 2026102520521031 (reproducible archives), 2026102520521033 (FreeBSD `.pkg`) and 2026102520521642 (hosted workflow pins). This item closes with the last of them.
+		- The CLI smoke in `cicd.bash` is done, by 2026102416210004. It runs after the release build in every mode.
+	- Decisions:
+		- The whole suite under `-race` in every full run gets no child here. It's 2026102520474880, which already runs the TUI tests under `-race` and has the same cgo problem to solve.
+
+- Go leak checks: a soak test on heap in use and goroutine count.
+	- ID: 2026102520521023
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Prereq IDs: 2026102520521021
+	- Requirements [Feature]:
+		- Repeat a realistic workload, such as open, write, sync and replay, and fail when heap in use or the goroutine count keeps climbing.
+		- A short run in every full run, and a long one under `--leakcheck`. It takes a quarter of the CPUs, per Machine use.
+		- Watched to fail first, with a leak put in on purpose.
+
+- CodeQL from a pinned CLI over the vendored tree.
+	- ID: 2026102520521025
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Requirements [Feature]:
+		- A `cicd.bash` step runs the CodeQL CLI at a pinned version, kept with the other pins, over the module and `vendor/`.
+		- Its findings go under `cicd/artifacts/lint/`. Watched to fail first.
+
+- A `dogfood_gitniblet.ps1` script with its launchers.
+	- ID: 2026102520521029
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Prereq IDs: 2026102520521027
+		- The script reads from the dogfood folders that item sets up.
+	- Requirements [Feature]:
+		- Per the shared CICD rules, Dogfood script: one pwsh 7 script, plus Linux, Windows and macOS launchers, with the master copies in `utility/`.
+
+- A FreeBSD `.pkg`.
+	- ID: 2026102520521033
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Requirements [Feature]:
+		- Package the FreeBSD builds as `.pkg`, beside the archives, and check it installs on vmFreeBSD.
+		- Overrides the FreeBSD `.pkg` deferral in the private notes, under cicd-packaging.
+
+- A user table that restates a built-in table merges into it, as a system field does.
+	- ID: 2026102409431186
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-094311
+	- Opened by: JC
+	- Related IDs: 2026102407295324
+	- Requirements [Feature]:
+		- Today a schema that restates `lookups` or `lookup_values`, as example.shcl does, keeps its own shape and warns twice on open.
+		- The built-in fields keep their definitions, a restated built-in field may set `ui:` only, and extra user fields are added. No warning when it only restates.
+	- Estimated effort: Avg
+
+- Refuse a create whose unique value is already taken in the view, before it's logged.
+	- ID: 2026102408084809
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-080848
+	- Opened by: JC
+	- Related IDs: 2026102407584270
+	- Requirements [Feature]:
+		- Today the create is logged, the view drops the row, and the caller gets the id with a refusal. The log then holds a row no view will show.
+		- Check the unique groups in crud, under the commit lock, and refuse with a plain message instead. Replay keeps settling clashes between clients.
+	- Estimated effort: Low
+
+- Run on the last Core 2 Duo, and AMD CPUs from that era.
+	- ID: 2026101301161870
+	- Type: Enhancement
+	- Status: Queued
+	- Needs external testing: Yes, on an old CPU or an emulated one.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261013-011618
+	- Opened by: JC
+	- Target OS: Linux, Windows and FreeBSD on x86_64, where this project builds them. Macs that old can't run a current macOS anyway.
+	- Requirements [Feature]:
+		- Release builds run on the last Core 2 Duo (Penryn, 2008), and on AMD Phenom II and Athlon II, if that's reasonably doable.
+			- Penryn has SSSE3 and SSE4.1 but no POPCNT. The AMD ones have POPCNT but no SSSE3. So the shared floor is plain x86-64, also called x86-64-v1.
+		- If that isn't doable, the floor is the first Core i3/i5/i7 (Nehalem, 2008), which is x86-64-v2. AMD's first chip at that level is Bulldozer, 2011.
+		- Faster code for newer CPUs is still fine, but it's picked at run time by a CPU feature test, never by the build target.
+		- Tests run the release build on an emulated Penryn and Phenom II, through Intel SDE or QEMU's `-cpu Penryn` and `-cpu phenom`.
+	- Progress log:
+		- 20261013: Go builds for plain x86-64 by default (`GOAMD64=v1`), and nothing here sets it, so this may already hold. Pin `GOAMD64=v1` in the release build so a stray environment can't raise it. The standard library already picks faster code at run time.
+
+- Show system fields on forms when their `ui:` opts them in.
+	- ID: 2026102407263968
+	- Type: Enhancement
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-072639
+	- Opened by: JC
+	- Requirements [Feature]:
+		- `visible_form: yes` on `id`, `is_active` or `date_created` shows that field on the edit form and in `form` blocks, in both UIs.
+		- `id` and `date_created` show read-only and are never written from a form. That likely means honoring `ui: readonly` first.
+	- Progress log:
+		- 20261024: Lists already honor `visible_list` on system fields. The example DDL's built-in `lookups` and `lookup_values` tables ask for `id` on forms, read-only.
+
+- Optional pessimistic record-level locking.
+	- ID: 2026102614444075
+	- Type: Feature
+	- Status: Queued
+	- Opened: 20261026-144440
+	- Opened by: JC
+	- Version and build: Pre-next-cut
+	- Related IDs: 2026102614444076
+	- Requirements [Feature]:
+		- Optional pessimistic record-level locking via `locks.shcl` that syncs to git, or named file in config.
+
+- Add testing setup on `--long`.
+	- ID: 2026102614444076
+	- Type: Task
+	- Status: Queued
+	- Opened: 20261026-144440
+	- Opened by: JC
+	- Version and build: Pre-next-cut
+	- Related IDs: 2026102614444075
+	- Requirements [Feature]:
+		- Runs on multiple instances of a repo, on multiple external hosts each, and exercises performance, correctness, and integrity; with and without pessimistic record-level locking.
+		- Operates on very large database (e.g. millions of rows) to test where performance starts tapping out.
+
 - A pipeline test runs the binary against the real config folder.
 	- ID: 2026102613060001
 	- Type: Bug
-	- Status: Queued
+	- Status: Done
+	- Needs local test suite run?: No
+	- Needs external testing: No
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-130600
 	- Opened by: JC
@@ -46,6 +405,220 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Expected behavior [Bug]: No test reads or writes the real config folder. Each one that runs the binary sets `HOME`, `XDG_CONFIG_HOME` and `AppData` to its run folder.
 	- Possible cause [Bug]: `smoke-cli.bash` sets none of them, and the host fallback run calls it.
 	- Workaround: `~/.config/ngdb` is a link to `gitniblet` on b23, so the installed `ngdb` still finds its databases.
+	- Reproduced [Bug]: 20261026 on b23, with a fake home holding `ngdb`. `go test ./internal/tui` moved it. The smoke and every other package left it alone.
+	- Actual cause [Bug]:
+		- Most tui tests build an app through `newApp`, which loads the settings and so looks up the default registry. Only the picker tests pointed it at a temp folder.
+		- No pipeline script gave `go test` a fake home, so the host fallback's test run reached `~/.config`.
+	- Progress log:
+		- 20261026: Not the smoke. Its data verbs pass `--config`, and `--version`, `--help` and an unknown verb don't touch the registry.
+		- 20261026: Verified: `test.bash ./internal/tui/...` failed on the new check before the tui fix and passed after.
+		- 20261026: Verified: `config-home-test.bash` defpe to defph pass. The quick gate passed, 256 tests, smoke and staticcheck clean. `container-fallback-test.bash` passed to the end on the host with an outer fake home, whose `ngdb` stayed put.
+		- Swept: every place that runs gitniblet or a Go test: `test.bash`, the Race tests step, fuzz, profile, the smoke, `remote-unix.bash`, `remote-windows.ps1` and the macOS CI job. The demo recorder and `screenshots.bash` already had their own home or `--config`. The other `*-test.bash` scripts get it through `cicd.bash`.
+		- Not done here: enterprise and vendor have the same scripts and no fake home. Not checked whether their tests reach the registry.
+	- Decisions:
+		- One helper pair in `include/temp-run.bash`, `fConfigHome_Use` and `fConfigHome_Check`, since every script that runs the binary or the tests already sources it.
+		- The fake home holds an `ngdb` folder. Any lookup of the default registry moves it, so a test that misses its own temp folder fails the run, rather than being hidden by the fake home.
+		- Go's cache, module cache and env file stay where they were, so a fake home costs no rebuild.
+		- The tui fix is a `TestMain` for the whole package, not more calls to `isolateConfig`, so a new tui test can't miss it.
+	- Actual fix [Bug]: The tui tests run against temp config folders. Every pipeline run of gitniblet or its tests gets a fake home, and fails if the default registry was used.
+	- Branch: r1026
+	- Test case: defpe, defpf, defpg and defph in `config-home-test.bash`, plus the check after `go test` in `test.bash`, which fails on any test that reaches the default registry.
+	- 2026-10-26 Verified: cicd.bash --backlog-run-full passed all 11 steps at r1026 (run 20261026-193900; Windows, FreeBSD and macOS passed, vmDebARM64 didn't answer and was skipped), and hosted ci.yml run 40439675727 passed both jobs. defpe to defph passed.
+
+- `flags-test.bash` deece and deee3 fail where `../../private/cicd-hooks` doesn't exist, as on a hosted runner.
+	- ID: 2026102522324333
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-223243
+	- Opened by: JC
+	- Related IDs: 2026102416210004, 2026102520474880
+	- Steps to reproduce [Bug]:
+		- Run `cicd/utility/flags-test.bash` from a checkout with no `../../private/cicd-hooks` beside it.
+	- Incorrect behavior [Bug]: deece and deee3 fail. The default and `--quick` plans list `Local hooks (no <dir>)` as off, and both checks expect only the flag-driven off steps. Hosted CI run 40272702133 failed its Linux merge gate on it.
+	- Expected behavior [Bug]: Both pass whether or not the private hooks folder exists.
+	- Reproduced [Bug]: 20261025, from an export of 21bc082 with no private folder beside it, and in hosted CI run 40272702133. Both pass in the floss checkout and its worktrees, which have the folder.
+	- Possible cause [Bug]: The test reads the real plan, where Local hooks is on only when `hooksDir` exists. Point `hooksDir` at a folder the test makes, or leave Local hooks out of the compared lists.
+	- Actual cause [Bug]: The test reads the real plan, where Local hooks is on only when `../../private/cicd-hooks` exists, and nothing let the test stand a folder in.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: Reproduced from an export of 22bd94f with no private folder beside it: deece and deee3 fail.
+		- `cicd.bash` reads the hooks folder from `GITNIBLET_HOOKS_DIR` when it's set, as it does the run log from `GITNIBLET_LOG_DIR`. `flags-test.bash` points it at an empty folder it makes, so the plans are the same everywhere.
+		- New deehh checks that a missing hooks folder turns off only Local hooks, listed as `Local hooks (no <dir>)`, so the missing-folder path is still covered.
+		- `--help` names `GITNIBLET_HOOKS_DIR`, and its `--no-hooks` line had the path one level short, from before the folder rename.
+		- Verified: in the export, the old `cicd.bash` fails deece, deee3 and deehh, and the new one passes all 10. With a private folder beside the export, the old one fails only deehh. `flags-test.bash` passes in the checkout, and so do `--backlog-run-quick` and `testid check`. shellcheck finds nothing new.
+		- Swept: the other `cicd.bash` runs in `cicd/utility/*-test.bash` all pass `--no-hooks`, so the folder doesn't change their plans. `ci.yml` and `smoke-cli.bash` don't read it. Enterprise and vendor have no Local hooks step.
+		- Not verified here: hosted CI. The `ci.yml` rerun is on 2026102416210004 and 2026102520474880.
+	- Decisions:
+		- An override in `cicd.bash` rather than leaving Local hooks out of the compared lists, so deee3 still checks `--no-hooks` on a hosted runner.
+	- Actual fix [Bug]: `GITNIBLET_HOOKS_DIR` in `cicd.bash`, set by `flags-test.bash` to a folder it makes.
+	- Branch: r1025
+	- Test case: `cicd/utility/flags-test.bash` deece and deee3, and deehh, new here.
+	- Closed: 20261025-223913
+
+- A `null_ok: no` field with no default makes its table drop every row, silently.
+	- ID: 2026102407331876
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-073318
+	- Opened by: JC
+	- Related IDs: 2026102407295324
+	- Steps to reproduce [Bug]:
+		- Give a table a `null_ok: no` field with no `defaultval`, then create a row with that field set.
+	- Incorrect behavior [Bug]: The create succeeds and the row is in the log, but not in the view. No error or warning.
+	- Expected behavior [Bug]: The row reaches the view, or the write is refused up front.
+	- Reproduced [Bug]: 20261024, with the built-in `lookups` table while working 2026102407295324.
+	- Possible cause [Bug]: Replay inserts a create as the bare id with `INSERT OR IGNORE`, and SQLite's OR IGNORE also skips a NOT NULL failure. The field values come after it as updates, against no row.
+		- Once fixed, put `null_ok: n` back on the built-in lookups' `title` and `lookups_idx`.
+	- Actual cause [Bug]:
+		- As guessed. The view made `null_ok: no` a NOT NULL column, and OR IGNORE dropped the bare-id insert.
+		- Same shape: a logged null on a NOT NULL column that has a default, or on a system column, failed the whole replay. `SetFieldNull` on one wrote the log first, so the database then failed to open.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261024: The view no longer makes any field NOT NULL. A view built before has those columns relaxed on the next open, keeping its rows and columns, and the replay then fills them.
+		- crud checks `null_ok: no` on write. A create that leaves such a field out with no static default is refused, and so is `SetFieldNull` on one, or on a system column. An empty string still goes through, since that's `empty_ok`.
+		- Replay's bare-id insert only ignores an id clash now, so any other refusal warns. A NOT NULL failure skips with a warning, like a unique clash.
+		- `null_ok: n` is back on lookups `title`, and on lookup_values `lookups_idx` and `title`, as in example.shcl. design.md's DDL section says where `null_ok` is checked.
+		- Verified: the new tests fail before the fix and pass after. `test.bash`, the CLI smoke, staticcheck and gosec pass, and the new tests pass under `-race`. Through the CLI, a view the old build left empty showed both rows after one replay with the new one.
+		- Swept: every crud write path (Create, Update, SetField, SetFieldNull). Only SetFieldNull can write a null. Both bare-id inserts in replay, and every NOT NULL in `store.go`. Only the system columns keep one, and they all have defaults.
+		- 20261025: Verified: the 6 named tests passed in the full run on 21bc082, here and on the 4 boxes.
+	- Decisions:
+		- The SQLite view doesn't enforce `null_ok`. The rule lives at write time, as the lookup value check will, and replay never re-checks.
+		- A `@previous` or function default doesn't count as filling a field, since no front-end computes them yet. Such a field is refused when left out.
+		- 20261025: Closed on the Decisions as they stand. design.md's DDL section already says `null_ok` is checked on write, and the view is a local copy of the log.
+	- Actual fix [Bug]: `null_ok: no` is checked by crud on write instead of as NOT NULL in the view. Old views are relaxed on open.
+	- Branch: round1024
+	- Test case: `TestNotNullRowReachesView`, `TestNotNullRefusedUpFront` and `TestNotNullReplayKeepsLoggedNull` in `source/internal/core/crud/notnull_test.go`, `TestBuildRelaxesOldNotNull` in `store_test.go`, `TestReplayWarnsOnRefusedCreate` in `txlog/replay_test.go`, and `TestLookupsNotNull` in `schema/lookups_test.go`.
+	- Closed: 20261025-223453
+
+- govulncheck flags the pinned Go toolchain.
+	- ID: 2026102407051369
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-070513
+	- Opened by: JC
+	- Incorrect behavior [Bug]: govulncheck reports 5 standard library advisories against the `go1.26.5` toolchain pin, so the security gate fails on `dev`.
+	- Expected behavior [Bug]: govulncheck passes under the pinned toolchain.
+	- Reproduced [Bug]: 20261024, on `dev` at ce5dfa0.
+	- Possible cause [Bug]: The advisories are fixed in go1.26.10. Enterprise and vendor may pin the same toolchain.
+	- Actual cause [Bug]:
+		- The `go1.26.5` pin fell behind. By 20261024 govulncheck listed 10 stdlib advisories against it, in `net/http`, `net/textproto`, `crypto/tls`, `crypto/x509` and `html/template`. One needs go1.26.10, the rest go1.26.9.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: Bumped the pin to `go1.26.10`, the newest 1.26 release, in `go.mod`, `ci.yml` and `release.yml`. govulncheck is clean, with 2 `golang.org/x/text` advisories it says the code never calls, filed as 2026102407094415.
+		- 20261024: Enterprise and vendor pin the same `go1.26.5`, in `source/go.mod`, `ci.yml` and `release.yml`. Left alone, since only floss is in this round. Enterprise builds floss through a `replace`, but its own `toolchain` line picks the compiler, so it needs its own bump.
+		- 20261024: The full run at 6bb9d3d passed govulncheck under `go1.26.10`: no vulnerabilities found. The hosted `ci.yml` run starts only after the merge push to `dev`, so the status waits on that.
+		- 20261024: Hosted CI run 40111439236 on the merge to `dev` passed, Linux and macOS jobs.
+	- Actual fix [Bug]: Toolchain pin bumped to `go1.26.10`.
+		- Swept: every `1.26.x` pin outside `vendor/`, in `go.mod`, the workflows, `tool-versions.bash`, `.goreleaser.yaml`, `dependabot.yml` and the docs. Only the 3 changed files had one.
+	- Branch: round1024
+	- Test case: No test ID, since it's a scan, not a test. The govulncheck step in every full run and in hosted CI fails on it. It failed under `go1.26.5` and passes under `go1.26.10`.
+	- Closed: 20261024-092700
+
+- Regression tests for all completed features and bug reports.
+	- ID: 2026101915305767
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261019-153057
+	- Opened by: JC
+	- Prereq IDs: 2026101915293586
+		- Each Done item names its test by the new ID, so the IDs come first.
+	- Version and build: Pre-next-cut
+	- Requirements [Feature]:
+		- Make sure all completed features and bug reports on all subproject backlogs have a corresponding regression test in CI. At least, missing a test that could exist and would make sense to exist.
+		- Where missing such tests, create them. (In addition to what's already been done for bug-report-only regression tests.)
+		- For each issue, note its test case, or why it doesn't have one.
+		- 20261024: CICD reset, raised to high. Each Done item names its test's ID, in the new ID scheme from 2026101915293586, or says in a few words why it has none.
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+	- Related IDs: 2026101915293586
+	- Progress log:
+		- 20261025: Split into 4 children by part of the backlog: 2026102520454994 (new-format Done items), 2026102520454999 (old-format Done bugs), 2026102520455004 and 2026102520455009 (old-format Done features, in 2 halves). A 5th, 2026102520474880, runs the tests no pipeline step runs yet. This item closes with the last of them.
+	- Decisions:
+		- Only the floss backlog. Enterprise and vendor have their own items for this, 2026101915313001 and 2026101915313002.
+	- Test case: the tests its children name. The last child, 2026102521481107, added defpr to defpy and d9nwj's new check.
+	- 2026-10-26: every child is Done, and the round's full run and hosted CI passed them.
+
+- Read every shcl file through shclwrap and shcl 3.0.
+	- ID: 2026102509204445
+	- Type: Task
+	- Status: Done
+	- Needs local test suite run?: No
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-092044
+	- Opened by: JC
+	- Related IDs: 2026102509202821, 2026102618065650
+	- Requirements [Feature]:
+		- gitniblet vendors shcl's Go library v1.2.0, which reads the 2.x rules. It takes a bare `a, b` list and ignores `[a, b]`. shcl 3 refuses the bare form, so a schema with a list can't load clean in both.
+		- `source/internal/core/ddl/schema.shcl` uses `allowed: a, b`, so it fails to load in shcl 3 with V099.
+		- The schema, queries, registry, and settings files all go through shclwrap and shcl 3.0.
+		- Found in gitniblet-issue-tracker. Its seed rows keep the bare form until this is in.
+	- Progress log:
+		- 20261026: Every shcl file is read and written through shclwrap's `shclw3`, at f03fe5e over shcl 3.0 dev 2174f0d9, from one new package, `internal/core/shclio`. shcl 1.2 is out of `go.mod` and `vendor/`.
+		- `ddl/schema.shcl` and the queries schema are in 3.0 form: lists in brackets, `name(*)` paths, and `desc:` text with commas quoted. Both load with no errors.
+		- A file with no Format line that doesn't load clean on 3.0 is upgraded in memory as it's read. Backtick values and old seed rows keep the reading they always had, and every line keeps its number. A saved record, settings, login or renamed schema file names Format 3.
+		- A rename keeps the file's lines as typed, and writes the alias list in brackets. The literal `list_source` picker takes the bracket form, and still takes the old one.
+		- The issue file's note said this program already read with from 2. It didn't use shclwrap at all. It now upgrades from 0, and from 2 only when from 0 says the file reads two ways.
+		- Filed in shclwrap: 2026102618065634 (the upgrade moves lines), 2026102618065640 (a 1.2 element split at a quoted comma) and 2026102618065645 (keep a backtick value). gitniblet works around all 3.
+		- gitniblet-issue-tracker already has 2026102509013450 for its seed rows. In 3.0 form a row is `row: [idx=1, "title=Task status"]`, since a bare element can't hold a space or a quote.
+		- The docs and examples still show the bare form. That's 2026102618065650.
+		- Enterprise builds floss through a `replace`, so its `go.mod` needs shclwrap before it builds again. Not changed here.
+		- 20261026: d9e06 `TestRenameTable` and the CLI's `TestRenameOpsEndToEnd` expected `aliases: person` and `aliases: nick`. They now expect `aliases: [person]` and `aliases: [nick]`, since 3.0 writes a list in brackets. The rest of each test is the same.
+		- Verified: `--backlog-run-quick` passed, 256 tests, with staticcheck clean and the CLI smoke passing.
+		- Verified: defnx, defny, defnz and defp0 fail with the backtick keep, the line fix, or the old `schema.shcl` put back, and pass with them. dec93 failed before the seed row fix and passes after.
+		- Swept: every shcl call in floss, tests included: the record, settings and login files, the schema, queries, rename, cursor and seed readers, and the literal picker. No `[#i]` or `[%q]` path is left. Enterprise and vendor import no shcl package.
+	- Decisions:
+		- One package, `shclio`, picks the shcl version, so a later one is a change in one place.
+		- A file that reads two ways is upgraded from 2, since every file without a Format line was written for the old rules. A refused file loads as it is, so its errors are named with their lines.
+		- The lines the 2.x reading gets wrong for gitniblet are swapped for a bare word before the upgrade and put back after. Matching them up afterwards fails, since the upgrade folds blank lines.
+		- Saves name the format, so a later load never has to guess.
+		- The vocabulary's `desc:` text is quoted, not turned into arrays.
+	- Branch: r1026
+	- Test case: defnx and defny (shclio), defnz and defp0 (ddl), and dec93 for old seed rows.
+	- 2026-10-26 Verified: cicd.bash --backlog-run-full passed all 11 steps at r1026 (run 20261026-193900; Windows, FreeBSD and macOS passed, vmDebARM64 didn't answer and was skipped), and hosted ci.yml run 40439675727 passed both jobs.
+
+- Regression tests the old-format Done items still lack.
+	- ID: 2026102521481107
+	- Type: Task
+	- Status: Done
+	- Needs local test suite run?: No
+	- Needs external testing: No
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-214811
+	- Opened by: JC
+	- Parent ID: 2026101915305767
+	- Related IDs: 2026102520454999, 2026102520455004, 2026102520455009
+	- Requirements [Feature]:
+		- Tests that could exist and would make sense, for Done items that name none, per the parent. Each gets a test ID, and its item's "Test case:" row names it.
+		- Code Review 20260805 item 5: an attachment whose name holds path parts gets a working copy inside the temp folder (crud).
+		- Item 6: a second writer waits for the database file rather than failing straight away (store).
+		- Item 9: `--tui` with 2 arguments returns an error rather than opening the picker (tui).
+		- Item 11: `FuzzParse`'s seed fails when `project/example.shcl` is missing, rather than skipping it quietly (ddl).
+		- Item 12: sync's `.gitignore` keeps the SQLite file and a key file out of the log folder (txlog).
+		- The README's "Add to README.md" item: the schema blocks in README.md and syntax.md still parse.
+		- The exe name item: `smoke-cli.bash` gets a test ID on its `PASS` line, so `testid check` sees it.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261026: New tests: defpr (item 5, crud), defps (item 6, store), defpt (item 9, tui), defpv (item 12, txlog), and defpx, which parses every block in README.md and syntax.md that opens with `database:`. The FuzzParse seed (d9nwj) fails when `project/example.shcl` is missing (item 11). `smoke-cli.bash` prints `PASS defpw smoke-cli`, and `--list` names it.
+		- `remote-test.bash` puts README.md and syntax.md in the box bundle, so defpx runs there rather than failing. New defpy in `remote-skip-test.bash` checks it.
+		- Each Done item's "Test case:" row names its new test.
+		- Verified: each new test passes, and fails with its fix taken out: defpr without `filepath.Base`, defps without `busy_timeout`, defpt without the arg-count check, defpv with no ignore lines, and d9nwj with the example path missing. defpx fails on an unknown key planted in a README block and in a syntax.md block. defpy fails on the old `remote-test.bash`, and the other 9 checks in `remote-skip-test.bash` pass.
+		- Verified: `--backlog-run-quick tui core` passed with a `PASS` line for each new ID, the smoke's included. `testid check` passes with 261 Go tests and 319 IDs, and drops by one without the smoke's ID. gofmt, vet and shellcheck find nothing new.
+		- Swept: every reader of the smoke's output (`cicd.bash`, `ci.yml`, both box runners), and the other tests that read `example.shcl`: d9dzs, dec94 and dec96 still skip when it's missing.
+	- Decisions:
+		- The box runners keep their own `PASS smoke-cli` line with no ID, as 2026102508574387 decided. `testid check` counts a bash ID found in 2 files as a clash.
+		- defpx takes only blocks whose first line is `database:`. The rest are fragments, CLI text or shell. Some are one section, such as relationships or seed rows, so it checks for no error and no warnings, not for tables.
+		- The docs go in the box bundle rather than defpx skipping there, since a quiet skip on the boxes is what item 11 and 2026102509132812 fixed.
+		- d9dzs, dec94 and dec96 are left as they are, since the issue names only the fuzz seed, and each says why it skipped.
+	- Branch: r1026
+	- Test case: defpr, defps, defpt, defpv, defpx, defpw (smoke), defpy (`remote-skip-test.bash`), and d9nwj.
+	- 2026-10-26 Verified: cicd.bash --backlog-run-full passed all 11 steps at r1026 (run 20261026-193900; Windows, FreeBSD and macOS passed, vmDebARM64 didn't answer and was skipped), and hosted ci.yml run 40439675727 passed both jobs. defpx and d9nwj passed on every box that answered and on the hosted runners. arm64 wasn't reached, and runs the same Go code as Linux amd64.
 
 - CICD reset: standard flags.
 	- ID: 2026102416210004
@@ -139,453 +712,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Prereq IDs: 2026102522324333
 	- Closed: 20261025
 	- Verified: 2026-10-25, hosted CI run 40275457653 on r1025 (7a190ea) passed, the Linux merge gate with Pipeline tests in 20m1s and macOS in 50s.
-
-- `cleanup-test.bash` dedpb can take 30s to stop after Ctrl+C under load.
-	- ID: 2026102520025738
-	- Type: Bug
-	- Status: Can't reproduce
-		- The polled wait stays in. dedpb runs in every full run's Pipeline tests step, so a recurrence shows there.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261025-200257
-	- Opened by: JC
-	- Related IDs: 2026102416210006, 2026102416210004, 2026102520474880
-	- Steps to reproduce [Bug]:
-		- Run `cicd/utility/cleanup-test.bash` with the box busy, at load 31 on 32 CPUs.
-	- Incorrect behavior [Bug]: dedpb fails with "took 30s to stop". The run waited out the hanging docker stand-in rather than stopping on Ctrl+C.
-	- Expected behavior [Bug]: The run stops within 10 seconds of Ctrl+C every time.
-	- Reproduced [Bug]: Once in 3 runs on 20261025, while testing 2026102416210004. The other 2 passed. Not again in 65 runs of the Ctrl+C case on 20261025, at load 2 to 32.
-	- Possible cause [Bug]: The test sends Ctrl+C as soon as the stand-in logs `run`, which may be before `cicd.bash` reaches its `wait`. Not checked.
-	- Actual cause [Bug]:
-		- Not found. Only `cicd.bash` sitting in `wait` until the stand-in exits explains exactly 30s.
-		- Ruled out: a Ctrl+C before the `wait`. Bash 5.2 runs a pending trap before `wait` starts, and the run stopped at once in every try.
-		- Ruled out: the stand-in's pid file being late. With a 1s delay before it, the run still stopped at once, leaving the stand-in behind.
-		- Likely: a race inside bash's `wait`, when the signal lands between its check and the blocking call.
-	- Estimated effort: Low
-	- Actual effort: Low
-	- Progress log:
-		- 20261025: `cicd.bash` no longer waits on the container's client with a bare `wait`. It polls it with a short `sleep`, which Ctrl+C kills at once, then reads its exit with `wait`.
-		- Verified: dedpb passed in 30 runs of the Ctrl+C case at load 11 to 18, each stopping in under 1s, and in every `cleanup-test.bash` run since. It never failed before the change either, so the change is unproven.
-		- Swept: every `wait` in `cicd/`. That was the only one in `cicd.bash`.
-		- 20261025: Verified: dedpb passed in 10 `cleanup-test.bash` runs in a row at load 24 to 37 on 32 CPUs, about 28s each, on the frozen commit 21bc082. It also passed in the full run's Pipeline tests step and in hosted CI run 40272702133.
-	- Decisions:
-		- 20261025: Can't reproduce. It failed once in 3 runs before the change, and not in 65 more before it or 40 after it.
-	- Actual fix [Bug]: A polled wait on the container's client, in place of a bare `wait`.
-	- Branch: r1025
-	- Test case: `cicd/utility/cleanup-test.bash` dedpb, which the Pipeline tests step now runs.
-
-- Bump enterprise and vendor to the floss Go toolchain and `x/text`.
-	- ID: 2026102407133557
-	- Type: Task
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-071335
-	- Opened by: JC
-	- Related IDs: 2026102407051369, 2026102407094415
-	- Requirements [Feature]:
-		- Enterprise and vendor pin `toolchain go1.26.5` in `source/go.mod`, `ci.yml` and `release.yml`. floss moved to `go1.26.10`.
-		- Enterprise requires `golang.org/x/text v0.21.0`, and builds floss through a `replace`, so its vendor tree needs the floss bump to v0.41.0 too.
-		- Then `go build ./...` and govulncheck pass in both.
-	- Progress log:
-	- Test case: enterprise d9djx and vendor d9f8q builds, and both repos' hosted CI on go1.26.10
-	- Closed: 20261026
-		- 20261024: Held for the uncommitted enterprise edits from 2026-10-19, in `go.mod`, `ci.yml` and `release.yml`, to be committed. Enterprise isn't in floss rounds.
-	- 2026-10-26: the hold is gone, since enterprise's tree is clean. The enterprise part is done there as 2026102522552218 (go1.26.10, x/text v0.41.0). Vendor is left.
-	- 2026-10-26: vendor's part is done there as 2026102601055332 (go1.26.10; vendor has no x/text). Hosted CI passed on both repos' dev after the bump.
-
-- CICD reset: version line.
-	- ID: 2026102416210007
-	- Type: Task
-	- Status: Stalled
-		- Held for the next release cut, for the notes' header.
-	- Needs external testing: `release.yml` at the next release cut, for the notes' first line.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-162100
-	- Opened by: JC
-	- Related IDs: 2026102318473518, 2026101915293585
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per the shared CICD rules, the build number in Branches and releases.
-		- The date on non-release builds is already in. What's left is below.
-		- `--version` prints `gitniblet v<version> build <build>`, then the copyright line, and `--about` and the release notes show the same.
-		- The build number is the commit's time in minutes since 2000, in lowercase Crockford base 32. It comes from the commit, not the wall clock. Today that spot shows the short commit and a dirty flag.
-		- Release builds from goreleaser stamp the build number too, and leave the date off.
-		- Overrides the `gitniblet <version> (<commit>) (<date>)` form in 2026102318473518, and the commit stamp in the private notes, under cicd-branch-model.
-	- Estimated effort: Low
-	- Actual effort: Low
-	- Progress log:
-		- 20261025: `--version` prints `gitniblet v1.0.0-beta.2 build dedrq (2026-10-25)`, then `Copyright © 2025-26 Jim Collier.` A release build leaves the date off.
-		- `app.Build` is gone. Builds stamp `app.CommitTime`, the commit's unix time, and `app.BuildNumber` turns it into the number. `build.bash` takes it from `git log`, goreleaser from `.CommitTimestamp`. A plain `go build` shows no build number.
-		- The release notes start with the same line, through goreleaser's `release.header`. `release.yml` works the number out with `cicd/utility/include/build-number.bash`.
-		- The smoke checks the new form, the copyright line, and that the number is HEAD's. It also checks `install.bash` still reads the installed version. Both installers read only the first line now and drop the `v`, so old binaries still parse.
-		- 20261025: `TestVersionLine` (debg5) changed for the new form. Old: `gitniblet 1.0.0-beta.2 (abc1234) (2026-10-24)`. New: `gitniblet v1.0.0-beta.2 build decp8 (2026-10-24)`. The date and time zone cases are as they were.
-		- Verified: `TestBuildNumber` (dedrs) and `TestVersionLine` pass, and fail to build on the old `app.go`. The smoke passes, and fails on a binary with no commit time, one with the wrong commit time, the installed b23 build, and the old `install.bash`. The new installer code reads both forms, in bash and pwsh. A goreleaser release run without publish stamped the same number as `build-number.bash`. `test.bash`, the wide gofmt, staticcheck, `remote-skip-test.bash` and goreleaser's check pass.
-		- Not verified: the notes header, since goreleaser renders it only when it publishes.
-		- `--about` isn't in the FLOSS build yet. 2026101915293585 adds it, and can print `app.VersionLine` and `app.Copyright`.
-		- Swept: every `--version` reader in the repo (both installers, the smoke, `cicd.bash`, `remote-unix.bash`, `remote-windows.ps1`), every `app.Build` stamp (`build.bash`, goreleaser), and the docs.
-		- 20261025: Verified: the full run's goreleaser packaging passed, and the smoke passed on all 4 boxes. `ci.yml` run 40212963323 passed the smoke on Linux and arm64 macOS, with `gitniblet v1.0.0-beta.2 build deds3 (2026-10-25)`.
-	- Decisions:
-		- The binary works the number out from the stamped commit time, so goreleaser needs no help for it. Only the notes use the bash copy, and the smoke checks the two agree.
-		- The dirty flag is dropped with the short commit, per the requirements.
-		- The notes' header has the version line only, not the copyright line.
-	- Branch: cicd1025
-	- Commit: e37fe11
-	- Test case: `TestBuildNumber` (dedrs) and `TestVersionLine` (debg5) in `source/app/app_test.go`, and the version checks in `smoke-cli.bash`.
-
-- Regression tests for all completed features and bug reports.
-	- ID: 2026101915305767
-	- Type: Task
-	- Status: Started
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261019-153057
-	- Opened by: JC
-	- Prereq IDs: 2026101915293586
-		- Each Done item names its test by the new ID, so the IDs come first.
-	- Version and build: Pre-next-cut
-	- Requirements [Feature]:
-		- Make sure all completed features and bug reports on all subproject backlogs have a corresponding regression test in CI. At least, missing a test that could exist and would make sense to exist.
-		- Where missing such tests, create them. (In addition to what's already been done for bug-report-only regression tests.)
-		- For each issue, note its test case, or why it doesn't have one.
-		- 20261024: CICD reset, raised to high. Each Done item names its test's ID, in the new ID scheme from 2026101915293586, or says in a few words why it has none.
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-	- Related IDs: 2026101915293586
-	- Progress log:
-		- 20261025: Split into 4 children by part of the backlog: 2026102520454994 (new-format Done items), 2026102520454999 (old-format Done bugs), 2026102520455004 and 2026102520455009 (old-format Done features, in 2 halves). A 5th, 2026102520474880, runs the tests no pipeline step runs yet. This item closes with the last of them.
-	- Decisions:
-		- Only the floss backlog. Enterprise and vendor have their own items for this, 2026101915313001 and 2026101915313002.
-
-- Regression tests the old-format Done items still lack.
-	- ID: 2026102521481107
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-214811
-	- Opened by: JC
-	- Parent ID: 2026101915305767
-	- Related IDs: 2026102520454999, 2026102520455004, 2026102520455009
-	- Requirements [Feature]:
-		- Tests that could exist and would make sense, for Done items that name none, per the parent. Each gets a test ID, and its item's "Test case:" row names it.
-		- Code Review 20260805 item 5: an attachment whose name holds path parts gets a working copy inside the temp folder (crud).
-		- Item 6: a second writer waits for the database file rather than failing straight away (store).
-		- Item 9: `--tui` with 2 arguments returns an error rather than opening the picker (tui).
-		- Item 11: `FuzzParse`'s seed fails when `project/example.shcl` is missing, rather than skipping it quietly (ddl).
-		- Item 12: sync's `.gitignore` keeps the SQLite file and a key file out of the log folder (txlog).
-		- The README's "Add to README.md" item: the schema blocks in README.md and syntax.md still parse.
-		- The exe name item: `smoke-cli.bash` gets a test ID on its `PASS` line, so `testid check` sees it.
-
-- Read every shcl file through shclwrap and shcl 3.0.
-	- ID: 2026102509204445
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-092044
-	- Opened by: JC
-	- Related IDs: 2026102509202821
-	- Requirements [Feature]:
-		- gitniblet vendors shcl's Go library v1.2.0, which reads the 2.x rules. It takes a bare `a, b` list and ignores `[a, b]`. shcl 3 refuses the bare form, so a schema with a list can't load clean in both.
-		- `source/internal/core/ddl/schema.shcl` uses `allowed: a, b`, so it fails to load in shcl 3 with V099.
-		- The schema, queries, registry, and settings files all go through shclwrap and shcl 3.0.
-		- Found in gitniblet-issue-tracker. Its seed rows keep the bare form until this is in.
-
-- A config file of any name and path names the database's files.
-	- ID: 2026102509202821
-	- Type: Feature
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-092028
-	- Opened by: JC
-	- Related IDs: 2026102509204445
-	- Requirements [Feature]:
-		- The config declares the schema, the tx-log, and the view, each with any name and path. Today the tx-log is always `txlog.csv` inside `log_dir`.
-		- `--config` takes a folder, where gitniblet looks for `config.shcl`, or a config file by name. Today it takes only a registry folder.
-		- A relative path is relative to the config file, and `${HOME}` works. Today a record needs absolute paths.
-		- gitniblet doesn't write state such as `last_opened` into that file, so it can be tracked in git.
-		- Found in gitniblet-issue-tracker, which works around it with a wrapper that writes a registry record from its own config.
-
-- Lookup picker and write-time value check.
-	- ID: 2026102407295340
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-072953
-	- Opened by: JC
-	- Parent ID: The old-format lookup symbols item ("Figure a clean and consistent way to show emojis...").
-	- Prereq IDs: 2026102407295324
-	- Requirements [Feature]:
-		- A `list_type: lookup` field edits through a picker of the group's active values, in sort order.
-		- A write refuses a value that isn't in the group. Replay never re-checks.
-		- Per design.md, Lookups. No UI has a `list_type` picker yet, so this may need one for `literal` and `sql` too.
-	- Estimated effort: Avg
-	- Progress log:
-		- 20261024: Split into 2026102408470107 (write check), 2026102408470113 (lookup picker) and 2026102408470118 (`literal` and `sql` pickers). This item closes with the last of them.
-		- 20261024: All 3 are in. The write check is Done, and the 2 pickers wait on a look by eye.
-
-- A user table that restates a built-in table merges into it, as a system field does.
-	- ID: 2026102409431186
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261024-094311
-	- Opened by: JC
-	- Related IDs: 2026102407295324
-	- Requirements [Feature]:
-		- Today a schema that restates `lookups` or `lookup_values`, as example.shcl does, keeps its own shape and warns twice on open.
-		- The built-in fields keep their definitions, a restated built-in field may set `ui:` only, and extra user fields are added. No warning when it only restates.
-	- Estimated effort: Avg
-
-- Refuse a create whose unique value is already taken in the view, before it's logged.
-	- ID: 2026102408084809
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261024-080848
-	- Opened by: JC
-	- Related IDs: 2026102407584270
-	- Requirements [Feature]:
-		- Today the create is logged, the view drops the row, and the caller gets the id with a refusal. The log then holds a row no view will show.
-		- Check the unique groups in crud, under the commit lock, and refuse with a plain message instead. Replay keeps settling clashes between clients.
-	- Estimated effort: Low
-
-- Support `--help`, `--about`, and `--donate` flags in the FLOSS version.
-	- ID: 2026101915293585
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261019-152935
-	- Opened by: JC
-	- Prereq IDs: 2026102416210007
-		- `--about` shows the same version and copyright lines as `--version`, from `app.VersionLine()` and `app.Copyright`.
-	- Version and build: Pre-next-cut
-	- Requirements [Feature]:
-		- FLOSS version: Support `--help`|`--about`|`--donate`, in a similar way as sister project shcl.
-
-- CICD reset: CICD process gaps.
-	- ID: 2026102416210008
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-162100
-	- Opened by: JC
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- What else the shared CICD rules ask for that the other reset items don't cover.
-		- Go leak checks: `goleak.VerifyTestMain` in every package's tests, the whole suite under `-race` in every full run, a soak test on heap in use and goroutine count, and CodeQL from a pinned CLI over the vendored tree. Each new gate is watched to fail first.
-		- Remote sync first: fetch and fast-forward before building, and stop early when diverged.
-		- The CLI smoke test runs in `cicd.bash` too, not only in hosted CI.
-		- Dogfood goes to `~/synced/0-0/common/exec/app/linux/` and its Windows and macOS siblings, and skips the copy when the binary is in use.
-		- A `dogfood_gitniblet.ps1` script with its launchers, per Dogfood script.
-		- Release archives are reproducible: goreleaser sets `mod_timestamp` from the commit.
-		- A FreeBSD `.pkg`.
-		- The hosted workflows read the Go and tool pins from the same place `cicd.bash` does. Today they pin Go on their own, and the release takes any goreleaser v2.
-		- Overrides the FreeBSD `.pkg` deferral in the private notes, under cicd-packaging.
-	- Estimated effort: Avg
-	- Progress log:
-		- 20261025: Split into children, one per part: 2026102520521019 (remote sync), 2026102520521021 (goleak), 2026102520521023 (soak test), 2026102520521025 (CodeQL), 2026102520521027 (dogfood folders), 2026102520521029 (dogfood script), 2026102520521031 (reproducible archives), 2026102520521033 (FreeBSD `.pkg`) and 2026102520521642 (hosted workflow pins). This item closes with the last of them.
-		- The CLI smoke in `cicd.bash` is done, by 2026102416210004. It runs after the release build in every mode.
-	- Decisions:
-		- The whole suite under `-race` in every full run gets no child here. It's 2026102520474880, which already runs the TUI tests under `-race` and has the same cgo problem to solve.
-
-- Go leak checks: `goleak.VerifyTestMain` in every package's tests.
-	- ID: 2026102520521021
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-205210
-	- Opened by: JC
-	- Parent ID: 2026102416210008
-	- Requirements [Feature]:
-		- Every package with tests has a `TestMain` that calls `goleak.VerifyTestMain`, with `go.uber.org/goleak` vendored.
-		- Watched to fail first, with a test that leaks a goroutine on purpose.
-		- `--leakcheck` and `--no-leakcheck` turn something on and off once this is in, per the CICD style guide.
-
-- Go leak checks: a soak test on heap in use and goroutine count.
-	- ID: 2026102520521023
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-205210
-	- Opened by: JC
-	- Parent ID: 2026102416210008
-	- Prereq IDs: 2026102520521021
-	- Requirements [Feature]:
-		- Repeat a realistic workload, such as open, write, sync and replay, and fail when heap in use or the goroutine count keeps climbing.
-		- A short run in every full run, and a long one under `--leakcheck`. It takes a quarter of the CPUs, per Machine use.
-		- Watched to fail first, with a leak put in on purpose.
-
-- CodeQL from a pinned CLI over the vendored tree.
-	- ID: 2026102520521025
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-205210
-	- Opened by: JC
-	- Parent ID: 2026102416210008
-	- Requirements [Feature]:
-		- A `cicd.bash` step runs the CodeQL CLI at a pinned version, kept with the other pins, over the module and `vendor/`.
-		- Its findings go under `cicd/artifacts/lint/`. Watched to fail first.
-
-- Dogfood to `exec/app/<os>/`, and skip the copy when the binary is in use.
-	- ID: 2026102520521027
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-205210
-	- Opened by: JC
-	- Parent ID: 2026102416210008
-	- Requirements [Feature]:
-		- Per the shared CICD rules, Dogfood. The Linux build goes to `~/synced/0-0/common/exec/app/linux/`, and the Windows and macOS builds to `mswin/` and `macos/` beside it, where the run built them.
-		- Skip the copy, with one line, when the binary there is in use.
-		- Today it goes to `exec/util/linux/bin/`, with a `/usr/local/sbin/` fallback through sudo.
-
-- A `dogfood_gitniblet.ps1` script with its launchers.
-	- ID: 2026102520521029
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-205210
-	- Opened by: JC
-	- Parent ID: 2026102416210008
-	- Prereq IDs: 2026102520521027
-		- The script reads from the dogfood folders that item sets up.
-	- Requirements [Feature]:
-		- Per the shared CICD rules, Dogfood script: one pwsh 7 script, plus Linux, Windows and macOS launchers, with the master copies in `utility/`.
-
-- Reproducible release archives.
-	- ID: 2026102520521031
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-205210
-	- Opened by: JC
-	- Parent ID: 2026102416210008
-	- Related IDs: 2026102520521642
-	- Requirements [Feature]:
-		- goreleaser sets `mod_timestamp` from the commit time, for the binaries and the archive files, so 2 builds of one commit give the same bytes.
-		- A check builds twice and compares the checksums.
-
-- A FreeBSD `.pkg`.
-	- ID: 2026102520521033
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-205210
-	- Opened by: JC
-	- Parent ID: 2026102416210008
-	- Requirements [Feature]:
-		- Package the FreeBSD builds as `.pkg`, beside the archives, and check it installs on vmFreeBSD.
-		- Overrides the FreeBSD `.pkg` deferral in the private notes, under cicd-packaging.
-
-- Hosted workflows read the Go and tool pins from where `cicd.bash` does.
-	- ID: 2026102520521642
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-205216
-	- Opened by: JC
-	- Parent ID: 2026102416210008
-	- Related IDs: 2026102520521031
-	- Requirements [Feature]:
-		- Today `ci.yml` and `release.yml` pin Go on their own, and the release takes any goreleaser v2.
-		- Both read the Go version from `source/go.mod`'s `toolchain` line and goreleaser from `tool-versions.bash`.
-
-- Run on the last Core 2 Duo, and AMD CPUs from that era.
-	- ID: 2026101301161870
-	- Type: Enhancement
-	- Status: Queued
-	- Needs external testing: Yes, on an old CPU or an emulated one.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261013-011618
-	- Opened by: JC
-	- Target OS: Linux, Windows and FreeBSD on x86_64, where this project builds them. Macs that old can't run a current macOS anyway.
-	- Requirements [Feature]:
-		- Release builds run on the last Core 2 Duo (Penryn, 2008), and on AMD Phenom II and Athlon II, if that's reasonably doable.
-			- Penryn has SSSE3 and SSE4.1 but no POPCNT. The AMD ones have POPCNT but no SSSE3. So the shared floor is plain x86-64, also called x86-64-v1.
-		- If that isn't doable, the floor is the first Core i3/i5/i7 (Nehalem, 2008), which is x86-64-v2. AMD's first chip at that level is Bulldozer, 2011.
-		- Faster code for newer CPUs is still fine, but it's picked at run time by a CPU feature test, never by the build target.
-		- Tests run the release build on an emulated Penryn and Phenom II, through Intel SDE or QEMU's `-cpu Penryn` and `-cpu phenom`.
-	- Progress log:
-		- 20261013: Go builds for plain x86-64 by default (`GOAMD64=v1`), and nothing here sets it, so this may already hold. Pin `GOAMD64=v1` in the release build so a stray environment can't raise it. The standard library already picks faster code at run time.
-
-- Show system fields on forms when their `ui:` opts them in.
-	- ID: 2026102407263968
-	- Type: Enhancement
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261024-072639
-	- Opened by: JC
-	- Requirements [Feature]:
-		- `visible_form: yes` on `id`, `is_active` or `date_created` shows that field on the edit form and in `form` blocks, in both UIs.
-		- `id` and `date_created` show read-only and are never written from a form. That likely means honoring `ui: readonly` first.
-	- Progress log:
-		- 20261024: Lists already honor `visible_list` on system fields. The example DDL's built-in `lookups` and `lookup_values` tables ask for `id` on forms, read-only.
-
-- `flags-test.bash` deece and deee3 fail where `../../private/cicd-hooks` doesn't exist, as on a hosted runner.
-	- ID: 2026102522324333
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-223243
-	- Opened by: JC
-	- Related IDs: 2026102416210004, 2026102520474880
-	- Steps to reproduce [Bug]:
-		- Run `cicd/utility/flags-test.bash` from a checkout with no `../../private/cicd-hooks` beside it.
-	- Incorrect behavior [Bug]: deece and deee3 fail. The default and `--quick` plans list `Local hooks (no <dir>)` as off, and both checks expect only the flag-driven off steps. Hosted CI run 40272702133 failed its Linux merge gate on it.
-	- Expected behavior [Bug]: Both pass whether or not the private hooks folder exists.
-	- Reproduced [Bug]: 20261025, from an export of 21bc082 with no private folder beside it, and in hosted CI run 40272702133. Both pass in the floss checkout and its worktrees, which have the folder.
-	- Possible cause [Bug]: The test reads the real plan, where Local hooks is on only when `hooksDir` exists. Point `hooksDir` at a folder the test makes, or leave Local hooks out of the compared lists.
-	- Actual cause [Bug]: The test reads the real plan, where Local hooks is on only when `../../private/cicd-hooks` exists, and nothing let the test stand a folder in.
-	- Estimated effort: Low
-	- Actual effort: Low
-	- Progress log:
-		- 20261025: Reproduced from an export of 22bd94f with no private folder beside it: deece and deee3 fail.
-		- `cicd.bash` reads the hooks folder from `GITNIBLET_HOOKS_DIR` when it's set, as it does the run log from `GITNIBLET_LOG_DIR`. `flags-test.bash` points it at an empty folder it makes, so the plans are the same everywhere.
-		- New deehh checks that a missing hooks folder turns off only Local hooks, listed as `Local hooks (no <dir>)`, so the missing-folder path is still covered.
-		- `--help` names `GITNIBLET_HOOKS_DIR`, and its `--no-hooks` line had the path one level short, from before the folder rename.
-		- Verified: in the export, the old `cicd.bash` fails deece, deee3 and deehh, and the new one passes all 10. With a private folder beside the export, the old one fails only deehh. `flags-test.bash` passes in the checkout, and so do `--backlog-run-quick` and `testid check`. shellcheck finds nothing new.
-		- Swept: the other `cicd.bash` runs in `cicd/utility/*-test.bash` all pass `--no-hooks`, so the folder doesn't change their plans. `ci.yml` and `smoke-cli.bash` don't read it. Enterprise and vendor have no Local hooks step.
-		- Not verified here: hosted CI. The `ci.yml` rerun is on 2026102416210004 and 2026102520474880.
-	- Decisions:
-		- An override in `cicd.bash` rather than leaving Local hooks out of the compared lists, so deee3 still checks `--no-hooks` on a hosted runner.
-	- Actual fix [Bug]: `GITNIBLET_HOOKS_DIR` in `cicd.bash`, set by `flags-test.bash` to a folder it makes.
-	- Branch: r1025
-	- Test case: `cicd/utility/flags-test.bash` deece and deee3, and deehh, new here.
-	- Closed: 20261025-223913
-
-- A `null_ok: no` field with no default makes its table drop every row, silently.
-	- ID: 2026102407331876
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261024-073318
-	- Opened by: JC
-	- Related IDs: 2026102407295324
-	- Steps to reproduce [Bug]:
-		- Give a table a `null_ok: no` field with no `defaultval`, then create a row with that field set.
-	- Incorrect behavior [Bug]: The create succeeds and the row is in the log, but not in the view. No error or warning.
-	- Expected behavior [Bug]: The row reaches the view, or the write is refused up front.
-	- Reproduced [Bug]: 20261024, with the built-in `lookups` table while working 2026102407295324.
-	- Possible cause [Bug]: Replay inserts a create as the bare id with `INSERT OR IGNORE`, and SQLite's OR IGNORE also skips a NOT NULL failure. The field values come after it as updates, against no row.
-		- Once fixed, put `null_ok: n` back on the built-in lookups' `title` and `lookups_idx`.
-	- Actual cause [Bug]:
-		- As guessed. The view made `null_ok: no` a NOT NULL column, and OR IGNORE dropped the bare-id insert.
-		- Same shape: a logged null on a NOT NULL column that has a default, or on a system column, failed the whole replay. `SetFieldNull` on one wrote the log first, so the database then failed to open.
-	- Estimated effort: Avg
-	- Actual effort: Avg
-	- Progress log:
-		- 20261024: The view no longer makes any field NOT NULL. A view built before has those columns relaxed on the next open, keeping its rows and columns, and the replay then fills them.
-		- crud checks `null_ok: no` on write. A create that leaves such a field out with no static default is refused, and so is `SetFieldNull` on one, or on a system column. An empty string still goes through, since that's `empty_ok`.
-		- Replay's bare-id insert only ignores an id clash now, so any other refusal warns. A NOT NULL failure skips with a warning, like a unique clash.
-		- `null_ok: n` is back on lookups `title`, and on lookup_values `lookups_idx` and `title`, as in example.shcl. design.md's DDL section says where `null_ok` is checked.
-		- Verified: the new tests fail before the fix and pass after. `test.bash`, the CLI smoke, staticcheck and gosec pass, and the new tests pass under `-race`. Through the CLI, a view the old build left empty showed both rows after one replay with the new one.
-		- Swept: every crud write path (Create, Update, SetField, SetFieldNull). Only SetFieldNull can write a null. Both bare-id inserts in replay, and every NOT NULL in `store.go`. Only the system columns keep one, and they all have defaults.
-		- 20261025: Verified: the 6 named tests passed in the full run on 21bc082, here and on the 4 boxes.
-	- Decisions:
-		- The SQLite view doesn't enforce `null_ok`. The rule lives at write time, as the lookup value check will, and replay never re-checks.
-		- A `@previous` or function default doesn't count as filling a field, since no front-end computes them yet. Such a field is refused when left out.
-		- 20261025: Closed on the Decisions as they stand. design.md's DDL section already says `null_ok` is checked on write, and the view is a local copy of the log.
-	- Actual fix [Bug]: `null_ok: no` is checked by crud on write instead of as NOT NULL in the view. Old views are relaxed on open.
-	- Branch: round1024
-	- Test case: `TestNotNullRowReachesView`, `TestNotNullRefusedUpFront` and `TestNotNullReplayKeepsLoggedNull` in `source/internal/core/crud/notnull_test.go`, `TestBuildRelaxesOldNotNull` in `store_test.go`, `TestReplayWarnsOnRefusedCreate` in `txlog/replay_test.go`, and `TestLookupsNotNull` in `schema/lookups_test.go`.
-	- Closed: 20261025-223453
 
 - CICD reset: other hosts and VMs.
 	- ID: 2026102416210001
@@ -697,6 +823,215 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Test case: `cicd/utility/steps-test.bash`, dedq4 to dedq8.
 	- Closed: 20261025-223453
 
+- Regression tests: old-format Done bugs.
+	- ID: 2026102520454999
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-204550
+	- Opened by: JC
+	- Parent ID: 2026101915305767
+	- Requirements [Feature]:
+		- The 8 items under `Done - Bugs`, Code Review 20260805 items 1 to 20, per the parent. Each numbered item inside them gets its own test ID, or a reason.
+		- Add a test where one is missing and would make sense.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: Each of the 8 items under `Done - Bugs` has a "Test case:" row, with one line per numbered item in the 2 grouped ones. 14 of the 20 numbered items name test IDs, items 4 and 10 give a reason, and items 5, 6, 9 and 12 have no test yet.
+		- Filed 2026102521481107 for the tests that would make sense and don't exist yet, item 11's quiet seed skip included.
+		- Verified: each ID named matches its test's `// ID:` line, and each test named matches its ID.
+		- Swept: every item under `Done - Bugs`, against the Go and bash test sources.
+	- Decisions:
+		- Docs only, per the round. New tests go in 2026102521481107.
+		- Item 4, a data race, gets a reason rather than a new test, since the Race tests step covers only the TUI, per 2026102520474880.
+		- Item 10 is a hand check, since a no-echo prompt needs a real terminal.
+	- Branch: r1025
+	- Test case: none of its own, since it's docs only. The tests are named on each item.
+	- Closed: 20261025-215015
+
+- Regression tests: old-format Done features, first half.
+	- ID: 2026102520455004
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-204550
+	- Opened by: JC
+	- Parent ID: 2026101915305767
+	- Requirements [Feature]:
+		- The items under `Done - Features and enhancements`, from "Need to research, decide, and document" through "Ability to delete entries from TUI", per the parent.
+		- Add a test where one is missing and would make sense.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: Each of the 25 items from "Need to research" through "Ability to delete entries from TUI" has a "Test case:" row. 17 name test IDs, and 8 say why they have none of their own. The hidden-columns item's row now has its IDs.
+		- Verified: each ID named matches its test's `// ID:` line, and each test named matches its ID.
+		- Swept: every item in that range, against the Go and bash test sources.
+	- Decisions:
+		- Research, demo, layout and release setup items say why they have none. The enterprise license item points at the `gate` seam tests, since the check itself is in enterprise.
+		- The exe name item names `smoke-cli.bash`, which has no test ID yet. That's in 2026102521481107.
+	- Branch: r1025
+	- Test case: none of its own, since it's docs only. The tests are named on each item.
+	- Closed: 20261025-215015
+
+- Regression tests: old-format Done features, second half.
+	- ID: 2026102520455009
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-204550
+	- Opened by: JC
+	- Parent ID: 2026101915305767
+	- Requirements [Feature]:
+		- The items under `Done - Features and enhancements`, from "Startup:" to the end of the list, per the parent.
+		- Add a test where one is missing and would make sense.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: Each of the 31 items from "Startup:" to the end of the list has a "Test case:" row. 26 name test IDs, and 5 say why they have none of their own.
+		- Verified: each ID named matches its test's `// ID:` line, and each test named matches its ID.
+		- Swept: every item in that range, against the Go and bash test sources.
+	- Decisions:
+		- The Lua and scripting items name the floss tests that check scripting stays off, since the host is in enterprise.
+		- A scan such as govulncheck has no test ID, so the supply-chain item says the step is the check, as 2026102520454994 did.
+		- README's schema examples have no check that they still parse. That's in 2026102521481107.
+	- Branch: r1025
+	- Test case: none of its own, since it's docs only. The tests are named on each item.
+	- Closed: 20261025-215015
+
+- Regression tests: new-format Done items.
+	- ID: 2026102520454994
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-204550
+	- Opened by: JC
+	- Parent ID: 2026101915305767
+	- Requirements [Feature]:
+		- Each Done item in the `Issues` section names its test by test ID, or says in a few words why it has none, per the parent.
+		- Add a test where one is missing and would make sense.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: All 17 Done items in `Issues` name their tests by ID, or give a reason. 7 rows changed: IDs added to the lookup check, seed and TUI race items, a reason on the 2 govulncheck items and the issue-tracker demo removal, and a new test for the off flags item.
+		- `flags-test.bash` deee3 checks that `--no-install`, `--no-hooks`, `--no-publish` and `--no-demo` each drop only their own step from the default plan, and list it as off with that flag.
+		- Verified: deee3 passes, and fails with `--no-hooks` made to do nothing. `testid check` found every ID unique. The quick gate passed.
+		- 6 of these items name bash tests that no pipeline step runs, and the TUI race item needs `-race`. That's 2026102520474880.
+		- Swept: every Done item in `Issues`, and each ID they name, against the test sources.
+	- Decisions:
+		- A scan such as govulncheck has no test ID, so its items say the scan step is the check.
+		- The bash tests' rows are left as they were, since they name IDs. Running them in a pipeline is 2026102520474880.
+	- Branch: r1025
+	- Test case: `cicd/utility/flags-test.bash` deee3, new here. The rest are named on each item.
+	- Closed: 20261025-204921
+
+- Remove the issue-tracker demo. gitniblet-issue-tracker takes its place, in its own repo.
+	- ID: 2026102513390812
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-133908
+	- Opened by: JC
+	- Progress log:
+		- 20261025: `demos/` is gone, walkthrough and `seed.bash` included. The CLI smoke still needs a schema, so `issues.shcl` moved to `cicd/utility/smoke/`, and the remote test bundle takes that folder. The README points at gitniblet-issue-tracker.
+		- Verified: the CLI smoke passes on the new path.
+	- Test case: None, since it's a removal. The CLI smoke reads the schema from its new path on every run.
+
+- CICD reset: container cleanup.
+	- ID: 2026102416210002
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261024-162100
+	- Opened by: JC
+	- Prereq IDs: 2026101303344552
+	- Requirements [Feature]:
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Per the shared CICD rules, the container bullets of Cleanup after a run.
+		- Every container, image, and volume the pipeline makes gets `dev.project` and `dev.run` labels. Containers are named `<project>-<run folder>-<step>`, and run with `--rm` unless `--keep-temp` is given.
+		- At the end of a run, on failure and Ctrl+C too, remove the run's containers by label. Then remove this project's dangling images, and its older tags once a newer one has passed, keeping the current tag and the one before.
+		- Then `docker builder prune -f --filter until=168h`. Never `docker rmi -f` or `docker system prune`, and never anything without this project's label.
+		- One line at the end says what was removed and about what it freed, from `docker system df` before and after.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: Containers are named `gitniblet-<run folder>-pipeline`, labelled `dev.project` and `dev.run`, and run with `--rm` unless `--keep-temp` is given. The image and the cache volume get `dev.run` too, from the run that made them.
+		- At exit, on failure and Ctrl+C too, the run's containers go by label. Then this project's dangling images go, and its image tags older than the one before the current one, but only once the current one has passed. Then `docker builder prune -f --filter until=168h`, and one line from `docker system df` before and after.
+		- The docker client runs in the background with a `wait`, so Ctrl+C reaches the cleanup at once. In the foreground the signal only reached the container's init, and the run inside finished its current step first.
+		- `--keep-temp` keeps the containers, stopping a running one, and says so.
+		- Verified: `cleanup-test.bash` passes, and fails with the folder removal or the background `wait` taken out. Two real quick runs, the second stopped by Ctrl+C 8 seconds after its container started, left no container, image, volume or run folder behind, and the stopped one ended 6 seconds after the signal. The fallback test, the remote skip test, `test.bash`, the wide gofmt, the build and the CLI smoke pass.
+		- Swept: every `docker` call in `cicd/`. The fallback test's stand-ins pass through the new cleanup.
+		- 20261025: Verified: the full run's container ran as `gitniblet-20261025-094223_001-pipeline` and left no container behind, only the current image and the cache volume, both labelled. The end line said what was removed. The smoke, which sources the include, passed on vmKt6m under its stock bash 3.2, on the other 3 boxes, and in `ci.yml` run 40212963323 on Linux and arm64 macOS.
+	- Decisions:
+		- The run's own containers go with `docker rm -f`, since a Ctrl+C can leave one running. Images are never forced.
+		- The builder prune runs whenever docker answered, as the shared rule says, though build cache carries no project label.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/cleanup-test.bash`, dedp9 to dedpd: a passing run, a failing one, Ctrl+C, `--keep-temp`, and no removal without this project's label.
+	- Closed: 20261025-104000
+
+- Give every CI test a unique ID.
+	- ID: 2026101915293586
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261019-152935
+	- Opened by: JC
+	- Related IDs: 2026102508574387
+	- Version and build: Pre-next-cut
+	- Requirements [Feature]:
+		- Try to estimate the time the test was created, directly or indirectly.
+		- Test ID format: Take that time, convert it to milliseconds since 2000-01-01 00:00, then base 62 of that number.
+		- 20261024: CICD reset, raised to high. The ID is whole minutes since 2000-01-01 00:00 UTC in lowercase Crockford base 32, such as `decp8` for 2026-10-24 22:00 UTC. A clash takes the next free minute, and an ID never changes once given. The run prints one `PASS`, `FAIL`, or `SKIP` line per regression and fuzz test, with its ID.
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Overrides the base 62 milliseconds format above.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: All 245 Go tests and fuzz targets got an ID from the commit that first added them, as a `// ID: xxxxx` line right above the func. A clash took the next free minute, and the bash tests' dedmb to dedq9 were kept and skipped over.
+		- `cicd/utility/testid`, a small Go module of its own, checks that every Go test has an ID and that no ID is used twice across Go and bash, and names the next free ID for one that's missing. `testid next` gives a free ID.
+		- `test.bash` runs the check, then `go test -json` through `testid report`: one `PASS`, `FAIL` or `SKIP` line per test with its ID, a skip's reason, a failed test's output, and a count at the end. `fuzz.bash` prints `PASS` or `FAIL` per target with its ID. `ci.yml` does the same as `test.bash` in both jobs.
+		- design.md's Tests bullet says so.
+		- Verified: `test.bash` printed 249 `PASS` lines and passed. A missing ID, an ID shared with `steps-test.bash`, a failing test and a skipped one each gave the right line, and the first 3 failed the run. `testid`'s own tests dedqq to dedqt, a short fuzz run, the wide gofmt, the build, the CLI smoke and `steps-test.bash` pass.
+		- Swept: every `go test` in `cicd/` and `.github/`. The remote boxes still print one line per box, which is 2026102508574387.
+		- 20261025: Verified: in the full run's container, the ID check found 251 Go tests and 280 IDs, each unique, `test.bash` printed 251 `PASS` lines with IDs, and fuzz printed 6. `ci.yml` run 40212963323 did the same on Linux and arm64 macOS.
+	- Decisions:
+		- The ID sits in the test file, so it moves with a rename or a move.
+		- The bash tests' IDs are found as the first argument of `fCheck` or `fCase`, or in their own `PASS xxxxx` line.
+		- A package that fails outside any test, such as a build error, prints `FAIL -----` with its output.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/testid`, dedqq to dedqt, plus the check itself on every `test.bash` and CI run.
+	- Closed: 20261025-104000
+
+- Build and test in a pinned container.
+	- ID: 2026101303344552
+	- Type: Enhancement
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261013-033445
+	- Opened by: JC
+	- Target OS: Linux
+	- Requirements [Feature]:
+		- `cicd.bash --container` runs the build and test stages in an image built from a pinned recipe in `cicd/container/`. Toolchains come from pinned downloads with checksums.
+		- Toolchains on the build box clash between projects, such as 2 Zig versions on one link. A container keeps this project's pins apart.
+		- Other test boxes stay native, since their OS is what's being tested.
+		- zuid's `--container` stage is the model. gitsby and convert-base-v2 have one too.
+		- 20261024: CICD reset, raised to high. A container is the default, not opt-in. `--no-container` runs on the host on purpose, and a missing docker or an image that won't build falls back to the host with one line, never failing the run. A test whose point is the real OS stays on the host or a test box.
+		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
+		- Overrides the opt-in `--container` flag above.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261025: Added `cicd/container/Dockerfile`: Debian trixie-slim by digest, Go 1.26.10 from its tarball by sha256, plus git and nsis. `cicd.bash` runs build, cross-compile and packaging, lint, tests, fuzz and security in it by default. Dogfood, profiler, demo, hooks and publish stay on the host.
+		- 20261025: `--no-container` keeps it all on the host. No docker, a docker that doesn't answer, a box that isn't x86_64, or an image that won't build prints one line and runs on the host.
+		- 20261025: The image is tagged by the recipe's git hash. A `GO_VER` that doesn't match the `toolchain` line in `source/go.mod` fails the run.
+		- 20261025: For 2026102416210002, containers are named `gitniblet-<run stamp>-pipeline` and labelled `dev.project` and `dev.run`, and the image and the `gitniblet-cicd-cache` volume get `dev.project`. The run stamp is the run log's `YYYYmmDD-HHMMSS`, since `cicd.bash` makes no run folder yet.
+		- Verified: a quick run and a full run (`--no-install --no-hooks --no-publish --no-demo --no-format`) passed in the container, packages and Windows installers included, with the profiler after it on the host. The fallback test passes, and its stale pin case failed until the check exited the run.
+	- Decisions:
+		- `--container` is still taken, and does nothing, since it's the default now.
+		- The profiler stays on the host, since it needs `inferno-flamegraph` from cargo.
+	- Branch: cicd1025
+	- Test case: `cicd/utility/container-fallback-test.bash`, dedmb to dedme: no docker, docker not answering, an image that won't build, and a stale `GO_VER`. The container path itself runs on every `cicd.bash` run.
+	- Closed: 20261025-070309
+
 - Tests wrote to the real database registry on macOS.
 	- ID: 2026102318473520
 	- Type: Bug
@@ -755,6 +1090,169 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: round1024
 	- Test case: `TestReplayDropsCreateTwin` in `source/internal/core/txlog/replay_test.go`, `TestSeedRowsTwoClients` in `source/internal/core/schema/seed_test.go`, and the updated `TestCreateReportsAFieldTheViewRefused` in `source/internal/core/crud/write_test.go`.
 	- Closed: 20261025-223453
+
+- `remote-test.bash` leaves vmKt6m running after it's used.
+	- ID: 2026102510392387
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-103923
+	- Opened by: JC
+	- Related IDs: 2026102416210001
+	- Steps to reproduce [Bug]:
+		- Run `cicd/utility/remote-test.bash macos` while b26 is held, with vmKt6m off.
+	- Incorrect behavior [Bug]: vmKt6m stays running. The run waits 300 seconds for it to stop, then warns `vmKt6m may not be back as it was found`.
+	- Expected behavior [Bug]: vmKt6m goes back to off, as the other VMs do.
+	- Reproduced [Bug]: 20261025, in the full run on `cicd1025`.
+	- Possible cause [Bug]: vmKt6m ignores the ACPI shutdown. The machine notes shut it down from inside, with `sudo -n shutdown -h now` as `collierjr`, then run `restore` again.
+	- Actual cause [Bug]: As guessed. The wrap's put-back sends only the ACPI request, which vmKt6m ignores.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261025: Still inside the wrap, `remote-test.bash` halts vmKt6m from inside, as `collierjr` with `sudo -n shutdown -h now`, when the wrap noted it was found off. The put-back then sees it going down. A VM found running is left up.
+		- The halt has short keepalives and a 60s cap, since its ssh can hang on the link going down. The first run hung there for 2 minutes.
+		- Verified: deed6 fails on the old `remote-test.bash` and passes on the new one. deed7 and the rest of `remote-skip-test.bash` pass.
+		- Verified: `remote-test.bash windows macos` with b26 held passed on vmKt6m, halted it, and the wrap put it back to off with no warning. The capped halt alone, inside the wrap, returned in 1s, and vmKt6m was off 27s after the wrap started.
+		- Swept: the only other VM-wrapped boxes are vmFreeBSD and vmDebARM64, which both went back to off by ACPI in earlier runs. b26 and b29w aren't VMs.
+	- Decisions:
+		- The fix sits in `remote-test.bash`, not the shared VM helper, which is outside this repo. The guest ignoring ACPI is the cause, and the halt from inside works around it.
+		- The found state comes from the helper's `status` note, so a VM someone left running stays running.
+		- The guests that need it are in one table, `haltFromInside`, with the account that can halt each.
+	- Actual fix [Bug]: `remote-test.bash` halts vmKt6m from inside before the put-back, when it was found off.
+	- Branch: r1025
+	- Test case: `cicd/utility/remote-skip-test.bash` deed6 and deed7.
+	- Closed: 20261025-204220
+
+- cicd's local hooks stopped running when the repo moved into `gitniblet-floss/repo`.
+	- ID: 2026102409431176
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-094311
+	- Opened by: JC
+	- Incorrect behavior [Bug]: `cicd.bash` looked for hooks in `../private/cicd-hooks` beside the repo, which no longer exists, so `scrub-vendor.bash` never ran before a publish, with no warning.
+	- Expected behavior [Bug]: The hooks in the project's own `private/cicd-hooks` run before publish.
+	- Reproduced [Bug]: 20261024, from the floss main checkout.
+	- Actual cause [Bug]: The folder rename added a level, and the path is relative to the repo.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Actual fix [Bug]: The hooks dir is now `../../private/cicd-hooks`, which is the same folder from the main checkout and from a worktree beside it.
+	- Branch: ciflow
+	- Test case: Not applicable, a path in a local-only stage.
+
+- Go leak checks: `goleak.VerifyTestMain` in every package's tests.
+	- ID: 2026102520521021
+	- Type: Task
+	- Status: Done
+	- Needs local test suite run?: No
+	- Needs external testing: No
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Requirements [Feature]:
+		- Every package with tests has a `TestMain` that calls `goleak.VerifyTestMain`, with `go.uber.org/goleak` vendored.
+		- Watched to fail first, with a test that leaks a goroutine on purpose.
+		- `--leakcheck` and `--no-leakcheck` turn something on and off once this is in, per the CICD style guide.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 20261026: `go.uber.org/goleak` v1.3.0, the newest, is vendored. New `internal/leakcheck` runs a package's tests through `goleak.VerifyTestMain` and returns the exit code. All 15 test packages and its own call it from a `TestMain`, and the TUI's existing one cleans up after it.
+		- `GITNIBLET_LEAKCHECK=0` turns it off. `--no-leakcheck` sets that for the run, the container and the test boxes, and `--leakcheck` sets it back to 1. `--list` prints `Leak checks: on` or `off`, and the run's header says when it's off.
+		- `--help` and design.md's CI/CD pipeline say so.
+		- Verified: the whole module passes with the check on, and under `-race` for the TUI. leakcheck defq9 passes, and fails with goleak skipped. A goroutine left in the guid tests fails that package, and passes with `GITNIBLET_LEAKCHECK=0`.
+		- Verified: flags-test defqc passes, and fails on the old `cicd.bash`. remote-skip-test defqe passes, and the old `remote-test.bash` sends no switch to the box. The rest of both scripts pass, and so do `--backlog-run-quick`, `testid check`, govulncheck, gosec and `go mod verify`.
+		- Verified: the suite took the same CPU time with the check on and off, 11.8s user, at load 16 to 21.
+		- Swept: every `_test.go` folder in `source/`, every place the tests run (`test.bash`, Race tests, the container, `remote-unix.bash`, `remote-windows.ps1`), and every place the leak flags appear, docs included.
+		- 20261026: The full run failed steps-test dedq9, since its check wanted `-e GITNIBLET_STEPS` and `-e GITNIBLET_JOBS_CAP=N` side by side, and `-e GITNIBLET_LEAKCHECK` now sits between them. dedq9 now checks each container arg on its own. What it checks is the same.
+		- Verified: steps-test dedq9 and flags-test pass in full. dedq9's check still fails with the step list, the cap or `nice` taken out of the run line.
+		- Swept: every test that reads the docker run line. cleanup-test checks single args, and container-fallback-test reads none.
+	- Decisions:
+		- One helper rather than a bare `goleak.VerifyTestMain` in each package, so the off switch lives in one place.
+		- An env var, not a test flag, since it reaches the container, the boxes' prebuilt test binaries and a hand `go test` alike.
+		- It runs in every run, `--quick` and `--backlog-run-quick` included, since it adds no time a run can measure. So `--leakcheck` adds nothing until the soak test, 2026102520521023, which it will turn on.
+		- `defqa` is the leaking test. It runs only as defq9's child, so every run lists it as a SKIP.
+		- `cicd/utility/testid` is its own module with no deps and no goroutines, so it's left out.
+		- The enterprise build fails on a missing shclwrap `go.sum` entry, which 2026102509204445 already notes. Not from this change.
+	- Branch: r1026
+	- Test case: `internal/leakcheck` defq9, `flags-test.bash` defqc and `remote-skip-test.bash` defqe. Every package's tests run the check itself.
+	- 2026-10-26 Verified: cicd.bash --backlog-run-full passed all 11 steps at r1026 (run 20261026-193900; Windows, FreeBSD and macOS passed, vmDebARM64 didn't answer and was skipped), and hosted ci.yml run 40439675727 passed both jobs. defqc and defqe passed. GITNIBLET_LEAKCHECK=0 cicd/utility/remote-test.bash windows passed on b29w, 257 tests.
+
+- Reproducible release archives.
+	- ID: 2026102520521031
+	- Type: Task
+	- Status: Done
+	- Needs external testing: No
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Related IDs: 2026102520521642
+	- Requirements [Feature]:
+		- goreleaser sets `mod_timestamp` from the commit time, for the binaries and the archive files, so 2 builds of one commit give the same bytes.
+		- A check builds twice and compares the checksums.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261026: `.goreleaser.yaml` sets `mod_timestamp` from `.CommitTimestamp`, and the archive's binary and files, the `.deb` and `.rpm`, and their files get `.CommitDate`. The archive's files are listed by name now, the same 3 the default globs took.
+		- `cicd/utility/repro-test.bash` builds HEAD twice, from 2 clones checked out 2 seconds apart, for linux and windows on amd64, and compares `checksums.txt`. It also checks the binary's mtime is the commit time. About 19 s wall, 35 s CPU, at load 10. It's a Pipeline test, so it runs in the full run and the hosted merge gate.
+		- Verified: defr0 and defr1 pass. Both fail on the old config. With only the package `mtime` dropped, defr0 fails on the `.deb` and `.rpm`.
+		- Not verified: darwin, freebsd and arm64, which the check leaves out to stay quick. They use the same settings.
+		- Departs from the requirements: the `.deb` and `.rpm` get the commit time too, since `checksums.txt` lists them.
+		- design.md says so, under CI/CD pipeline.
+	- Decisions:
+		- The check is a Pipeline test with a 2-target matrix, not a second full goreleaser run in packaging, so it adds about 20 s, not minutes.
+		- Fresh clones, so checkout times differ between the 2 builds, and the real `dist/` is never touched.
+	- Branch: r1026
+	- Commit: c063c25
+	- Test case: defr0 and defr1 in `cicd/utility/repro-test.bash`.
+	- 2026-10-26 Verified: cicd.bash --backlog-run-full passed all 11 steps at r1026 (run 20261026-193900; Windows, FreeBSD and macOS passed, vmDebARM64 didn't answer and was skipped), and hosted ci.yml run 40439675727 passed both jobs. defr0 and defr1 passed in both.
+
+- Write lists in brackets in the docs and examples.
+	- ID: 2026102618065650
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261026-180656
+	- Opened by: JC
+	- Related IDs: 2026102509204445
+	- Requirements [Feature]:
+		- `syntax.md`, the README's schema blocks, `project/example.shcl`, `project/example.queries.shcl` and `cicd/utility/smoke/issues.shcl` still show bare `a, b` lists and old seed rows. They load through the upgrade, but a new schema should be written the shcl 3 way.
+		- syntax.md's `list_source` and `row:` text describes the old comma lists. In 3.0 a seed row is `row: [idx=1, "title=Task status"]`.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261026: example.shcl, syntax.md and the docs' examples write lists in brackets: aliases, `unique:`, `location:`, a literal `list_source:` and seed rows. A seed row is `row: [idx=1, "title=Task status"]`.
+		- syntax.md's text on lists, literal `list_source`, uniques, `row:` and `location:` says the bracket form. The wording is otherwise the same.
+		- README.md, `example.queries.shcl` and `cicd/utility/smoke/issues.shcl` have no lists, and already load on 3.0 as they are. Not changed.
+		- Verified: every file and fenced block in README.md and syntax.md loads on 3.0 with no upgrade, 28 blocks. Before the change 3 of them needed it. The ddl tests, defpx included, and `--backlog-run-quick core` pass.
+		- Swept: every `aliases:`, `unique:`, `index:`, `row:`, `location:` and `list_source:` in README.md, syntax.md and the 3 example files.
+	- Decisions:
+		- A one-name `unique:` or `index:` stays bare, since 3.0 reads it as a one-item list.
+		- Seed rows quote only a pair that needs it, such as one with a space or an emoji, as the upgrade writes them.
+		- The column alignment and comments in example.shcl stay as typed.
+	- Branch: r1026
+	- Test case: defpx for the README.md and syntax.md blocks, and d9nwj, dec94 and dec96 for example.shcl.
+	- Closed: 20261026-184500
+
+- Bump enterprise and vendor to the floss Go toolchain and `x/text`.
+	- ID: 2026102407133557
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261024-071335
+	- Opened by: JC
+	- Related IDs: 2026102407051369, 2026102407094415
+	- Requirements [Feature]:
+		- Enterprise and vendor pin `toolchain go1.26.5` in `source/go.mod`, `ci.yml` and `release.yml`. floss moved to `go1.26.10`.
+		- Enterprise requires `golang.org/x/text v0.21.0`, and builds floss through a `replace`, so its vendor tree needs the floss bump to v0.41.0 too.
+		- Then `go build ./...` and govulncheck pass in both.
+	- Progress log:
+	- Test case: enterprise d9djx and vendor d9f8q builds, and both repos' hosted CI on go1.26.10
+	- Closed: 20261026
+		- 20261024: Held for the uncommitted enterprise edits from 2026-10-19, in `go.mod`, `ci.yml` and `release.yml`, to be committed. Enterprise isn't in floss rounds.
+	- 2026-10-26: the hold is gone, since enterprise's tree is clean. The enterprise part is done there as 2026102522552218 (go1.26.10, x/text v0.41.0). Vendor is left.
+	- 2026-10-26: vendor's part is done there as 2026102601055332 (go1.26.10; vendor has no x/text). Hosted CI passed on both repos' dev after the bump.
 
 - Run CI on GitHub's free arm64 macOS runners.
 	- ID: 2026102318473519
@@ -929,110 +1427,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Test case: `TestLookupChoices` in `source/internal/core/schema/lookupshow_test.go`, `TestLookupPickerInTUI` and the updated `TestLookupsShowInTUI` in `source/internal/tui/lookups_test.go`, and `TestLookupPickerInWeb` and the updated `TestLookupsShowInWeb` in `source/internal/web/lookups_test.go`.
 	- Closed: 20261025-223453
 
-- Pickers for `list_type: literal` and `list_type: sql` fields.
-	- ID: 2026102408470118
-	- Type: Enhancement
-	- Status: Done
-	- Test environment: b23 runs `gitniblet 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
-	- Stand-in: Build deefv on the same scratch database, in the TUI and web. The `lookup_values` form's group picker listed none, Size and Status, with the row's group selected. A literal picker listed `Chore, misc` whole, and an sql picker showed its query's titles and saved the picked idx.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261024-084701
-	- Opened by: JC
-	- Parent ID: 2026102407295340
-	- Prereq IDs: 2026102408470113
-	- Requirements [Feature]:
-		- Same picker as for lookups, fed from the literal list or the query in `list_source`. The built-in `lookup_values.lookups_idx` is one.
-	- Estimated effort: Avg
-	- Actual effort: Low
-	- Progress log:
-		- 20261024: Edit forms in both UIs pick a `literal` or `sql` field from its `list_source`, with none first and a held value that isn't listed kept second, as for lookups.
-		- A literal list splits on commas outside quotes. A query gives the value in its first column and the label in its second, or the value again. It runs when a form opens, never for a list.
-		- A query that fails stops the form with an error naming the field. A `list_type` with no `list_source` warns at open.
-		- syntax.md has a line for both, with an example.
-		- Verified: the new tests fail with the pickers turned off and pass with them, 3 runs under `-race` too. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass.
-		- Swept: the same edit forms as 2026102408470113. No demo schema uses `list_type`.
-	- Decisions:
-		- Lists still show a `literal` or `sql` field as stored, not the query's label.
-		- A write isn't checked against the list, unlike a lookup. The requirement didn't ask for it, and a query's rows can change under a held value.
-	- Branch: round1024
-	- Test case: `TestPickerChoices` in `source/internal/core/schema/picker_test.go`, `TestLiteralPickerInTUI` in `source/internal/tui/lookups_test.go`, and `TestListPickersInWeb` in `source/internal/web/lookups_test.go`.
-	- Closed: 20261025-223453
-
-- Regression tests: old-format Done bugs.
-	- ID: 2026102520454999
-	- Type: Task
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-204550
-	- Opened by: JC
-	- Parent ID: 2026101915305767
-	- Requirements [Feature]:
-		- The 8 items under `Done - Bugs`, Code Review 20260805 items 1 to 20, per the parent. Each numbered item inside them gets its own test ID, or a reason.
-		- Add a test where one is missing and would make sense.
-	- Estimated effort: Low
-	- Actual effort: Low
-	- Progress log:
-		- 20261025: Each of the 8 items under `Done - Bugs` has a "Test case:" row, with one line per numbered item in the 2 grouped ones. 14 of the 20 numbered items name test IDs, items 4 and 10 give a reason, and items 5, 6, 9 and 12 have no test yet.
-		- Filed 2026102521481107 for the tests that would make sense and don't exist yet, item 11's quiet seed skip included.
-		- Verified: each ID named matches its test's `// ID:` line, and each test named matches its ID.
-		- Swept: every item under `Done - Bugs`, against the Go and bash test sources.
-	- Decisions:
-		- Docs only, per the round. New tests go in 2026102521481107.
-		- Item 4, a data race, gets a reason rather than a new test, since the Race tests step covers only the TUI, per 2026102520474880.
-		- Item 10 is a hand check, since a no-echo prompt needs a real terminal.
-	- Branch: r1025
-	- Test case: none of its own, since it's docs only. The tests are named on each item.
-	- Closed: 20261025-215015
-
-- Regression tests: old-format Done features, first half.
-	- ID: 2026102520455004
-	- Type: Task
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-204550
-	- Opened by: JC
-	- Parent ID: 2026101915305767
-	- Requirements [Feature]:
-		- The items under `Done - Features and enhancements`, from "Need to research, decide, and document" through "Ability to delete entries from TUI", per the parent.
-		- Add a test where one is missing and would make sense.
-	- Estimated effort: Low
-	- Actual effort: Low
-	- Progress log:
-		- 20261025: Each of the 25 items from "Need to research" through "Ability to delete entries from TUI" has a "Test case:" row. 17 name test IDs, and 8 say why they have none of their own. The hidden-columns item's row now has its IDs.
-		- Verified: each ID named matches its test's `// ID:` line, and each test named matches its ID.
-		- Swept: every item in that range, against the Go and bash test sources.
-	- Decisions:
-		- Research, demo, layout and release setup items say why they have none. The enterprise license item points at the `gate` seam tests, since the check itself is in enterprise.
-		- The exe name item names `smoke-cli.bash`, which has no test ID yet. That's in 2026102521481107.
-	- Branch: r1025
-	- Test case: none of its own, since it's docs only. The tests are named on each item.
-	- Closed: 20261025-215015
-
-- Regression tests: old-format Done features, second half.
-	- ID: 2026102520455009
-	- Type: Task
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-204550
-	- Opened by: JC
-	- Parent ID: 2026101915305767
-	- Requirements [Feature]:
-		- The items under `Done - Features and enhancements`, from "Startup:" to the end of the list, per the parent.
-		- Add a test where one is missing and would make sense.
-	- Estimated effort: Low
-	- Actual effort: Low
-	- Progress log:
-		- 20261025: Each of the 31 items from "Startup:" to the end of the list has a "Test case:" row. 26 name test IDs, and 5 say why they have none of their own.
-		- Verified: each ID named matches its test's `// ID:` line, and each test named matches its ID.
-		- Swept: every item in that range, against the Go and bash test sources.
-	- Decisions:
-		- The Lua and scripting items name the floss tests that check scripting stays off, since the host is in enterprise.
-		- A scan such as govulncheck has no test ID, so the supply-chain item says the step is the check, as 2026102520454994 did.
-		- README's schema examples have no check that they still parse. That's in 2026102521481107.
-	- Branch: r1025
-	- Test case: none of its own, since it's docs only. The tests are named on each item.
-	- Closed: 20261025-215015
-
 - Remote sync first: fetch and fast-forward before building.
 	- ID: 2026102520521019
 	- Type: Task
@@ -1060,215 +1454,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: r1025
 	- Test case: `cicd/utility/sync-test.bash`, deeea to deeei. No pipeline stage runs it yet.
 	- Closed: 20261025-210516
-
-- Regression tests: new-format Done items.
-	- ID: 2026102520454994
-	- Type: Task
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-204550
-	- Opened by: JC
-	- Parent ID: 2026101915305767
-	- Requirements [Feature]:
-		- Each Done item in the `Issues` section names its test by test ID, or says in a few words why it has none, per the parent.
-		- Add a test where one is missing and would make sense.
-	- Estimated effort: Low
-	- Actual effort: Low
-	- Progress log:
-		- 20261025: All 17 Done items in `Issues` name their tests by ID, or give a reason. 7 rows changed: IDs added to the lookup check, seed and TUI race items, a reason on the 2 govulncheck items and the issue-tracker demo removal, and a new test for the off flags item.
-		- `flags-test.bash` deee3 checks that `--no-install`, `--no-hooks`, `--no-publish` and `--no-demo` each drop only their own step from the default plan, and list it as off with that flag.
-		- Verified: deee3 passes, and fails with `--no-hooks` made to do nothing. `testid check` found every ID unique. The quick gate passed.
-		- 6 of these items name bash tests that no pipeline step runs, and the TUI race item needs `-race`. That's 2026102520474880.
-		- Swept: every Done item in `Issues`, and each ID they name, against the test sources.
-	- Decisions:
-		- A scan such as govulncheck has no test ID, so its items say the scan step is the check.
-		- The bash tests' rows are left as they were, since they name IDs. Running them in a pipeline is 2026102520474880.
-	- Branch: r1025
-	- Test case: `cicd/utility/flags-test.bash` deee3, new here. The rest are named on each item.
-	- Closed: 20261025-204921
-
-- Remove the issue-tracker demo. gitniblet-issue-tracker takes its place, in its own repo.
-	- ID: 2026102513390812
-	- Type: Task
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-133908
-	- Opened by: JC
-	- Progress log:
-		- 20261025: `demos/` is gone, walkthrough and `seed.bash` included. The CLI smoke still needs a schema, so `issues.shcl` moved to `cicd/utility/smoke/`, and the remote test bundle takes that folder. The README points at gitniblet-issue-tracker.
-		- Verified: the CLI smoke passes on the new path.
-	- Test case: None, since it's a removal. The CLI smoke reads the schema from its new path on every run.
-
-- CICD reset: container cleanup.
-	- ID: 2026102416210002
-	- Type: Task
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261024-162100
-	- Opened by: JC
-	- Prereq IDs: 2026101303344552
-	- Requirements [Feature]:
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Per the shared CICD rules, the container bullets of Cleanup after a run.
-		- Every container, image, and volume the pipeline makes gets `dev.project` and `dev.run` labels. Containers are named `<project>-<run folder>-<step>`, and run with `--rm` unless `--keep-temp` is given.
-		- At the end of a run, on failure and Ctrl+C too, remove the run's containers by label. Then remove this project's dangling images, and its older tags once a newer one has passed, keeping the current tag and the one before.
-		- Then `docker builder prune -f --filter until=168h`. Never `docker rmi -f` or `docker system prune`, and never anything without this project's label.
-		- One line at the end says what was removed and about what it freed, from `docker system df` before and after.
-	- Estimated effort: Avg
-	- Actual effort: Avg
-	- Progress log:
-		- 20261025: Containers are named `gitniblet-<run folder>-pipeline`, labelled `dev.project` and `dev.run`, and run with `--rm` unless `--keep-temp` is given. The image and the cache volume get `dev.run` too, from the run that made them.
-		- At exit, on failure and Ctrl+C too, the run's containers go by label. Then this project's dangling images go, and its image tags older than the one before the current one, but only once the current one has passed. Then `docker builder prune -f --filter until=168h`, and one line from `docker system df` before and after.
-		- The docker client runs in the background with a `wait`, so Ctrl+C reaches the cleanup at once. In the foreground the signal only reached the container's init, and the run inside finished its current step first.
-		- `--keep-temp` keeps the containers, stopping a running one, and says so.
-		- Verified: `cleanup-test.bash` passes, and fails with the folder removal or the background `wait` taken out. Two real quick runs, the second stopped by Ctrl+C 8 seconds after its container started, left no container, image, volume or run folder behind, and the stopped one ended 6 seconds after the signal. The fallback test, the remote skip test, `test.bash`, the wide gofmt, the build and the CLI smoke pass.
-		- Swept: every `docker` call in `cicd/`. The fallback test's stand-ins pass through the new cleanup.
-		- 20261025: Verified: the full run's container ran as `gitniblet-20261025-094223_001-pipeline` and left no container behind, only the current image and the cache volume, both labelled. The end line said what was removed. The smoke, which sources the include, passed on vmKt6m under its stock bash 3.2, on the other 3 boxes, and in `ci.yml` run 40212963323 on Linux and arm64 macOS.
-	- Decisions:
-		- The run's own containers go with `docker rm -f`, since a Ctrl+C can leave one running. Images are never forced.
-		- The builder prune runs whenever docker answered, as the shared rule says, though build cache carries no project label.
-	- Branch: cicd1025
-	- Test case: `cicd/utility/cleanup-test.bash`, dedp9 to dedpd: a passing run, a failing one, Ctrl+C, `--keep-temp`, and no removal without this project's label.
-	- Closed: 20261025-104000
-
-- Give every CI test a unique ID.
-	- ID: 2026101915293586
-	- Type: Task
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261019-152935
-	- Opened by: JC
-	- Related IDs: 2026102508574387
-	- Version and build: Pre-next-cut
-	- Requirements [Feature]:
-		- Try to estimate the time the test was created, directly or indirectly.
-		- Test ID format: Take that time, convert it to milliseconds since 2000-01-01 00:00, then base 62 of that number.
-		- 20261024: CICD reset, raised to high. The ID is whole minutes since 2000-01-01 00:00 UTC in lowercase Crockford base 32, such as `decp8` for 2026-10-24 22:00 UTC. A clash takes the next free minute, and an ID never changes once given. The run prints one `PASS`, `FAIL`, or `SKIP` line per regression and fuzz test, with its ID.
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Overrides the base 62 milliseconds format above.
-	- Estimated effort: Avg
-	- Actual effort: Avg
-	- Progress log:
-		- 20261025: All 245 Go tests and fuzz targets got an ID from the commit that first added them, as a `// ID: xxxxx` line right above the func. A clash took the next free minute, and the bash tests' dedmb to dedq9 were kept and skipped over.
-		- `cicd/utility/testid`, a small Go module of its own, checks that every Go test has an ID and that no ID is used twice across Go and bash, and names the next free ID for one that's missing. `testid next` gives a free ID.
-		- `test.bash` runs the check, then `go test -json` through `testid report`: one `PASS`, `FAIL` or `SKIP` line per test with its ID, a skip's reason, a failed test's output, and a count at the end. `fuzz.bash` prints `PASS` or `FAIL` per target with its ID. `ci.yml` does the same as `test.bash` in both jobs.
-		- design.md's Tests bullet says so.
-		- Verified: `test.bash` printed 249 `PASS` lines and passed. A missing ID, an ID shared with `steps-test.bash`, a failing test and a skipped one each gave the right line, and the first 3 failed the run. `testid`'s own tests dedqq to dedqt, a short fuzz run, the wide gofmt, the build, the CLI smoke and `steps-test.bash` pass.
-		- Swept: every `go test` in `cicd/` and `.github/`. The remote boxes still print one line per box, which is 2026102508574387.
-		- 20261025: Verified: in the full run's container, the ID check found 251 Go tests and 280 IDs, each unique, `test.bash` printed 251 `PASS` lines with IDs, and fuzz printed 6. `ci.yml` run 40212963323 did the same on Linux and arm64 macOS.
-	- Decisions:
-		- The ID sits in the test file, so it moves with a rename or a move.
-		- The bash tests' IDs are found as the first argument of `fCheck` or `fCase`, or in their own `PASS xxxxx` line.
-		- A package that fails outside any test, such as a build error, prints `FAIL -----` with its output.
-	- Branch: cicd1025
-	- Test case: `cicd/utility/testid`, dedqq to dedqt, plus the check itself on every `test.bash` and CI run.
-	- Closed: 20261025-104000
-
-- Build and test in a pinned container.
-	- ID: 2026101303344552
-	- Type: Enhancement
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261013-033445
-	- Opened by: JC
-	- Target OS: Linux
-	- Requirements [Feature]:
-		- `cicd.bash --container` runs the build and test stages in an image built from a pinned recipe in `cicd/container/`. Toolchains come from pinned downloads with checksums.
-		- Toolchains on the build box clash between projects, such as 2 Zig versions on one link. A container keeps this project's pins apart.
-		- Other test boxes stay native, since their OS is what's being tested.
-		- zuid's `--container` stage is the model. gitsby and convert-base-v2 have one too.
-		- 20261024: CICD reset, raised to high. A container is the default, not opt-in. `--no-container` runs on the host on purpose, and a missing docker or an image that won't build falls back to the host with one line, never failing the run. A test whose point is the real OS stays on the host or a test box.
-		- Sweeping override, 2026-10-24: this supersedes any earlier decision on this project that conflicts with it.
-		- Overrides the opt-in `--container` flag above.
-	- Estimated effort: Avg
-	- Actual effort: Avg
-	- Progress log:
-		- 20261025: Added `cicd/container/Dockerfile`: Debian trixie-slim by digest, Go 1.26.10 from its tarball by sha256, plus git and nsis. `cicd.bash` runs build, cross-compile and packaging, lint, tests, fuzz and security in it by default. Dogfood, profiler, demo, hooks and publish stay on the host.
-		- 20261025: `--no-container` keeps it all on the host. No docker, a docker that doesn't answer, a box that isn't x86_64, or an image that won't build prints one line and runs on the host.
-		- 20261025: The image is tagged by the recipe's git hash. A `GO_VER` that doesn't match the `toolchain` line in `source/go.mod` fails the run.
-		- 20261025: For 2026102416210002, containers are named `gitniblet-<run stamp>-pipeline` and labelled `dev.project` and `dev.run`, and the image and the `gitniblet-cicd-cache` volume get `dev.project`. The run stamp is the run log's `YYYYmmDD-HHMMSS`, since `cicd.bash` makes no run folder yet.
-		- Verified: a quick run and a full run (`--no-install --no-hooks --no-publish --no-demo --no-format`) passed in the container, packages and Windows installers included, with the profiler after it on the host. The fallback test passes, and its stale pin case failed until the check exited the run.
-	- Decisions:
-		- `--container` is still taken, and does nothing, since it's the default now.
-		- The profiler stays on the host, since it needs `inferno-flamegraph` from cargo.
-	- Branch: cicd1025
-	- Test case: `cicd/utility/container-fallback-test.bash`, dedmb to dedme: no docker, docker not answering, an image that won't build, and a stale `GO_VER`. The container path itself runs on every `cicd.bash` run.
-	- Closed: 20261025-070309
-
-- govulncheck flags the pinned Go toolchain.
-	- ID: 2026102407051369
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261024-070513
-	- Opened by: JC
-	- Incorrect behavior [Bug]: govulncheck reports 5 standard library advisories against the `go1.26.5` toolchain pin, so the security gate fails on `dev`.
-	- Expected behavior [Bug]: govulncheck passes under the pinned toolchain.
-	- Reproduced [Bug]: 20261024, on `dev` at ce5dfa0.
-	- Possible cause [Bug]: The advisories are fixed in go1.26.10. Enterprise and vendor may pin the same toolchain.
-	- Actual cause [Bug]:
-		- The `go1.26.5` pin fell behind. By 20261024 govulncheck listed 10 stdlib advisories against it, in `net/http`, `net/textproto`, `crypto/tls`, `crypto/x509` and `html/template`. One needs go1.26.10, the rest go1.26.9.
-	- Estimated effort: Low
-	- Actual effort: Low
-	- Progress log:
-		- 20261024: Bumped the pin to `go1.26.10`, the newest 1.26 release, in `go.mod`, `ci.yml` and `release.yml`. govulncheck is clean, with 2 `golang.org/x/text` advisories it says the code never calls, filed as 2026102407094415.
-		- 20261024: Enterprise and vendor pin the same `go1.26.5`, in `source/go.mod`, `ci.yml` and `release.yml`. Left alone, since only floss is in this round. Enterprise builds floss through a `replace`, but its own `toolchain` line picks the compiler, so it needs its own bump.
-		- 20261024: The full run at 6bb9d3d passed govulncheck under `go1.26.10`: no vulnerabilities found. The hosted `ci.yml` run starts only after the merge push to `dev`, so the status waits on that.
-		- 20261024: Hosted CI run 40111439236 on the merge to `dev` passed, Linux and macOS jobs.
-	- Actual fix [Bug]: Toolchain pin bumped to `go1.26.10`.
-		- Swept: every `1.26.x` pin outside `vendor/`, in `go.mod`, the workflows, `tool-versions.bash`, `.goreleaser.yaml`, `dependabot.yml` and the docs. Only the 3 changed files had one.
-	- Branch: round1024
-	- Test case: No test ID, since it's a scan, not a test. The govulncheck step in every full run and in hosted CI fails on it. It failed under `go1.26.5` and passes under `go1.26.10`.
-	- Closed: 20261024-092700
-
-- `remote-test.bash` leaves vmKt6m running after it's used.
-	- ID: 2026102510392387
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-103923
-	- Opened by: JC
-	- Related IDs: 2026102416210001
-	- Steps to reproduce [Bug]:
-		- Run `cicd/utility/remote-test.bash macos` while b26 is held, with vmKt6m off.
-	- Incorrect behavior [Bug]: vmKt6m stays running. The run waits 300 seconds for it to stop, then warns `vmKt6m may not be back as it was found`.
-	- Expected behavior [Bug]: vmKt6m goes back to off, as the other VMs do.
-	- Reproduced [Bug]: 20261025, in the full run on `cicd1025`.
-	- Possible cause [Bug]: vmKt6m ignores the ACPI shutdown. The machine notes shut it down from inside, with `sudo -n shutdown -h now` as `collierjr`, then run `restore` again.
-	- Actual cause [Bug]: As guessed. The wrap's put-back sends only the ACPI request, which vmKt6m ignores.
-	- Estimated effort: Low
-	- Actual effort: Low
-	- Progress log:
-		- 20261025: Still inside the wrap, `remote-test.bash` halts vmKt6m from inside, as `collierjr` with `sudo -n shutdown -h now`, when the wrap noted it was found off. The put-back then sees it going down. A VM found running is left up.
-		- The halt has short keepalives and a 60s cap, since its ssh can hang on the link going down. The first run hung there for 2 minutes.
-		- Verified: deed6 fails on the old `remote-test.bash` and passes on the new one. deed7 and the rest of `remote-skip-test.bash` pass.
-		- Verified: `remote-test.bash windows macos` with b26 held passed on vmKt6m, halted it, and the wrap put it back to off with no warning. The capped halt alone, inside the wrap, returned in 1s, and vmKt6m was off 27s after the wrap started.
-		- Swept: the only other VM-wrapped boxes are vmFreeBSD and vmDebARM64, which both went back to off by ACPI in earlier runs. b26 and b29w aren't VMs.
-	- Decisions:
-		- The fix sits in `remote-test.bash`, not the shared VM helper, which is outside this repo. The guest ignoring ACPI is the cause, and the halt from inside works around it.
-		- The found state comes from the helper's `status` note, so a VM someone left running stays running.
-		- The guests that need it are in one table, `haltFromInside`, with the account that can halt each.
-	- Actual fix [Bug]: `remote-test.bash` halts vmKt6m from inside before the put-back, when it was found off.
-	- Branch: r1025
-	- Test case: `cicd/utility/remote-skip-test.bash` deed6 and deed7.
-	- Closed: 20261025-204220
-
-- cicd's local hooks stopped running when the repo moved into `gitniblet-floss/repo`.
-	- ID: 2026102409431176
-	- Type: Bug
-	- Status: Done
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261024-094311
-	- Opened by: JC
-	- Incorrect behavior [Bug]: `cicd.bash` looked for hooks in `../private/cicd-hooks` beside the repo, which no longer exists, so `scrub-vendor.bash` never ran before a publish, with no warning.
-	- Expected behavior [Bug]: The hooks in the project's own `private/cicd-hooks` run before publish.
-	- Reproduced [Bug]: 20261024, from the floss main checkout.
-	- Actual cause [Bug]: The folder rename added a level, and the path is relative to the repo.
-	- Estimated effort: Low
-	- Actual effort: Low
-	- Actual fix [Bug]: The hooks dir is now `../../private/cicd-hooks`, which is the same folder from the main checkout and from a worktree beside it.
-	- Branch: ciflow
-	- Test case: Not applicable, a path in a local-only stage.
 
 - Remote boxes: one line per test with its ID.
 	- ID: 2026102508574387
@@ -1515,6 +1700,35 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Test case: No test ID, since it's a scan, not a test. The govulncheck step in every full run and in hosted CI fails on it. It listed both advisories at v0.21.0 and lists none at v0.41.0.
 	- Closed: 20261024-071232
 
+- Pickers for `list_type: literal` and `list_type: sql` fields.
+	- ID: 2026102408470118
+	- Type: Enhancement
+	- Status: Done
+	- Test environment: b23 runs `gitniblet 1.0.0-beta.2 (f6525f9) (2026-10-24)`, dogfooded from `dev` 20261024, which has this.
+	- Stand-in: Build deefv on the same scratch database, in the TUI and web. The `lookup_values` form's group picker listed none, Size and Status, with the row's group selected. A literal picker listed `Chore, misc` whole, and an sql picker showed its query's titles and saved the picked idx.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261024-084701
+	- Opened by: JC
+	- Parent ID: 2026102407295340
+	- Prereq IDs: 2026102408470113
+	- Requirements [Feature]:
+		- Same picker as for lookups, fed from the literal list or the query in `list_source`. The built-in `lookup_values.lookups_idx` is one.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 20261024: Edit forms in both UIs pick a `literal` or `sql` field from its `list_source`, with none first and a held value that isn't listed kept second, as for lookups.
+		- A literal list splits on commas outside quotes. A query gives the value in its first column and the label in its second, or the value again. It runs when a form opens, never for a list.
+		- A query that fails stops the form with an error naming the field. A `list_type` with no `list_source` warns at open.
+		- syntax.md has a line for both, with an example.
+		- Verified: the new tests fail with the pickers turned off and pass with them, 3 runs under `-race` too. `test.bash`, the wide gofmt, the CLI smoke, staticcheck and gosec pass.
+		- Swept: the same edit forms as 2026102408470113. No demo schema uses `list_type`.
+	- Decisions:
+		- Lists still show a `literal` or `sql` field as stored, not the query's label.
+		- A write isn't checked against the list, unlike a lookup. The requirement didn't ask for it, and a query's rows can change under a held value.
+	- Branch: round1024
+	- Test case: `TestPickerChoices` in `source/internal/core/schema/picker_test.go`, `TestLiteralPickerInTUI` in `source/internal/tui/lookups_test.go`, and `TestListPickersInWeb` in `source/internal/web/lookups_test.go`.
+	- Closed: 20261025-223453
+
 - Hosted CI can be started by hand.
 	- ID: 2026102409431181
 	- Type: Task
@@ -1632,14 +1846,14 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Item 2: `TestGateRoutesRefusedWhenNotGated` (davaf).
 		- Item 3: `TestUnknownUserStillCostsAKDFRun` (davaa).
 		- Item 4: none. A data race shows only under `-race`, and the Race tests step covers only the TUI.
-		- Item 5: none yet. 2026102521481107.
-		- Item 6: none yet. 2026102521481107.
+		- Item 5: `TestAttachmentWorkingCopyStaysInTemp` (defpr).
+		- Item 6: `TestSecondWriterWaits` (defps).
 		- Item 7: `TestUnrunnableCommandsFail` (dava8).
 		- Item 8: `TestTableFlagWithoutDatabase` (dava9).
-		- Item 9: none yet. 2026102521481107.
+		- Item 9: `TestRunWrongArgCountIsAnError` (defpt).
 		- Item 10: none. Whether a prompt echoes needs a real terminal, so it's a hand check.
-		- Item 11: `FuzzParse` (d9nwj) seeds from the example, and `TestParseExampleDDL` (d9dzs) fails without it. The seed still skips a missing file quietly, which is in 2026102521481107.
-		- Item 12: none yet. 2026102521481107.
+		- Item 11: `FuzzParse` (d9nwj) seeds from the example, and fails without it. `TestParseExampleDDL` (d9dzs) parses it, and skips without it.
+		- Item 12: `TestSyncLeavesViewAndKeyOut` (defpv).
 
 #### Done - Features and enhancements
 
@@ -1774,7 +1988,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 - ✅ Exe name should be 'gitniblet'.
 	- Done: the built binary and all user-facing references (CLI/TUI/web usage, version line, web title) are now `gitniblet`; `cmd/gitniblet` renamed to `cmd/gitniblet`. The module path `gitniblet` and the `GITNIBLET_USER`/`GITNIBLET_HOST` env vars are unchanged.
-	- Test case: `TestVersionLine` (debg5) checks the name in the version line, and `smoke-cli.bash` runs `bin/gitniblet`, with no ID yet (2026102521481107).
+	- Test case: `TestVersionLine` (debg5) checks the name in the version line, and `smoke-cli.bash` defpw runs `bin/gitniblet`.
 
 - ✅ Order of fields in txlog should NOT affect backward or forward schema compatibility.
 	- Done: the reader maps columns by the header row's names instead of fixed positions. A column can be reordered, added, or dropped - an unknown extra column is ignored, a missing one defaults to empty (this subsumes the old host_name legacy-width special-case). Header rows are detected by their reserved column names, so even the header order can change. A record just needs enough fields to carry the required columns, else it's flagged torn.
@@ -1816,7 +2030,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- ✅ Create that file.
 	- Done: README gained a "Quick start" with a minimal schema and a full hierarchical to-do example, plus a basic CLI walkthrough and a pointer to the full syntax reference. Both DDL blocks were parse-verified, and the to-do one runs end to end.
 	- Done: new `github/syntax.md` is the complete reference covering DDL grammar, types, system columns, uniques, features, access, renames, views, tunables, the sidecar files, all CLI verbs, run modes, and env vars. It documents only implemented behavior; example.ddl's not-yet-wired keys are flagged as forward-looking.
-	- Test case: none. Docs. A check that the README's schema blocks still parse is in 2026102521481107.
+	- Test case: `TestDocSchemasParse` (defpx) parses the schema blocks in README.md and syntax.md.
 
 - ✅ Partial flag list:
 	- ✅ `--init[=]["git repo root to auto-calculate subfolders for (e.g. 'gitniblet/dbname/'), or override default with specific 'git-repo-root-path/subfolder(s)/'"]`  ## If no arg specified, and already in a git root or DDL is in $PWD, use it. Otherwise error.

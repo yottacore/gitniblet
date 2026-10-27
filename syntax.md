@@ -45,7 +45,7 @@ The schema is an [SHCL](https://github.com/jim-collier/shcl) file (`*.shcl`) - a
 - **Repeating a key makes an instance.** `table:` appears once per table and `field:` once per field; the value tells them apart. Two entries with the *same* name and value are the same node and their children merge, which is what lets you re-open `database:` or `tables:` further down the file instead of scrolling back to the right indent. The flip side: **two tables with the same name are one table**, the second entry's fields folding into the first. Any such combining is reported at load with both line numbers, so it is never silent - if the report is about a section you re-opened on purpose, it is telling you the fold worked; if it names a table you meant to be new, you have two schemas fighting over one name.
 - **Path shorthand.** `database.relationships.relationship: r1` is the same as the nested form. Use it for a one-off rather than indenting four levels.
 - **Wrappers are transparent.** `database:` (around `tables:`/`relationships:`) and `ui:` (around `views:`/`default_view:`) are organizational; a flat schema without them parses the same.
-- **Lists** are comma-separated (`aliases: old_task, older_task`), or one `* item` per line.
+- **Lists** are comma-separated in brackets (`aliases: [old_task, older_task]`), or one `* item` per line.
 - **Raw blocks** hold a value verbatim: three or more backticks or tildes, optionally with an info string, on the lines below the key.
 
 	```
@@ -119,14 +119,14 @@ Each `field:` has a name and, at minimum, a `type:`. Other per-field keys the cu
 						lookup_in_lists: both
 	```
 
-- `ui:` -> `list_type: literal` or `list_type: sql` - an edit form picks the field's value from a list. For `literal`, `list_source:` is a comma list of values, quoted where one holds a comma. For `sql`, it's a backtick query run each time the form opens: the first column is the value stored, and the second, if there is one, is what the list shows. Lists show the stored value. Nothing checks it on write.
+- `ui:` -> `list_type: literal` or `list_type: sql` - an edit form picks the field's value from a list. For `literal`, `list_source:` is a list of values in brackets, quoted where one holds a comma. For `sql`, it's a backtick query run each time the form opens: the first column is the value stored, and the second, if there is one, is what the list shows. Lists show the stored value. Nothing checks it on write.
 
 	```shcl
 				field: kind
 					type: string
 					ui:
 						list_type: literal
-						list_source: "Bug", "Task", "Chore"
+						list_source: ["Bug", "Task", "Chore"]
 	```
 
 Additional keys appear in `project/example.shcl` (the rest of `ui:`, `validation:`, `special:`, `defaultval:`, widgets, formats). These parse but their runtime behavior is still being built out; treat them as forward-looking until a release note says otherwise.
@@ -167,15 +167,15 @@ A table can opt out of these with `system_fields: no` (used internally by the au
 
 ```
 			uniques:
-				unique: title, parent_task    ## a composite unique (also indexed)
+				unique: [title, parent_task]  ## a composite unique (also indexed)
 				unique: slug                  ## and another
 			indexes:
 				index: status                 ## a plain index
 ```
 
-Each constraint is its own `unique:` or `index:` entry; the fields in one entry are a comma-separated list. Unique constraints are partial (they ignore soft-deleted rows) and auto-named `ux_<table>__<fields>`. Declaring an index identical to a unique warns (the unique already indexes it).
+Each constraint is its own `unique:` or `index:` entry; the fields in one entry are a comma-separated list in brackets. Unique constraints are partial (they ignore soft-deleted rows) and auto-named `ux_<table>__<fields>`. Declaring an index identical to a unique warns (the unique already indexes it).
 
-Every name in an entry has to be a field of that table (a system column counts). One that is not is an error, not a warning: the whole entry is dropped and the database reports as unopenable with the offending name and its line. The entry goes as a unit rather than one name at a time, because pruning the typo out of `unique: title, slgu` would leave `unique: title` - a stricter rule than was written, which would then refuse perfectly good rows.
+Every name in an entry has to be a field of that table (a system column counts). One that is not is an error, not a warning: the whole entry is dropped and the database reports as unopenable with the offending name and its line. The entry goes as a unit rather than one name at a time, because pruning the typo out of `unique: [title, slgu]` would leave `unique: [title]` - a stricter rule than was written, which would then refuse perfectly good rows.
 
 ### Opt-in table features
 
@@ -251,7 +251,7 @@ Resolution scans database -> table -> field outermost first: the first `always`/
 
 `aliases:` lists a table's or field's former names. The `--rename-table` / `--rename-field` CLI ops maintain them for you: they rewrite the schema file, `ALTER` the SQLite view, and add the old name as an alias. Replay then translates old names in historical log entries to the current names, so the append-only log is never rewritten and pre-rename history still rebuilds a correct view.
 
-A rename re-emits the schema in SHCL's canonical form. Your comments and the blank lines between sections come through untouched, but hand-tuned column alignment does not - `type:          string` comes back as `type: string`. Once a file has been through one rename it is already canonical, so later ones leave it alone.
+A rename keeps the schema's lines as typed, apart from the ones it changes, so your comments, blank lines and column alignment come through untouched. A schema written before shcl 3 comes back in shcl 3's form the first time, and that one does reflow hand-tuned column alignment - `type:          string` comes back as `type: string`. Later renames leave it alone.
 
 ## Relationships
 
@@ -283,13 +283,13 @@ The built-in `lookups` and `lookup_values` tables can start out with rows from t
 database:
 	seed:
 		table: lookups
-			row: idx=1, title="Task status"
+			row: [idx=1, "title=Task status"]
 		table: lookup_values
-			row: idx=1, lookups_idx=1, title="Open",   symbol="🔘", sort=1
-			row: idx=2, lookups_idx=1, title="Closed", symbol="✅", sort=2
+			row: [idx=1, lookups_idx=1, title=Open,   "symbol=🔘", sort=1]
+			row: [idx=2, lookups_idx=1, title=Closed, "symbol=✅", sort=2]
 ~~~
 
-Each `row:` is a comma list of `field=value` pairs, and has to give its `idx`. Quote a value that has a comma in it.
+Each `row:` is a list of `field=value` pairs in brackets, and has to give its `idx`. Quote a pair whose value has a comma, a space, or a quote in it, such as `"title=Task status"`.
 
 At open, after the log is replayed, each row whose `idx` no row holds yet is created through the log, like any other write. A row that's already there is never touched, so once a row is seeded, edits made to it in the UI win for good. That goes for deleting one too: a deleted row still holds its idx, so it doesn't come back.
 
@@ -318,7 +318,7 @@ Block keys:
 - `table:` - the table the block shows.
 - `type:` - `grid` (flat table), `tree_grid` (hierarchical, ordered depth-first along `parent_field`, indented by depth), `form` (single-record panel), or `comments` (a detail pane over the table's `comments` feature - it follows a sibling list block's selected row and lists that row's thread with an add affordance; the comments never appear as a list column).
 - `parent_field:` - for `tree_grid`, the field holding a row's parent id (a self-reference). Rows with an empty or unknown parent are roots; orphans and cycles degrade to extra roots rather than hiding rows.
-- `location:` - `<relative-to>, <above|below|left|right>, <percent>` - sets a split's axis and share. The direction and percent are honored; the relative-to element is currently ignored (blocks place in DDL order).
+- `location:` - `[<relative-to>, <above|below|left|right>, <percent>]` - sets a split's axis and share. The direction and percent are honored; the relative-to element is currently ignored (blocks place in DDL order).
 - `readonly:` - view-level, overridable per block.
 
 Blocks open empty (the "no records until asked" rule); the UI's "All" action or a named-query dropdown fills them, and `startup_named_query` fills one on open. A block over an unknown table is dropped with a warning; a bad `tree_grid` degrades to a plain grid; a `comments` block over a table without the comments feature is dropped with a warning.

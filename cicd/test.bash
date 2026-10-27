@@ -16,6 +16,7 @@
 
 set -euo pipefail
 source "$(dirname "$0")/utility/include/cpu-limit.bash"  ## GITNIBLET_JOBS + GOMAXPROCS (<=half cores)
+source "$(dirname "$0")/utility/include/temp-run.bash"   ## fConfigHome_Use + fSafeRm
 repoRoot="$(realpath -e "$(dirname "$0")/..")"
 idDir="${repoRoot}/cicd/utility/testid"   ## its own module, outside vendor mode, hence GOFLAGS=
 cd "${repoRoot}/source"
@@ -33,6 +34,9 @@ echo "test IDs ..."
 GOFLAGS=''  go -C "${idDir}" run . check "${repoRoot}"
 
 echo "go test ..."
+## A test that misses its own temp registry lands here, not in ~/.config, and fails the run.
+fakeHome="$(fTempDir_Make config-home)"; trap 'fSafeRm "${fakeHome}" > /dev/null' EXIT
+fConfigHome_Use "${fakeHome}"
 fGoTests(){  ## Both go test exits count, since a go command that dies early says nothing in JSON.
 	local rc=0
 	go test -json -mod=vendor -p "${GITNIBLET_JOBS}" -parallel "${GITNIBLET_JOBS}" "${pkgs[@]:-./...}"  ||  rc=1
@@ -40,6 +44,7 @@ fGoTests(){  ## Both go test exits count, since a go command that dies early say
 	return "${rc}"
 }
 fGoTests | GOFLAGS='' go -C "${idDir}" run . report "${repoRoot}"
+fConfigHome_Check "${fakeHome}"
 
 ## No binary launch here - the app is left for a separate manual run before
 ## the merge, so it can be canceled if it misbehaves.
@@ -55,3 +60,4 @@ echo "test.bash: PASS"
 ##		- 20261025 JC: -parallel passed explicitly.
 ##		- 20261025 JC: Test IDs checked, and one PASS/FAIL/SKIP line per test with its ID.
 ##		- 20261025 JC: Takes packages, for cicd.bash --backlog-run-quick's areas.
+##		- 20261026 JC: Tests run with a fake home, and fail if the default registry was used.
