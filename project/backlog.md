@@ -173,6 +173,19 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Commit: e37fe11
 	- Test case: `TestBuildNumber` (dedrs) and `TestVersionLine` (debg5) in `source/app/app_test.go`, and the version checks in `smoke-cli.bash`.
 
+- Move to shclwrap's newest dev, and drop the upgrade workarounds it made needless.
+	- ID: 2026102621002700
+	- Type: Task
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261026-210027
+	- Opened by: JC
+	- Related IDs: 2026102509204445
+	- Requirements [Feature]:
+		- `source/go.mod` takes shclwrap dev 54dc6c6 or newer, and enterprise's `go.mod` follows, per deft0.
+		- shclwrap now keeps a 2.x file's blank lines on upgrade and reads a quoted comma as 2.0 did. `shclio`'s own line put-back and `legacyRow`'s seed-row rewrite go, unless a test shows a case shclwrap still misses.
+		- The backtick-value swap stays until shclwrap's 2026102618065645 is in.
+
 - steps-test deef2 fails when the outer run's own log is written mid-test.
 	- ID: 2026102619384200
 	- Type: Bug
