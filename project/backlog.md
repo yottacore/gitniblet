@@ -32,6 +32,19 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 ## Issues
 
+- steps-test deef2 fails when the outer run's own log is written mid-test.
+	- ID: 2026102619384200
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261026-193842
+	- Opened by: JC
+	- Steps to reproduce [Bug]: Run `cicd/cicd.bash --backlog-run-full`, so `steps-test.bash` runs inside a run that tees to `cicd/artifacts/lint/`.
+	- Incorrect behavior [Bug]: `FAIL deef2`, "a new log in cicd/artifacts/lint". It failed once in round r1026's full run, and passed when `steps-test.bash` ran alone.
+	- Expected behavior [Bug]: deef2 fails only when the nested run writes its log to the lint folder.
+	- Possible cause [Bug]: It counts `run_*.log` files newer than its run folder before dedq7 and again after. The outer run's own log is open and growing, so it can be older at the first count and newer at the second. Compare the set of file names instead, or leave out the outer run's log.
+	- Test case: deef2.
+
 - A pipeline test runs the binary against the real config folder.
 	- ID: 2026102613060001
 	- Type: Bug
