@@ -62,11 +62,11 @@ field: tunables.gc_age_days
 
 field: database.encryption
 	type: string
-	allowed: always, never, auto
+	allowed: [always, never, auto]
 	desc: Locks encryption for every table and field below unless auto.
 field: encryption
 	type: string
-	allowed: always, never, auto
+	allowed: [always, never, auto]
 
 field: database.tables
 	inherits: tables
@@ -97,187 +97,187 @@ field: default_view
 # -- tables --
 
 fragment: tables
-	field: "table[*]"
+	field: "table(*)"
 		type: string
-		repeat: 0, 4096
+		repeat: [0, 4096]
 		desc: One table. Its value is the table name.
-	field: "table[*].aliases"
+	field: "table(*).aliases"
 		type: string-array
-		desc: Former names, so a renamed table still replays from the log.
-	field: "table[*].system_fields"
+		desc: "Former names, so a renamed table still replays from the log."
+	field: "table(*).system_fields"
 		type: bool
 		desc: Set no to drop the auto-added is_active/date_created/is_deleted.
-	field: "table[*].encryption"
+	field: "table(*).encryption"
 		type: string
-		allowed: always, never, auto
+		allowed: [always, never, auto]
 
-	field: "table[*].access.read.whitelist"
+	field: "table(*).access.read.whitelist"
 		type: string-array
-	field: "table[*].access.read.blacklist"
+	field: "table(*).access.read.blacklist"
 		type: string-array
-	field: "table[*].access.read.blaclist"
+	field: "table(*).access.read.blaclist"
 		type: string-array
 		desc: Misspelling the original example DDL carried; still read.
-	field: "table[*].access.write.whitelist"
+	field: "table(*).access.write.whitelist"
 		type: string-array
-	field: "table[*].access.write.blacklist"
+	field: "table(*).access.write.blacklist"
 		type: string-array
-	field: "table[*].access.delete.whitelist"
+	field: "table(*).access.delete.whitelist"
 		type: string-array
-	field: "table[*].access.delete.blacklist"
+	field: "table(*).access.delete.blacklist"
 		type: string-array
 
-	field: "table[*].code.before_update"
+	field: "table(*).code.before_update"
 		type: string
-	field: "table[*].code.after_update"
+	field: "table(*).code.after_update"
 		type: string
-	field: "table[*].methods.before_update"
+	field: "table(*).methods.before_update"
 		type: string
-	field: "table[*].methods.after_update"
+	field: "table(*).methods.after_update"
 		type: string
 
-	field: "table[*].uniques.unique[*]"
+	field: "table(*).uniques.unique(*)"
 		type: string-array
-		repeat: 0, 4096
-		desc: One unique group, as a comma list of field names. Also indexed.
-	field: "table[*].indexes.index[*]"
+		repeat: [0, 4096]
+		desc: "One unique group, as a comma list of field names. Also indexed."
+	field: "table(*).indexes.index(*)"
 		type: string-array
-		repeat: 0, 4096
-		desc: One index, as a comma list of field names.
+		repeat: [0, 4096]
+		desc: "One index, as a comma list of field names."
 
-	field: "table[*].features.local_attachments"
+	field: "table(*).features.local_attachments"
 		type: bool
-	field: "table[*].features.uri_attachments"
+	field: "table(*).features.uri_attachments"
 		type: bool
-	field: "table[*].features.comments"
+	field: "table(*).features.comments"
 		type: bool
-	field: "table[*].features.audit_trail"
+	field: "table(*).features.audit_trail"
 		type: bool
-	field: "table[*].features.row_level_access"
+	field: "table(*).features.row_level_access"
 		type: bool
 
 	# -- fields --
 
-	field: "table[*].fields.field[*]"
+	field: "table(*).fields.field(*)"
 		type: string
-		repeat: 0, 4096
+		repeat: [0, 4096]
 		desc: One column. Its value is the field name.
-	field: "table[*].fields.field[*].aliases"
+	field: "table(*).fields.field(*).aliases"
 		type: string-array
-	field: "table[*].fields.field[*].type"
+	field: "table(*).fields.field(*).type"
 		type: string
-		allowed: string, int, float, bool, datetime, datetime_local, datetime_utc, binary, ref
+		allowed: [string, int, float, bool, datetime, datetime_local, datetime_utc, binary, ref]
 		desc: Column type. ref holds another row's id as raw bytes.
-	field: "table[*].fields.field[*].encryption"
+	field: "table(*).fields.field(*).encryption"
 		type: string
-		allowed: always, never, auto
-	field: "table[*].fields.field[*].special"
+		allowed: [always, never, auto]
+	field: "table(*).fields.field(*).special"
 		type: string
 		desc: Percent or currency handling for display and storage.
-	field: "table[*].fields.field[*].is_active"
+	field: "table(*).fields.field(*).is_active"
 		type: bool
-	field: "table[*].fields.field[*].defaultval"
-		desc: A literal, the sentinel @null or @previous, or a fFunction() name.
-	field: "table[*].fields.field[*].null_ok"
+	field: "table(*).fields.field(*).defaultval"
+		desc: "A literal, the sentinel @null or @previous, or a fFunction() name."
+	field: "table(*).fields.field(*).null_ok"
 		type: bool
-	field: "table[*].fields.field[*].empty_ok"
+	field: "table(*).fields.field(*).empty_ok"
 		type: bool
 
-	field: "table[*].fields.field[*].access.read.whitelist"
+	field: "table(*).fields.field(*).access.read.whitelist"
 		type: string-array
-	field: "table[*].fields.field[*].access.read.blacklist"
+	field: "table(*).fields.field(*).access.read.blacklist"
 		type: string-array
-	field: "table[*].fields.field[*].access.write.whitelist"
+	field: "table(*).fields.field(*).access.write.whitelist"
 		type: string-array
-	field: "table[*].fields.field[*].access.write.blacklist"
+	field: "table(*).fields.field(*).access.write.blacklist"
 		type: string-array
 
-	field: "table[*].fields.field[*].validation.null_ok"
+	field: "table(*).fields.field(*).validation.null_ok"
 		type: bool
-	field: "table[*].fields.field[*].validation.empty_ok"
+	field: "table(*).fields.field(*).validation.empty_ok"
 		type: bool
-	field: "table[*].fields.field[*].validation.required"
+	field: "table(*).fields.field(*).validation.required"
 		type: bool
-	field: "table[*].fields.field[*].validation.minlen"
+	field: "table(*).fields.field(*).validation.minlen"
 		type: int
 		min: 0
-	field: "table[*].fields.field[*].validation.maxlen"
+	field: "table(*).fields.field(*).validation.maxlen"
 		type: int
 		min: 0
-	field: "table[*].fields.field[*].validation.minval"
+	field: "table(*).fields.field(*).validation.minval"
 		type: float
-	field: "table[*].fields.field[*].validation.maxval"
+	field: "table(*).fields.field(*).validation.maxval"
 		type: float
-	field: "table[*].fields.field[*].validation.regex"
-		desc: Untyped: a regex is read verbatim, so commas stay content.
-	field: "table[*].fields.field[*].validation.method"
+	field: "table(*).fields.field(*).validation.regex"
+		desc: "Untyped: a regex is read verbatim, so commas stay content."
+	field: "table(*).fields.field(*).validation.method"
 		type: string
-	field: "table[*].fields.field[*].validation.defaultval"
+	field: "table(*).fields.field(*).validation.defaultval"
 
-	field: "table[*].fields.field[*].code.before_update"
+	field: "table(*).fields.field(*).code.before_update"
 		type: string
-	field: "table[*].fields.field[*].code.after_update"
+	field: "table(*).fields.field(*).code.after_update"
 		type: string
-	field: "table[*].fields.field[*].methods.before_update"
+	field: "table(*).fields.field(*).methods.before_update"
 		type: string
-	field: "table[*].fields.field[*].methods.after_update"
+	field: "table(*).fields.field(*).methods.after_update"
 		type: string
 
-	field: "table[*].fields.field[*].ui.visible_form"
+	field: "table(*).fields.field(*).ui.visible_form"
 		type: bool
-	field: "table[*].fields.field[*].ui.visible_list"
+	field: "table(*).fields.field(*).ui.visible_list"
 		type: bool
-	field: "table[*].fields.field[*].ui.label"
+	field: "table(*).fields.field(*).ui.label"
 		type: string
-	field: "table[*].fields.field[*].ui.title"
+	field: "table(*).fields.field(*).ui.title"
 		type: string
 		desc: Earlier spelling of label.
-	field: "table[*].fields.field[*].ui.description"
+	field: "table(*).fields.field(*).ui.description"
 		type: string
-	field: "table[*].fields.field[*].ui.order"
+	field: "table(*).fields.field(*).ui.order"
 		type: float
 		desc: Display and tab order.
-	field: "table[*].fields.field[*].ui.readonly"
+	field: "table(*).fields.field(*).ui.readonly"
 		type: bool
-	field: "table[*].fields.field[*].ui.width"
+	field: "table(*).fields.field(*).ui.width"
 		type: int
 		min: 0
-	field: "table[*].fields.field[*].ui.widget"
+	field: "table(*).fields.field(*).ui.widget"
 		type: string
-		allowed: listbox, editbox, radio, checkbox, image, audio
-	field: "table[*].fields.field[*].ui.format"
+		allowed: [listbox, editbox, radio, checkbox, image, audio]
+	field: "table(*).fields.field(*).ui.format"
 		type: string
-	field: "table[*].fields.field[*].ui.list_type"
+	field: "table(*).fields.field(*).ui.list_type"
 		type: string
-		allowed: literal, sql, lookup
-	field: "table[*].fields.field[*].ui.list_source"
-		desc: Untyped: holds literals, a SQL block, or a lookups idx.
-	field: "table[*].fields.field[*].ui.lookup_in_lists"
+		allowed: [literal, sql, lookup]
+	field: "table(*).fields.field(*).ui.list_source"
+		desc: "Untyped: holds literals, a SQL block, or a lookups idx."
+	field: "table(*).fields.field(*).ui.lookup_in_lists"
 		type: string
-		allowed: symbol, title, both
-	field: "table[*].fields.field[*].ui.lookup_in_forms"
+		allowed: [symbol, title, both]
+	field: "table(*).fields.field(*).ui.lookup_in_forms"
 		type: string
-		allowed: symbol, title, both
+		allowed: [symbol, title, both]
 
 # -- relationships --
 
 fragment: relationships
-	field: "relationship[*]"
-		repeat: 0, 4096
-		desc: One relationship. Named, so two unnamed ones cannot merge.
-	field: "relationship[*].type"
+	field: "relationship(*)"
+		repeat: [0, 4096]
+		desc: "One relationship. Named, so two unnamed ones cannot merge."
+	field: "relationship(*).type"
 		type: string
-		allowed: 1:m, m:m
-	field: "relationship[*].parent"
+		allowed: ["1:m", "m:m"]
+	field: "relationship(*).parent"
 		type: string
-	field: "relationship[*].child"
+	field: "relationship(*).child"
 		type: string
-	field: "relationship[*].parent_id_field"
+	field: "relationship(*).parent_id_field"
 		type: string
 		desc: The child field holding the parent id; it gets indexed.
-	field: "relationship[*].cascade_delete"
+	field: "relationship(*).cascade_delete"
 		type: bool
-	field: "relationship[*].enable_audit_trail"
+	field: "relationship(*).enable_audit_trail"
 		type: bool
 
 # -- seed rows --
@@ -286,37 +286,37 @@ fragment: relationships
 # overwrite: a later runtime edit wins for good.
 
 fragment: seed
-	field: "table[*]"
+	field: "table(*)"
 		type: string
-		repeat: 0, 4096
+		repeat: [0, 4096]
 		desc: One seeded table. Its value is the table name.
-	field: "table[*].row[*]"
+	field: "table(*).row(*)"
 		type: string-array
-		repeat: 0, 4096
-		desc: One row, as a comma list of field=value pairs.
+		repeat: [0, 4096]
+		desc: "One row, as a comma list of field=value pairs."
 
 # -- views --
 
 fragment: views
-	field: "view[*]"
+	field: "view(*)"
 		type: string
-		repeat: 0, 4096
+		repeat: [0, 4096]
 		desc: One view. Its value is the view name.
-	field: "view[*].aliases"
+	field: "view(*).aliases"
 		type: string-array
-	field: "view[*].startup_named_query"
+	field: "view(*).startup_named_query"
 		type: string
 		desc: Named query whose dataset loads when the view opens.
-	field: "view[*].default_named_query"
+	field: "view(*).default_named_query"
 		type: string
 		desc: Pre-rename spelling of startup_named_query.
-	field: "view[*].readonly"
+	field: "view(*).readonly"
 		type: bool
-	field: "view[*].access.whitelist"
+	field: "view(*).access.whitelist"
 		type: string-array
-	field: "view[*].access.blacklist"
+	field: "view(*).access.blacklist"
 		type: string-array
-	field: "view[*].layout"
+	field: "view(*).layout"
 		inherits: layout
 
 # -- layout blocks --
@@ -325,19 +325,19 @@ fragment: views
 # at rest.
 
 fragment: layout
-	field: "block[*]"
+	field: "block(*)"
 		type: string
-		repeat: 0, 4096
+		repeat: [0, 4096]
 		inherits: layout
 		desc: One layout block. Nests to any depth.
-	field: "block[*].table"
+	field: "block(*).table"
 		type: string
-	field: "block[*].type"
+	field: "block(*).type"
 		type: string
-		allowed: form, grid, tree_grid, comments
-	field: "block[*].parent_field"
+		allowed: [form, grid, tree_grid, comments]
+	field: "block(*).parent_field"
 		type: string
-	field: "block[*].location"
+	field: "block(*).location"
 		type: string-array
-	field: "block[*].readonly"
+	field: "block(*).readonly"
 		type: bool

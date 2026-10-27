@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	shcl "github.com/jim-collier/shcl/source/go"
+	"github.com/yottacore/gitniblet/internal/core/shclio"
 )
 
 // ID: d9dzp
@@ -618,11 +618,11 @@ func TestSchemaSelfCheck(t *testing.T) {
 // against the vocabulary rather than dressed up as a line of the user's DDL.
 // ID: dav1a
 func TestSchemaFaultLeavesValidationOn(t *testing.T) {
-	broken := shcl.Parse("field: a\n\ttype: no_such_type\nfield: b\n\ttype: int\n")
-	doc := shcl.Parse("a: whatever\nb: not_a_number\n")
+	broken, _ := shclio.Load("field: a\n\ttype: no_such_type\nfield: b\n\ttype: int\n", shclio.Standard)
+	doc, _ := shclio.Load("a: whatever\nb: not_a_number\n", shclio.Standard)
 
 	var fault, survived bool
-	for _, d := range doc.Validate(broken) {
+	for _, d := range doc.Check(broken) {
 		if isSchemaFault(d) {
 			fault = true
 			continue

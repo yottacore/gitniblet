@@ -32,6 +32,43 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 ## Issues
 
+- Read every shcl file through shclwrap and shcl 3.0.
+	- ID: 2026102509204445
+	- Type: Task
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: `cicd/cicd.bash --backlog-run-full`, plain arm.
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261025-092044
+	- Opened by: JC
+	- Related IDs: 2026102509202821, 2026102618065650
+	- Requirements [Feature]:
+		- gitniblet vendors shcl's Go library v1.2.0, which reads the 2.x rules. It takes a bare `a, b` list and ignores `[a, b]`. shcl 3 refuses the bare form, so a schema with a list can't load clean in both.
+		- `source/internal/core/ddl/schema.shcl` uses `allowed: a, b`, so it fails to load in shcl 3 with V099.
+		- The schema, queries, registry, and settings files all go through shclwrap and shcl 3.0.
+		- Found in gitniblet-issue-tracker. Its seed rows keep the bare form until this is in.
+	- Progress log:
+		- 20261026: Every shcl file is read and written through shclwrap's `shclw3`, at f03fe5e over shcl 3.0 dev 2174f0d9, from one new package, `internal/core/shclio`. shcl 1.2 is out of `go.mod` and `vendor/`.
+		- `ddl/schema.shcl` and the queries schema are in 3.0 form: lists in brackets, `name(*)` paths, and `desc:` text with commas quoted. Both load with no errors.
+		- A file with no Format line that doesn't load clean on 3.0 is upgraded in memory as it's read. Backtick values and old seed rows keep the reading they always had, and every line keeps its number. A saved record, settings, login or renamed schema file names Format 3.
+		- A rename keeps the file's lines as typed, and writes the alias list in brackets. The literal `list_source` picker takes the bracket form, and still takes the old one.
+		- The issue file's note said this program already read with from 2. It didn't use shclwrap at all. It now upgrades from 0, and from 2 only when from 0 says the file reads two ways.
+		- Filed in shclwrap: 2026102618065634 (the upgrade moves lines), 2026102618065640 (a 1.2 element split at a quoted comma) and 2026102618065645 (keep a backtick value). gitniblet works around all 3.
+		- gitniblet-issue-tracker already has 2026102509013450 for its seed rows. In 3.0 form a row is `row: [idx=1, "title=Task status"]`, since a bare element can't hold a space or a quote.
+		- The docs and examples still show the bare form. That's 2026102618065650.
+		- Enterprise builds floss through a `replace`, so its `go.mod` needs shclwrap before it builds again. Not changed here.
+		- 20261026: d9e06 `TestRenameTable` and the CLI's `TestRenameOpsEndToEnd` expected `aliases: person` and `aliases: nick`. They now expect `aliases: [person]` and `aliases: [nick]`, since 3.0 writes a list in brackets. The rest of each test is the same.
+		- Verified: `--backlog-run-quick` passed, 256 tests, with staticcheck clean and the CLI smoke passing.
+		- Verified: defnx, defny, defnz and defp0 fail with the backtick keep, the line fix, or the old `schema.shcl` put back, and pass with them. dec93 failed before the seed row fix and passes after.
+		- Swept: every shcl call in floss, tests included: the record, settings and login files, the schema, queries, rename, cursor and seed readers, and the literal picker. No `[#i]` or `[%q]` path is left. Enterprise and vendor import no shcl package.
+	- Decisions:
+		- One package, `shclio`, picks the shcl version, so a later one is a change in one place.
+		- A file that reads two ways is upgraded from 2, since every file without a Format line was written for the old rules. A refused file loads as it is, so its errors are named with their lines.
+		- The lines the 2.x reading gets wrong for gitniblet are swapped for a bare word before the upgrade and put back after. Matching them up afterwards fails, since the upgrade folds blank lines.
+		- Saves name the format, so a later load never has to guess.
+		- The vocabulary's `desc:` text is quoted, not turned into arrays.
+	- Branch: r1026
+	- Test case: defnx and defny (shclio), defnz and defp0 (ddl), and dec93 for old seed rows.
+
 - A pipeline test runs the binary against the real config folder.
 	- ID: 2026102613060001
 	- Type: Bug
@@ -272,19 +309,17 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- The README's "Add to README.md" item: the schema blocks in README.md and syntax.md still parse.
 		- The exe name item: `smoke-cli.bash` gets a test ID on its `PASS` line, so `testid check` sees it.
 
-- Read every shcl file through shclwrap and shcl 3.0.
-	- ID: 2026102509204445
+- Write lists in brackets in the docs and examples.
+	- ID: 2026102618065650
 	- Type: Task
 	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: High
-	- Opened: 20261025-092044
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261026-180656
 	- Opened by: JC
-	- Related IDs: 2026102509202821
+	- Related IDs: 2026102509204445
 	- Requirements [Feature]:
-		- gitniblet vendors shcl's Go library v1.2.0, which reads the 2.x rules. It takes a bare `a, b` list and ignores `[a, b]`. shcl 3 refuses the bare form, so a schema with a list can't load clean in both.
-		- `source/internal/core/ddl/schema.shcl` uses `allowed: a, b`, so it fails to load in shcl 3 with V099.
-		- The schema, queries, registry, and settings files all go through shclwrap and shcl 3.0.
-		- Found in gitniblet-issue-tracker. Its seed rows keep the bare form until this is in.
+		- `syntax.md`, the README's schema blocks, `project/example.shcl`, `project/example.queries.shcl` and `cicd/utility/smoke/issues.shcl` still show bare `a, b` lists and old seed rows. They load through the upgrade, but a new schema should be written the shcl 3 way.
+		- syntax.md's `list_source` and `row:` text describes the old comma lists. In 3.0 a seed row is `row: [idx=1, "title=Task status"]`.
 
 - A config file of any name and path names the database's files.
 	- ID: 2026102509202821

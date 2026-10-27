@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 
-	shcl "github.com/jim-collier/shcl/source/go"
+	"github.com/yottacore/gitniblet/internal/core/shclio"
 )
 
 // webCredsFile holds the proxied-mode web logins. It lives at the registry root,
@@ -62,11 +62,11 @@ func LoadWebCreds() *WebCreds {
 		return c
 	}
 	doc := loadLenient(path)
-	for i, user := range doc.Instances("user") {
-		if user == "" {
+	for _, user := range doc.Each("user") {
+		if user.Value == "" {
 			continue
 		}
-		c.Users[user] = doc.GetStringOr(fmt.Sprintf("user[#%d].hash", i), "")
+		c.Users[user.Value] = doc.Str(doc.Child(user.Path, "hash"), "")
 	}
 	return c
 }
@@ -104,11 +104,13 @@ func (c *WebCreds) Save() error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	doc := shcl.New()
+	doc := shclio.New()
 	// Sorted so a save is reproducible; Go map order would reshuffle the file
 	// on every write and make it undiffable.
 	for _, user := range slices.Sorted(maps.Keys(c.Users)) {
-		doc.SetString(fmt.Sprintf("user[%q].hash", user), c.Users[user])
+		if err := doc.Put(shclio.Select("user", user)+".hash", c.Users[user]); err != nil {
+			return fmt.Errorf("web login %q: %w", user, err)
+		}
 	}
 	return save(path, doc, 0o600)
 }

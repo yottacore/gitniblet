@@ -31,7 +31,7 @@ func TestRenameTable(t *testing.T) {
 	if !strings.Contains(text, "\ttable: people  ## the people\n") {
 		t.Fatalf("value not replaced (comment must survive):\n%s", text)
 	}
-	if !strings.Contains(text, "\t\taliases: person\n") {
+	if !strings.Contains(text, "\t\taliases: [person]\n") {
 		t.Fatalf("alias line missing:\n%s", text)
 	}
 	s, err := Parse(out)

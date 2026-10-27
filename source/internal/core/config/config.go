@@ -4,12 +4,13 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
-	shcl "github.com/jim-collier/shcl/source/go"
+	"github.com/yottacore/gitniblet/internal/core/shclio"
 )
 
 const recordFile = "config.shcl"
@@ -57,13 +58,13 @@ func Load(dir string) (*DBConfig, error) {
 		return nil, err
 	}
 	cfg := DBConfig{
-		Name:       doc.GetStringOr("name", ""),
-		DDLPath:    doc.GetStringOr("ddl_path", ""),
-		LogDir:     doc.GetStringOr("log_dir", ""),
-		SQLitePath: doc.GetStringOr("sqlite_path", ""),
-		KeyFile:    doc.GetStringOr("key_file", ""),
-		Encryption: doc.GetStringOr("encryption", ""),
-		LastOpened: doc.GetStringOr("last_opened", ""),
+		Name:       doc.Str("name", ""),
+		DDLPath:    doc.Str("ddl_path", ""),
+		LogDir:     doc.Str("log_dir", ""),
+		SQLitePath: doc.Str("sqlite_path", ""),
+		KeyFile:    doc.Str("key_file", ""),
+		Encryption: doc.Str("encryption", ""),
+		LastOpened: doc.Str("last_opened", ""),
 		dir:        dir,
 	}
 	if cfg.Name == "" {
@@ -81,14 +82,18 @@ func (c *DBConfig) Save() error {
 	if err := os.MkdirAll(c.dir, 0o755); err != nil {
 		return err
 	}
-	doc := shcl.New()
-	setIfSet(doc, "name", c.Name)
-	setIfSet(doc, "ddl_path", c.DDLPath)
-	setIfSet(doc, "log_dir", c.LogDir)
-	setIfSet(doc, "sqlite_path", c.SQLitePath)
-	setIfSet(doc, "key_file", c.KeyFile)
-	setIfSet(doc, "encryption", c.Encryption)
-	setIfSet(doc, "last_opened", c.LastOpened)
+	doc := shclio.New()
+	if err := errors.Join(
+		setIfSet(doc, "name", c.Name),
+		setIfSet(doc, "ddl_path", c.DDLPath),
+		setIfSet(doc, "log_dir", c.LogDir),
+		setIfSet(doc, "sqlite_path", c.SQLitePath),
+		setIfSet(doc, "key_file", c.KeyFile),
+		setIfSet(doc, "encryption", c.Encryption),
+		setIfSet(doc, "last_opened", c.LastOpened),
+	); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
 	return save(filepath.Join(c.dir, recordFile), doc, 0o644)
 }
 

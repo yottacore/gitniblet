@@ -251,7 +251,7 @@ Resolution scans database -> table -> field outermost first: the first `always`/
 
 `aliases:` lists a table's or field's former names. The `--rename-table` / `--rename-field` CLI ops maintain them for you: they rewrite the schema file, `ALTER` the SQLite view, and add the old name as an alias. Replay then translates old names in historical log entries to the current names, so the append-only log is never rewritten and pre-rename history still rebuilds a correct view.
 
-A rename re-emits the schema in SHCL's canonical form. Your comments and the blank lines between sections come through untouched, but hand-tuned column alignment does not - `type:          string` comes back as `type: string`. Once a file has been through one rename it is already canonical, so later ones leave it alone.
+A rename keeps the schema's lines as typed, apart from the ones it changes, so your comments, blank lines and column alignment come through untouched. A schema written before shcl 3 comes back in shcl 3's form the first time, and that one does reflow hand-tuned column alignment - `type:          string` comes back as `type: string`. Later renames leave it alone.
 
 ## Relationships
 

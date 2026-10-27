@@ -43,6 +43,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -213,7 +215,7 @@ type WriteReason int
 
 const (
 	Writable    WriteReason = iota // the path passes the writer's validation
-	BadPath                        // empty path, or the scanner rejected it
+	BadPath                        // empty path, the scanner rejected it, or a segment carries a line break
 	ValueInPath                    // the path carries a `: value` part; writes take values separately
 	Wildcard                       // wildcard selectors are query-only
 	NoSuchIndex                    // a `[#k]` instance that does not (and can never) exist
@@ -258,6 +260,13 @@ type Read[T any] struct {
 	Line   int
 	Quoted bool
 }
+
+// Ok reports whether the author addressed this field at all: Good or Empty.
+// Note this deliberately answers differently from the *Or tier, which falls
+// back on Empty like any other non-Good read - Ok asks "is this field spoken
+// for", GetIntOr asks "do I have a usable value", and an explicitly emptied
+// field is the case where those two diverge.
+func (r Read[T]) Ok() bool { return r.Status == Good || r.Status == Empty }
 
 func (r Read[T]) at(line int, quoted bool) Read[T] {
 	r.Line = line
@@ -386,7 +395,7 @@ func FormatFloat(v float64) string {
 // merge when (name, value) matches; empty values merge into the wrapper node.
 
 type element struct {
-	text   string // quote-stripped, escapes NOT applied (applied on string read)
+	text   string // quote-stripped, escapes NOT applied (applied on string read; names differ - see scanPathEx)
 	quoted bool
 }
 
@@ -428,7 +437,7 @@ type rawValue struct {
 type value struct {
 	kind valueKind
 	els  []element
-	raw  rawValue
+	raw  *rawValue // behind a pointer: inline, its four fields would ride on every node
 }
 
 // key is the merge key: nodes with equal (name, key) collapse into one.
@@ -482,9 +491,31 @@ type nodeData struct {
 	line      int
 	starList  bool // value built from stacked "* " lines
 	starMixed bool // mix of "* " and field children already diagnosed
-	// Comment trivia, verbatim from `#` to end of line. Never part of identity
-	// or reads; merged instances concatenate leading, first trailing wins
-	// (later ones demote to leading - a canonical line has room for one).
+	// Blank-line grouping is the other half of hand-authored layout: set when
+	// a blank line preceded this node's binding line (runs collapse to one).
+	blankBefore bool
+	// This node has decided its src - set by the first source line whose
+	// value the node holds, whether or not a string was worth keeping.
+	srcSet bool
+	// Comment trivia, kept off to the side: most nodes carry none, and the
+	// four empty containers were a third of every node.
+	trivia *trivia
+	// Verbatim value text from the source line (after the colon, comment
+	// stripped, trimmed) - what a read's Raw hands back. nil when the value
+	// was synthesized (writer, stacked list, fence) OR when the spelling is
+	// exactly the display form; raw falls back to the display form either way.
+	src *string
+	// The name as the author spelled it (case unfolded, quotes and escapes
+	// resolved) - what AuthoredName() hands back, via authored(). Merged
+	// instances keep the first binding's spelling, like Line() and comments.
+	// Empty = spelled exactly like name (the overwhelmingly common case).
+	nameSrc string
+}
+
+// trivia is comment trivia, verbatim from `#` to end of line. Never part of
+// identity or reads; merged instances concatenate leading, first trailing
+// wins (later ones demote to leading - a canonical line has room for one).
+type trivia struct {
 	leading  []lead
 	trailing string // empty = none
 	// Whole-line comments that followed this node's subtree at a deeper indent
@@ -496,14 +527,85 @@ type nodeData struct {
 	// could take them - a header whose children are all commented still owns
 	// those lines. Emitted after the subtree one level deeper than this node.
 	inside []lead
-	// Blank-line grouping is the other half of hand-authored layout: set when
-	// a blank line preceded this node's binding line (runs collapse to one).
-	blankBefore bool
-	// Verbatim value text from the source line (after the colon, comment
-	// stripped, trimmed) - what a read's Raw hands back. nil when the value
-	// was synthesized (writer, stacked list, fence), where raw falls back to
-	// the display form.
-	src *string
+}
+
+func (n *nodeData) leading() []lead {
+	if n.trivia == nil {
+		return nil
+	}
+	return n.trivia.leading
+}
+
+func (n *nodeData) trailing() string {
+	if n.trivia == nil {
+		return ""
+	}
+	return n.trivia.trailing
+}
+
+func (n *nodeData) after() []lead {
+	if n.trivia == nil {
+		return nil
+	}
+	return n.trivia.after
+}
+
+func (n *nodeData) inside() []lead {
+	if n.trivia == nil {
+		return nil
+	}
+	return n.trivia.inside
+}
+
+func (n *nodeData) trivMut() *trivia {
+	if n.trivia == nil {
+		n.trivia = &trivia{}
+	}
+	return n.trivia
+}
+
+// authored is the as-authored name spelling; empty nameSrc means "same as name".
+func (n *nodeData) authored() string {
+	if n.nameSrc == "" {
+		return n.name
+	}
+	return n.nameSrc
+}
+
+// spelled stores a name's authored spelling: the empty sentinel when it
+// matches the folded name, so the duplicate string never gets allocated.
+func spelled(name, nameSrc string) string {
+	if nameSrc == name {
+		return ""
+	}
+	return nameSrc
+}
+
+// srcMatchesDisplay: true when a source value spelling is exactly the display
+// form - the case where src need not be stored, since raw's fallback
+// reproduces it.
+func srcMatchesDisplay(v *value, s string) bool {
+	switch v.kind {
+	case vEmpty:
+		return s == ""
+	case vRaw:
+		return s == v.raw.content
+	}
+	rest := s
+	for i := range v.els {
+		var ok bool
+		if i > 0 {
+			rest, ok = strings.CutPrefix(rest, ", ")
+			if !ok {
+				return false
+			}
+		}
+		rest, ok = strings.CutPrefix(rest, v.els[i].text)
+		if !ok {
+			return false
+		}
+	}
+	return rest == ""
 }
 
 // Document is a parsed SHCL document: the tree, its diagnostics, and its
@@ -513,6 +615,11 @@ type Document struct {
 	diags      []Diagnostic
 	strictness Strictness
 	orphans    []lead // top-level comments after the last binding line
+	// Lines or values parsing dropped that canonical output cannot re-emit
+	// (bad indentation, an unusable selector, past the depth cap, ...).
+	// Content-malformed lines are NOT counted - they are retained as trivia
+	// and survive a save. LostCount() serves it; SaveFile() gates on it.
+	lost int
 }
 
 const root = 0
@@ -528,24 +635,20 @@ func foldNodeInto(arena []nodeData, survivor, loser int) {
 		arena[k].parent = survivor
 	}
 	arena[survivor].children = append(arena[survivor].children, kids...)
-	lead := arena[loser].leading
-	arena[loser].leading = nil
-	arena[survivor].leading = append(arena[survivor].leading, lead...)
-	trail := arena[loser].trailing
-	arena[loser].trailing = ""
-	if trail != "" {
-		if arena[survivor].trailing == "" {
-			arena[survivor].trailing = trail
-		} else {
-			arena[survivor].leading = append(arena[survivor].leading, plainLead(trail))
+	if lt := arena[loser].trivia; lt != nil {
+		arena[loser].trivia = nil
+		st := arena[survivor].trivMut()
+		st.leading = append(st.leading, lt.leading...)
+		if lt.trailing != "" {
+			if st.trailing == "" {
+				st.trailing = lt.trailing
+			} else {
+				st.leading = append(st.leading, plainLead(lt.trailing))
+			}
 		}
+		st.after = append(st.after, lt.after...)
+		st.inside = append(st.inside, lt.inside...)
 	}
-	after := arena[loser].after
-	arena[loser].after = nil
-	arena[survivor].after = append(arena[survivor].after, after...)
-	inside := arena[loser].inside
-	arena[loser].inside = nil
-	arena[survivor].inside = append(arena[survivor].inside, inside...)
 }
 
 // MaxDepth is the maximum nesting depth (levels below the document root),
@@ -699,19 +802,24 @@ func normalizeDanglingBackslash(t string) string {
 // apostrophes (it's fine) are legal prose and stay silent.
 func unterminatedQuote(text string) bool {
 	for _, piece := range splitUnquotedCommas(text) {
-		chars := []rune(strings.TrimSpace(piece))
-		if len(chars) == 0 {
+		// Bytes, not runes: both quotes and the backslash are ASCII, and UTF-8
+		// never puts an ASCII byte inside a multibyte sequence, so the first
+		// byte, the last byte and the escape parity are the same answers the
+		// decoded form gives. Decoding here allocated a rune slice per element
+		// of every line parsed.
+		t := strings.TrimSpace(piece)
+		if t == "" {
 			continue
 		}
-		first := chars[0]
+		first := t[0]
 		if first != '"' && first != '\'' {
 			continue
 		}
 		closed := false
-		if len(chars) >= 2 && chars[len(chars)-1] == first {
+		if len(t) >= 2 && t[len(t)-1] == first {
 			esc := false
-			for _, c := range chars[1 : len(chars)-1] {
-				esc = c == '\\' && !esc
+			for i := 1; i+1 < len(t); i++ {
+				esc = t[i] == '\\' && !esc
 			}
 			closed = !esc
 		}
@@ -729,16 +837,17 @@ func parseElement(piece string) (element, bool) {
 	if t == "" {
 		return element{}, false
 	}
-	chars := []rune(t)
-	first := chars[0]
-	if (first == '"' || first == '\'') && len(chars) >= 2 && chars[len(chars)-1] == first {
+	// Bytes, not runes - see unterminatedQuote for why the answers are
+	// identical, and why this used to allocate per element of every line.
+	first := t[0]
+	if (first == '"' || first == '\'') && len(t) >= 2 && t[len(t)-1] == first {
 		// The closing quote must not itself be escaped (`"a\"` is not closed).
 		esc := false
-		for _, c := range chars[1 : len(chars)-1] {
-			esc = c == '\\' && !esc
+		for i := 1; i+1 < len(t); i++ {
+			esc = t[i] == '\\' && !esc
 		}
 		if !esc {
-			return element{text: string(chars[1 : len(chars)-1]), quoted: true}, true
+			return element{text: t[1 : len(t)-1], quoted: true}, true
 		}
 	}
 	return element{text: normalizeDanglingBackslash(t)}, true
@@ -759,20 +868,26 @@ func parseCell(text string) value {
 
 // applyEscapes handles string reads: \t \n \\ \" \'; unknown escapes stay literal.
 func applyEscapes(s string) string {
-	rs := []rune(s)
-	out := make([]rune, 0, len(rs))
-	for i := 0; i < len(rs); i++ {
-		c := rs[i]
+	// Bytes: every escape this recognizes is ASCII, and any other byte - a
+	// continuation byte included - is copied through untouched, so the result
+	// is the same string the rune walk built without decoding and re-encoding
+	// it. This runs on every string read and on every selector compare.
+	if !strings.ContainsRune(s, '\\') {
+		return s
+	}
+	out := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
 		if c != '\\' {
 			out = append(out, c)
 			continue
 		}
-		if i+1 >= len(rs) {
+		if i+1 >= len(s) {
 			out = append(out, '\\')
 			break
 		}
 		i++
-		switch rs[i] {
+		switch s[i] {
 		case 't':
 			out = append(out, '\t')
 		case 'n':
@@ -784,7 +899,7 @@ func applyEscapes(s string) string {
 		case '\'':
 			out = append(out, '\'')
 		default:
-			out = append(out, '\\', rs[i])
+			out = append(out, '\\', s[i])
 		}
 	}
 	return string(out)
@@ -793,8 +908,278 @@ func applyEscapes(s string) string {
 // dispKey is the predicate a [value] selector matches with: display form with
 // escapes applied on both sides, so ["q\"uote"] finds 'q"uote' - a
 // logical-string match, not spelling against spelling.
+// singleScalar is the restriction a QUOTED [value] selector adds on top of
+// the display match: quoting selects the scalar spelling only, so the scalar
+// "a, b" and the list a, b stop meeting the same selector.
+func singleScalar(v *value) bool {
+	return v.kind == vCell && len(v.els) == 1
+}
+
 func dispKey(v *value) string {
 	return applyEscapes(v.display())
+}
+
+// fnv is FNV-1a, fed the same byte sequence the key strings would spell - the
+// accelerator maps key on a uint64 and verify hits against the arena, so the
+// strings themselves never get built. The hash only has to be stable within
+// one parse, not injective; a collision just chains in the slot.
+type fnv struct {
+	h uint64
+}
+
+func newFnv() fnv {
+	return fnv{h: 0xcbf29ce484222325}
+}
+
+func (f *fnv) byte(b byte) {
+	f.h = (f.h ^ uint64(b)) * 0x100000001b3
+}
+
+func (f *fnv) bytes(s string) {
+	for i := 0; i < len(s); i++ {
+		f.byte(s[i])
+	}
+}
+
+// dec spells a length prefix in decimal, without allocating.
+func (f *fnv) dec(n int) {
+	var buf [20]byte
+	i := len(buf)
+	for {
+		i--
+		buf[i] = '0' + byte(n%10)
+		n /= 10
+		if n == 0 {
+			break
+		}
+	}
+	for ; i < len(buf); i++ {
+		f.byte(buf[i])
+	}
+}
+
+// mergeHash hashes the (name, merge-key) pair, spelling what value.key()
+// spells without building it.
+func mergeHash(name string, v *value) uint64 {
+	f := newFnv()
+	f.bytes(name)
+	f.byte(0xFF) // separator; equality still verifies both parts
+	switch v.kind {
+	case vEmpty:
+		f.byte('e')
+	case vCell:
+		f.bytes("c:")
+		for i := range v.els {
+			f.dec(len(v.els[i].text))
+			f.byte(':')
+			f.bytes(v.els[i].text)
+		}
+	default:
+		f.bytes("r:")
+		f.dec(len(v.raw.info))
+		f.byte(':')
+		f.bytes(v.raw.info)
+		f.bytes(v.raw.content)
+	}
+	return f.h
+}
+
+// valueHash hashes the value's merge key alone (no name part).
+func valueHash(v *value) uint64 {
+	return mergeHash("", v)
+}
+
+// mergeEq is the exact (name, merge-key) equality a hashed hit is verified
+// with - compares what the two key strings would hold, element by element.
+func mergeEq(nameA string, va *value, nameB string, vb *value) bool {
+	if nameA != nameB || va.kind != vb.kind {
+		return false
+	}
+	switch va.kind {
+	case vEmpty:
+		return true
+	case vCell:
+		if len(va.els) != len(vb.els) {
+			return false
+		}
+		for i := range va.els {
+			if va.els[i].text != vb.els[i].text {
+				return false
+			}
+		}
+		return true
+	}
+	return va.raw.info == vb.raw.info && va.raw.content == vb.raw.content
+}
+
+// escHash is applyEscapes as a streaming feed into the hash - the same state
+// machine, one byte at a time, no intermediate string.
+type escHash struct {
+	f       fnv
+	pending bool
+}
+
+func (e *escHash) push(b byte) {
+	switch {
+	case e.pending:
+		e.pending = false
+		switch b {
+		case 't':
+			e.f.byte('\t')
+		case 'n':
+			e.f.byte('\n')
+		case '\\':
+			e.f.byte('\\')
+		case '"':
+			e.f.byte('"')
+		case '\'':
+			e.f.byte('\'')
+		default:
+			e.f.byte('\\')
+			e.f.byte(b)
+		}
+	case b == '\\':
+		e.pending = true
+	default:
+		e.f.byte(b)
+	}
+}
+
+func (e *escHash) pushString(s string) {
+	for i := 0; i < len(s); i++ {
+		e.push(s[i])
+	}
+}
+
+func (e *escHash) finish() uint64 {
+	if e.pending {
+		e.f.byte('\\')
+	}
+	return e.f.h
+}
+
+// dispHash hashes the (name, display-with-escapes-applied) pair a `[value]`
+// selector matches with - what dispKey would spell, streamed instead of built.
+func dispHash(name string, v *value) uint64 {
+	f := newFnv()
+	f.bytes(name)
+	f.byte(0xFF)
+	e := escHash{f: f}
+	switch v.kind {
+	case vEmpty:
+	case vCell:
+		for i := range v.els {
+			if i > 0 {
+				e.push(',')
+				e.push(' ')
+			}
+			e.pushString(v.els[i].text)
+		}
+	default:
+		e.pushString(v.raw.content)
+	}
+	return e.finish()
+}
+
+// dispHashText is the query-side twin of dispHash: the selector's text already
+// has its escapes applied, so its bytes feed straight in.
+func dispHashText(name, want string) uint64 {
+	f := newFnv()
+	f.bytes(name)
+	f.byte(0xFF)
+	f.bytes(want)
+	return f.h
+}
+
+// slot is one accelerator bucket: node indices in insertion order. Nearly
+// always one entry; a second means two different keys collided in the 64-bit
+// hash.
+type slot struct {
+	one  int
+	many []int // nil = the single entry is `one`
+}
+
+func (s *slot) push(idx int) {
+	if s.many == nil {
+		s.many = []int{s.one, idx}
+	} else {
+		s.many = append(s.many, idx)
+	}
+}
+
+func (s *slot) firstMatch(f func(int) bool) (int, bool) {
+	if s.many == nil {
+		if f(s.one) {
+			return s.one, true
+		}
+		return 0, false
+	}
+	for _, c := range s.many {
+		if f(c) {
+			return c, true
+		}
+	}
+	return 0, false
+}
+
+// remove drops idx if present; true = the slot is now empty and the caller
+// should remove the map entry.
+func (s *slot) remove(idx int) bool {
+	if s.many == nil {
+		return s.one == idx
+	}
+	kept := s.many[:0]
+	for _, c := range s.many {
+		if c != idx {
+			kept = append(kept, c)
+		}
+	}
+	if len(kept) == 1 {
+		s.one = kept[0]
+		s.many = nil
+		return false
+	}
+	s.many = kept
+	return len(kept) == 0
+}
+
+// The bucket helpers below carry the read-modify-write a map entry needs
+// (map values are not addressable), so the call sites stay one line each.
+
+// slotInsert chains idx into the bucket at h, insertion order preserved.
+func slotInsert(m map[uint64]slot, h uint64, idx int) {
+	if s, ok := m[h]; ok {
+		s.push(idx)
+		m[h] = s
+	} else {
+		m[h] = slot{one: idx}
+	}
+}
+
+// slotFirstMatch: the first index in the bucket at h passing the verify
+// callback (nil map = no bucket).
+func slotFirstMatch(m map[uint64]slot, h uint64, f func(int) bool) (int, bool) {
+	if m == nil {
+		return 0, false
+	}
+	s, ok := m[h]
+	if !ok {
+		return 0, false
+	}
+	return s.firstMatch(f)
+}
+
+// slotRemove drops idx from the bucket at h, deleting the entry when it empties.
+func slotRemove(m map[uint64]slot, h uint64, idx int) {
+	s, ok := m[h]
+	if !ok {
+		return
+	}
+	if s.remove(idx) {
+		delete(m, h)
+	} else {
+		m[h] = s
+	}
 }
 
 // fenceOpen matches an opening fence: a run of >=3 backticks or tildes, then
@@ -830,6 +1215,18 @@ func isFenceClose(line string, ch byte, minLen int) bool {
 	return true
 }
 
+// stripCommon removes a raw block's common indent from one content line. A
+// whitespace-only line took no part in computing that indent, so it can be
+// shorter than it - strip only what it actually shares, rather than blanking it.
+// Blanking drops author spacing on a line the spec calls verbatim.
+func stripCommon(line, common string) string {
+	k := 0
+	for k < len(common) && k < len(line) && common[k] == line[k] {
+		k++
+	}
+	return line[k:]
+}
+
 // ---------------------------------------------------------------------------
 // Path scanner (shared by file lines and accessor queries)
 // ---------------------------------------------------------------------------
@@ -846,12 +1243,18 @@ type selector struct {
 	kind  selKind
 	value string
 	index uint64
+	// quoted: the selector text was quoted in the path. A quoted selector is
+	// scalar-only - it matches a single-element value whose logical string
+	// equals the text - so quoting distinguishes the scalar "a, b" from the
+	// two-element list a, b, the same way quoting escapes elsewhere.
+	quoted bool
 }
 
 type segment struct {
-	name string // folded
-	sel  *selector
-	star bool // bare `*` name wildcard; quoted "*" stays a literal name
+	name    string // folded
+	nameSrc string // as authored: unfolded, quotes stripped, escapes applied
+	sel     *selector
+	star    bool // bare `*` name wildcard; quoted "*" stays a literal name
 }
 
 type pathScan struct {
@@ -994,7 +1397,7 @@ func scanPathEx(input string, stars bool) (pathScan, error) {
 				if err != nil {
 					return pathScan{}, err
 				}
-				sel = &selector{kind: selByValue, value: v} // quotes force a value match, even numeric
+				sel = &selector{kind: selByValue, value: v, quoted: true} // quotes force a value match, even numeric - and scalar-only
 			} else {
 				start := pos
 				for pos < len(input) && input[pos] != ']' {
@@ -1023,7 +1426,10 @@ func scanPathEx(input string, stars bool) (pathScan, error) {
 		if star && sel != nil {
 			return pathScan{}, errors.New("selector on a name wildcard")
 		}
-		segments = append(segments, segment{name: asciiLower(name), sel: sel, star: star})
+		// Names resolve escapes, the same rule values follow when they are
+		// compared: two spellings of one name are one name. nameSrc keeps the
+		// source spelling, which is what AuthoredName hands back.
+		segments = append(segments, segment{name: asciiLower(applyEscapes(name)), nameSrc: name, sel: sel, star: star})
 		if pos >= len(input) {
 			return pathScan{segments: segments}, nil
 		}
@@ -1062,33 +1468,45 @@ type parser struct {
 	diags []Diagnostic
 	// (indent, node) for each open level; [0] is the virtual root.
 	stack []stackEnt
-	// Per-node (name, value-key) -> first matching child, parallel to arena.
-	// Pure lookup accelerator for selectOrCreate; children keeps the order.
-	childMap []map[[2]string]int
-	// Per-node (name, display) -> first matching child: the `[value]` selector
-	// accelerator (its predicate is display(), a different and non-injective
-	// key from childMap's). Same first-wins discipline, same mutation sites.
-	dispMap []map[[2]string]int
+	// Per-node hash-of-(name, value-key) -> matching children, parallel to
+	// arena and nil until a parent's first insert, so leaves never allocate
+	// one. Pure lookup accelerator for selectOrCreate; children keeps the
+	// order. No key strings are stored - a hit is verified against the arena
+	// with mergeEq.
+	childMap []map[uint64]slot
+	// Per-node hash-of-(name, display) -> first matching child: the `[value]`
+	// selector accelerator (its predicate is display(), a different and
+	// non-injective key from childMap's). Same first-wins discipline, same
+	// mutation sites; ownership is by hash, and a query verifies its hit.
+	dispMap []map[uint64]int
 	// Whole-line comments waiting for the next line that binds a node. The
 	// source indent is kept only to decide after-attachment (a comment deeper
 	// than the next binding hangs on the block it sits in).
 	pending  []pend
 	sawBlank bool // a blank line waits to become the next bound node's blankBefore
 	// An open stacked list defers its merge-key remap (rebuilding the key per
-	// element is O(list^2) time); (node, key, display) at deferral start,
-	// flushed before any map lookup and at end of parse.
+	// element is O(list^2) time); (node, key hash, display hash) at deferral
+	// start, flushed before any map lookup and at end of parse.
 	starOpen bool
 	starNode int
-	starKey  string
-	starDisp string
+	starKey  uint64
+	starDisp uint64
+	// Node -> line of the re-open that H002-hinted it. A merge under a hinted
+	// container combines the same two textual regions, so it hints too even
+	// when it lands on the newest child at its own scope - that is how every
+	// merged level reports, not just the outermost. The stored line splits old
+	// children (hint) from ones the re-opened region itself created (silent).
+	reentered map[int]int
+	lost      int // dropped lines/values canonical output cannot re-emit
 }
 
 func newParser() *parser {
 	return &parser{
-		arena:    []nodeData{{}},
-		stack:    []stackEnt{{}},
-		childMap: []map[[2]string]int{{}},
-		dispMap:  []map[[2]string]int{{}},
+		arena:     []nodeData{{}},
+		stack:     []stackEnt{{}},
+		childMap:  []map[uint64]slot{nil},
+		dispMap:   []map[uint64]int{nil},
+		reentered: map[int]int{},
 	}
 }
 
@@ -1098,21 +1516,29 @@ func (p *parser) err(line int, msg string) {
 
 // selectOrCreate finds (or creates by merge rule) the child of parent with
 // this (name, value).
-func (p *parser) selectOrCreate(parent int, name string, v value, line int) int {
+func (p *parser) selectOrCreate(parent int, name, nameSrc string, v value, line int) int {
 	p.starFlush()
-	mapKey := [2]string{name, v.key()}
-	if c, ok := p.childMap[parent][mapKey]; ok {
+	h := mergeHash(name, &v)
+	if c, ok := slotFirstMatch(p.childMap[parent], h, func(c int) bool {
+		return mergeEq(p.arena[c].name, &p.arena[c].value, name, &v)
+	}); ok {
 		return c
 	}
 	idx := len(p.arena)
-	p.arena = append(p.arena, nodeData{name: name, value: v, parent: parent, line: line})
+	hd := dispHash(name, &v)
+	p.arena = append(p.arena, nodeData{name: name, nameSrc: spelled(name, nameSrc), value: v, parent: parent, line: line})
 	p.arena[parent].children = append(p.arena[parent].children, idx)
-	p.childMap = append(p.childMap, map[[2]string]int{})
-	p.childMap[parent][mapKey] = idx
-	p.dispMap = append(p.dispMap, map[[2]string]int{})
-	disp := [2]string{name, dispKey(&p.arena[idx].value)}
-	if _, ok := p.dispMap[parent][disp]; !ok {
-		p.dispMap[parent][disp] = idx
+	p.childMap = append(p.childMap, nil)
+	p.dispMap = append(p.dispMap, nil)
+	if p.childMap[parent] == nil {
+		p.childMap[parent] = map[uint64]slot{}
+	}
+	slotInsert(p.childMap[parent], h, idx)
+	if p.dispMap[parent] == nil {
+		p.dispMap[parent] = map[uint64]int{}
+	}
+	if _, ok := p.dispMap[parent][hd]; !ok {
+		p.dispMap[parent][hd] = idx
 	}
 	return idx
 }
@@ -1129,20 +1555,30 @@ func (p *parser) starFlush() {
 // remapChild: a node's value mutated in place (empty field filled, star element
 // added): move its map entry from the old key to the new one. First-wins on
 // both sides so lookups keep matching the earliest sibling, like the scan did.
-func (p *parser) remapChild(node int, oldKey, oldDisp string) {
+func (p *parser) remapChild(node int, oldKey, oldDisp uint64) {
 	parent := p.arena[node].parent
-	name := p.arena[node].name
-	if c, ok := p.childMap[parent][[2]string{name, oldKey}]; ok && c == node {
-		delete(p.childMap[parent], [2]string{name, oldKey})
+	if p.childMap[parent] != nil {
+		slotRemove(p.childMap[parent], oldKey, node)
 	}
-	newKey := [2]string{name, p.arena[node].value.key()}
-	if _, ok := p.childMap[parent][newKey]; !ok {
-		p.childMap[parent][newKey] = node
+	newKey := mergeHash(p.arena[node].name, &p.arena[node].value)
+	_, already := slotFirstMatch(p.childMap[parent], newKey, func(c int) bool {
+		return mergeEq(p.arena[c].name, &p.arena[c].value, p.arena[node].name, &p.arena[node].value)
+	})
+	if !already {
+		if p.childMap[parent] == nil {
+			p.childMap[parent] = map[uint64]slot{}
+		}
+		slotInsert(p.childMap[parent], newKey, node)
 	}
-	if c, ok := p.dispMap[parent][[2]string{name, oldDisp}]; ok && c == node {
-		delete(p.dispMap[parent], [2]string{name, oldDisp})
+	if m := p.dispMap[parent]; m != nil {
+		if c, ok := m[oldDisp]; ok && c == node {
+			delete(m, oldDisp)
+		}
 	}
-	newDisp := [2]string{name, dispKey(&p.arena[node].value)}
+	newDisp := dispHash(p.arena[node].name, &p.arena[node].value)
+	if p.dispMap[parent] == nil {
+		p.dispMap[parent] = map[uint64]int{}
+	}
 	if _, ok := p.dispMap[parent][newDisp]; !ok {
 		p.dispMap[parent][newDisp] = node
 	}
@@ -1160,14 +1596,16 @@ func (p *parser) foldLateDups() {
 		stack = stack[:len(stack)-1]
 		kids := p.arena[parent].children
 		p.arena[parent].children = nil
-		first := map[[2]string]int{}
+		first := map[uint64]slot{}
 		keep := make([]int, 0, len(kids))
 		for _, c := range kids {
-			key := [2]string{p.arena[c].name, p.arena[c].value.key()}
-			if survivor, ok := first[key]; ok {
+			h := mergeHash(p.arena[c].name, &p.arena[c].value)
+			if survivor, ok := slotFirstMatch(first, h, func(x int) bool {
+				return mergeEq(p.arena[x].name, &p.arena[x].value, p.arena[c].name, &p.arena[c].value)
+			}); ok {
 				foldNodeInto(p.arena, survivor, c)
 			} else {
-				first[key] = c
+				slotInsert(first, h, c)
 				keep = append(keep, c)
 			}
 		}
@@ -1180,15 +1618,19 @@ func (p *parser) foldLateDups() {
 // to a node. First trailing wins; a later one demotes to leading so nothing
 // is lost.
 func (p *parser) attachTrivia(node int, trailing string) {
-	for _, pn := range p.pending {
-		p.arena[node].leading = append(p.arena[node].leading, lead{text: pn.text, blankBefore: pn.blankBefore})
+	if len(p.pending) > 0 {
+		t := p.arena[node].trivMut()
+		for _, pn := range p.pending {
+			t.leading = append(t.leading, lead{text: pn.text, blankBefore: pn.blankBefore})
+		}
+		p.pending = p.pending[:0]
 	}
-	p.pending = p.pending[:0]
 	if trailing != "" {
-		if p.arena[node].trailing == "" {
-			p.arena[node].trailing = trailing
+		t := p.arena[node].trivMut()
+		if t.trailing == "" {
+			t.trailing = trailing
 		} else {
-			p.arena[node].leading = append(p.arena[node].leading, plainLead(trailing))
+			t.leading = append(t.leading, plainLead(trailing))
 		}
 	}
 }
@@ -1224,10 +1666,11 @@ func (p *parser) hangDeeperPending(newIndent string) {
 			}
 			if target >= 0 {
 				l := lead{text: pn.text, blankBefore: pn.blankBefore}
+				t := p.arena[target].trivMut()
 				if atOwnLevel {
-					p.arena[target].after = append(p.arena[target].after, l)
+					t.after = append(t.after, l)
 				} else {
-					p.arena[target].inside = append(p.arena[target].inside, l)
+					t.inside = append(t.inside, l)
 				}
 				continue
 			}
@@ -1280,6 +1723,7 @@ func (p *parser) attachPath(parent int, segs []segment, v value, line int) (int,
 	}
 	if parentDepth+len(segs) > MaxDepth {
 		p.err(line, fmt.Sprintf("nesting deeper than %d levels; line skipped", MaxDepth))
+		p.lost++
 		return 0, false
 	}
 	cur := parent
@@ -1293,16 +1737,39 @@ func (p *parser) attachPath(parent int, segs []segment, v value, line int) (int,
 			// a spurious second one - via the dispMap accelerator (the inline
 			// spelling was quadratic in siblings without it). Create only when
 			// nothing matches.
-			if found, ok := p.dispMap[cur][[2]string{seg.name, applyEscapes(seg.sel.value)}]; ok {
+			// A quoted selector is scalar-only, and the accelerator keeps just
+			// the first same-display child - a later remap can drop an entry a
+			// different sibling still satisfies - so a non-scalar hit and an
+			// outright miss both fall to the (rare) fallback scan.
+			want := applyEscapes(seg.sel.value)
+			found, ok := 0, false
+			if m := p.dispMap[cur]; m != nil {
+				if c, hit := m[dispHashText(seg.name, want)]; hit && p.arena[c].name == seg.name && dispKey(&p.arena[c].value) == want {
+					found, ok = c, true
+				}
+			}
+			if ok && seg.sel.quoted && !singleScalar(&p.arena[found].value) {
+				ok = false
+			}
+			if !ok && seg.sel.quoted {
+				for _, c := range p.arena[cur].children {
+					if p.arena[c].name == seg.name && singleScalar(&p.arena[c].value) && dispKey(&p.arena[c].value) == want {
+						found, ok = c, true
+						break
+					}
+				}
+			}
+			if ok {
 				cur = found
 			} else {
 				disc := value{kind: vCell, els: []element{{text: seg.sel.value}}}
-				cur = p.selectOrCreate(cur, seg.name, disc, line)
+				cur = p.selectOrCreate(cur, seg.name, seg.nameSrc, disc, line)
 			}
 			if isLast && !v.isEmpty() {
 				// `a.b[X]: v` - the discriminator is the value; a second
 				// value has nowhere unambiguous to go.
 				p.err(line, fmt.Sprintf("value after selector on '%s' ignored", seg.name))
+				p.lost++
 			}
 		case seg.sel != nil && seg.sel.kind == selByIndex:
 			var matches []int
@@ -1315,29 +1782,41 @@ func (p *parser) attachPath(parent int, segs []segment, v value, line int) (int,
 				cur = matches[seg.sel.index]
 			} else {
 				p.err(line, fmt.Sprintf("no instance %d of '%s'", seg.sel.index, seg.name))
+				p.lost++
 				return 0, false
 			}
 		case seg.sel != nil:
 			p.err(line, "wildcard selector is query-only")
+			p.lost++
 			return 0, false
 		case !isLast:
-			cur = p.selectOrCreate(cur, seg.name, value{kind: vEmpty}, line)
+			cur = p.selectOrCreate(cur, seg.name, seg.nameSrc, value{kind: vEmpty}, line)
 		default:
+			parent := cur
 			before := len(p.arena)
-			cur = p.selectOrCreate(cur, seg.name, v, line)
+			cur = p.selectOrCreate(cur, seg.name, seg.nameSrc, v, line)
 			// Two separately-written bindings just combined: legal (the
 			// merge rule), but only the parser can see it happened, so
 			// say so. Adjacent re-mentions (still the newest binding at
 			// this scope) and selector/path-intermediate merges stay
 			// silent - those are the deliberate redundant-path idiom.
-			kids := p.arena[p.arena[cur].parent].children
-			if cur < before && p.arena[cur].line != line && (len(kids) == 0 || kids[len(kids)-1] != cur) {
-				p.diags = append(p.diags, Diagnostic{
-					Line:     line,
-					Severity: SeverityHint,
-					Message:  fmt.Sprintf("merged with '%s' at line %d (same name and value combine)", seg.name, p.arena[cur].line),
-					Code:     "H002",
-				})
+			// Under a hinted container the newest-child pass does not
+			// apply to children the earlier region wrote: those merges
+			// combine the same two regions, so every level reports.
+			if cur < before && p.arena[cur].line != line {
+				kids := p.arena[parent].children
+				nonLast := len(kids) == 0 || kids[len(kids)-1] != cur
+				rl, ok := p.reentered[parent]
+				crossRegion := ok && p.arena[cur].line < rl
+				if nonLast || crossRegion {
+					p.diags = append(p.diags, Diagnostic{
+						Line:     line,
+						Severity: SeverityHint,
+						Message:  fmt.Sprintf("%sline %d (same name and value combine)", h002Head(seg.name), p.arena[cur].line),
+						Code:     "H002",
+					})
+					p.reentered[cur] = line
+				}
 			}
 		}
 	}
@@ -1383,15 +1862,11 @@ func (p *parser) consumeRaw(lines []string, i, openLine int, ch byte, length int
 	}
 	stripped := make([]string, len(content))
 	for j, l := range content {
-		if strings.TrimSpace(l) == "" {
-			stripped[j] = ""
-		} else {
-			stripped[j] = strings.TrimPrefix(l, common)
-		}
+		stripped[j] = stripCommon(l, common)
 	}
 	return value{
 		kind: vRaw,
-		raw:  rawValue{content: strings.Join(stripped, "\n"), info: info, fenceChar: ch, fenceLen: length},
+		raw:  &rawValue{content: strings.Join(stripped, "\n"), info: info, fenceChar: ch, fenceLen: length},
 	}, i
 }
 
@@ -1401,17 +1876,18 @@ func (p *parser) consumeRaw(lines []string, i, openLine int, ch byte, length int
 func (p *parser) bindBlock(parent int, v value, line int) int {
 	if parent == root {
 		p.err(line, "raw block with no parent field")
+		p.lost++
 		return -1
 	}
 	if p.arena[parent].value.isEmpty() {
-		oldKey := p.arena[parent].value.key()
-		oldDisp := dispKey(&p.arena[parent].value)
+		oldKey := mergeHash(p.arena[parent].name, &p.arena[parent].value)
+		oldDisp := dispHash(p.arena[parent].name, &p.arena[parent].value)
 		p.arena[parent].value = v
 		p.remapChild(parent, oldKey, oldDisp)
 		return parent
 	}
-	name, grand := p.arena[parent].name, p.arena[parent].parent
-	return p.selectOrCreate(grand, name, v, line)
+	name, nameSrc, grand := p.arena[parent].name, p.arena[parent].authored(), p.arena[parent].parent
+	return p.selectOrCreate(grand, name, nameSrc, v, line)
 }
 
 // addStarElement: one stacked-list element (`* scalar`) appends to the
@@ -1419,21 +1895,25 @@ func (p *parser) bindBlock(parent int, v value, line int) int {
 func (p *parser) addStarElement(parent int, body string, line int) {
 	if parent == root {
 		p.err(line, "list element with no parent field")
+		p.lost++
 		return
 	}
 	// Uniform-or-nothing (spec): a mix with field children is not a block array.
 	if len(p.arena[parent].children) != 0 {
 		p.err(line, "list element mixed with field children; ignored")
+		p.lost++
 		return
 	}
 	trimmed := strings.TrimSpace(body)
 	if trimmed == "" {
 		p.err(line, "empty list element")
+		p.lost++
 		return
 	}
 	// One scalar per line; a bare comma is an error, not a second element.
 	if len(splitUnquotedCommas(trimmed)) > 1 {
 		p.err(line, "bare comma in list element (one element per line)")
+		p.lost++
 		return
 	}
 	if unterminatedQuote(trimmed) {
@@ -1442,12 +1922,13 @@ func (p *parser) addStarElement(parent int, body string, line int) {
 	el, ok := parseElement(trimmed)
 	if !ok {
 		p.err(line, "empty list element")
+		p.lost++
 		return
 	}
 	switch {
 	case p.arena[parent].value.isEmpty():
-		oldKey := p.arena[parent].value.key()
-		oldDisp := dispKey(&p.arena[parent].value)
+		oldKey := mergeHash(p.arena[parent].name, &p.arena[parent].value)
+		oldDisp := dispHash(p.arena[parent].name, &p.arena[parent].value)
 		p.arena[parent].value = value{kind: vCell, els: []element{el}}
 		p.arena[parent].starList = true
 		// First element: remap now (Empty -> cell changes both keys), then
@@ -1457,19 +1938,20 @@ func (p *parser) addStarElement(parent int, body string, line int) {
 		p.remapChild(parent, oldKey, oldDisp)
 		p.starOpen = true
 		p.starNode = parent
-		p.starKey = p.arena[parent].value.key()
-		p.starDisp = dispKey(&p.arena[parent].value)
+		p.starKey = mergeHash(p.arena[parent].name, &p.arena[parent].value)
+		p.starDisp = dispHash(p.arena[parent].name, &p.arena[parent].value)
 	case p.arena[parent].value.kind == vCell && p.arena[parent].starList:
 		if !(p.starOpen && p.starNode == parent) {
 			p.starFlush()
 			p.starOpen = true
 			p.starNode = parent
-			p.starKey = p.arena[parent].value.key()
-			p.starDisp = dispKey(&p.arena[parent].value)
+			p.starKey = mergeHash(p.arena[parent].name, &p.arena[parent].value)
+			p.starDisp = dispHash(p.arena[parent].name, &p.arena[parent].value)
 		}
 		p.arena[parent].value.els = append(p.arena[parent].value.els, el)
 	default:
 		p.err(line, "field already has a value; list element ignored")
+		p.lost++
 	}
 }
 
@@ -1529,10 +2011,13 @@ func (p *parser) emitRepeatedLeafHints() {
 
 func (p *parser) parse(text string, strictness Strictness) *Document {
 	// UTF-8 BOM strip, then split keeping raw lines (CR stripped per line).
+	// The whole trailing CR run goes, not just one: a raw block keeps its content
+	// untrimmed, so a line left ending in CR would be written back as CRLF and
+	// read as neither - the one shape where the count is visible.
 	text = strings.TrimPrefix(text, "\uFEFF")
 	lines := strings.Split(text, "\n")
 	for j, l := range lines {
-		lines[j] = strings.TrimSuffix(l, "\r")
+		lines[j] = strings.TrimRight(l, "\r")
 	}
 	i := 0
 	for i < len(lines) {
@@ -1566,6 +2051,7 @@ func (p *parser) parse(text string, strictness Strictness) *Document {
 			parent, okp := p.resolveParent(indent)
 			if !okp {
 				p.err(lineno, "indentation matches no open level")
+				p.lost++
 				i++
 				continue
 			}
@@ -1583,6 +2069,7 @@ func (p *parser) parse(text string, strictness Strictness) *Document {
 				parent, okp := p.resolveParent(indent)
 				if !okp {
 					p.err(lineno, "indentation matches no open level")
+					p.lost++
 					i++
 					continue
 				}
@@ -1596,6 +2083,13 @@ func (p *parser) parse(text string, strictness Strictness) *Document {
 				continue
 			}
 			p.err(lineno, "malformed line: '*' must be followed by a space")
+			// Content-malformed at any position, so it is safe to retain
+			// verbatim as trivia: re-emitted, it re-diagnoses identically
+			// and can never read as a live binding. A hand-typo no longer
+			// vanishes on the consumer's next save. The BOM exception the
+			// sibling site below carries cannot apply here: this line starts
+			// with the '*' that brought us in.
+			p.pending = append(p.pending, pend{text: trimEndWS(rest), indent: indent, blankBefore: hadBlank})
 			i++
 			continue
 		}
@@ -1613,12 +2107,20 @@ func (p *parser) parse(text string, strictness Strictness) *Document {
 		parent, okp := p.resolveParent(indent)
 		if !okp {
 			p.err(lineno, "indentation matches no open level")
+			p.lost++
 			i++
 			continue
 		}
 		scan, serr := scanPath(content)
 		if serr != nil {
 			p.err(lineno, "malformed line skipped: "+serr.Error())
+			// Content-malformed at any position - retained as trivia, same
+			// rationale (and same BOM exception) as the bad '*' line above.
+			if strings.HasPrefix(rest, "\ufeff") {
+				p.lost++
+			} else {
+				p.pending = append(p.pending, pend{text: trimEndWS(rest), indent: indent, blankBefore: hadBlank})
+			}
 			i++
 			continue
 		}
@@ -1651,13 +2153,16 @@ func (p *parser) parse(text string, strictness Strictness) *Document {
 		// Record only when the bound node holds exactly this line's value
 		// (a merge into an equal-valued node keeps the first line's span;
 		// a value dropped after a last-segment selector records nothing).
-		vkey := ""
+		var vkey uint64
 		if srcText != nil {
-			vkey = v.key()
+			vkey = valueHash(&v)
 		}
 		if node, ok := p.attachPath(parent, scan.segments, v, lineno); ok {
-			if srcText != nil && p.arena[node].src == nil && p.arena[node].value.key() == vkey {
-				p.arena[node].src = srcText
+			if srcText != nil && !p.arena[node].srcSet && valueHash(&p.arena[node].value) == vkey {
+				p.arena[node].srcSet = true
+				if !srcMatchesDisplay(&p.arena[node].value, *srcText) {
+					p.arena[node].src = srcText
+				}
 			}
 			if hadBlank {
 				p.arena[node].blankBefore = true
@@ -1677,7 +2182,7 @@ func (p *parser) parse(text string, strictness Strictness) *Document {
 		orphans = append(orphans, lead{text: pn.text, blankBefore: pn.blankBefore})
 	}
 	p.pending = p.pending[:0]
-	return &Document{arena: p.arena, diags: p.diags, strictness: strictness, orphans: orphans}
+	return &Document{arena: p.arena, diags: p.diags, strictness: strictness, orphans: orphans, lost: p.lost}
 }
 
 // ---------------------------------------------------------------------------
@@ -1710,6 +2215,15 @@ func ParseWith(text string, strictness Strictness) (*Document, error) {
 // validation findings too).
 func (d *Document) Diagnostics() []Diagnostic {
 	return d.diags
+}
+
+// LostCount is how many lines or values parsing dropped that canonical
+// output cannot re-emit - bad indentation, an unusable selector, a line past
+// the depth cap. Content-malformed lines do NOT count: those are retained as
+// trivia and survive a save. Nonzero means a SaveFile would delete
+// hand-written content, so SaveFile refuses then (SaveFileLossy overrides).
+func (d *Document) LostCount() int {
+	return d.lost
 }
 
 // ErrorCount is how many error-severity diagnostics the document carries - the
@@ -1750,6 +2264,7 @@ func LoadAndValidate(text, schemaText string, strictness Strictness) *Document {
 		}
 		doc.diags = append(doc.diags, doc.Validate(schema)...)
 		doc.diags = SuppressDeclaredRepeats(schema, doc.diags)
+		doc.diags = SuppressDeclaredReopens(schema, doc.diags)
 	}
 	return doc
 }
@@ -1807,7 +2322,7 @@ func (d *Document) emitNode(idx, depth int, wouldMerge bool, out *strings.Builde
 	// comment joins the leading lines instead; the flag comes from the parent's
 	// walk. Each blank rides its own comment (or the binding line), never as
 	// the first output line.
-	for _, c := range node.leading {
+	for _, c := range node.leading() {
 		if c.blankBefore && out.Len() > 0 {
 			out.WriteByte('\n')
 		}
@@ -1818,9 +2333,9 @@ func (d *Document) emitNode(idx, depth int, wouldMerge bool, out *strings.Builde
 	if node.blankBefore && out.Len() > 0 {
 		out.WriteByte('\n')
 	}
-	if wouldMerge && node.trailing != "" {
+	if wouldMerge && node.trailing() != "" {
 		out.WriteString(pad)
-		out.WriteString(node.trailing)
+		out.WriteString(node.trailing())
 		out.WriteByte('\n')
 	}
 	out.WriteString(pad)
@@ -1828,7 +2343,7 @@ func (d *Document) emitNode(idx, depth int, wouldMerge bool, out *strings.Builde
 	out.WriteByte(':')
 	switch node.value.kind {
 	case vEmpty:
-		writeTrailing(out, node.trailing)
+		writeTrailing(out, node.trailing())
 		out.WriteByte('\n')
 	case vCell:
 		out.WriteByte(' ')
@@ -1837,7 +2352,7 @@ func (d *Document) emitNode(idx, depth int, wouldMerge bool, out *strings.Builde
 			parts[k] = emitElement(&node.value.els[k])
 		}
 		out.WriteString(strings.Join(parts, ", "))
-		writeTrailing(out, node.trailing)
+		writeTrailing(out, node.trailing())
 		out.WriteByte('\n')
 	default:
 		// Child-indent spelling is canonical: bare name line, fenced block one
@@ -1845,11 +2360,11 @@ func (d *Document) emitNode(idx, depth int, wouldMerge bool, out *strings.Builde
 		// sibling is empty, the bare `name:` header would merge into it on
 		// reparse and the fence would fill that instance instead - so use the
 		// same-line spelling there.
-		r := &node.value.raw
+		r := node.value.raw
 		if wouldMerge {
 			out.WriteByte(' ')
 		} else {
-			writeTrailing(out, node.trailing)
+			writeTrailing(out, node.trailing())
 			out.WriteByte('\n')
 		}
 		bodyPad := strings.Repeat("\t", depth+1)
@@ -1868,8 +2383,18 @@ func (d *Document) emitNode(idx, depth int, wouldMerge bool, out *strings.Builde
 		}
 		out.WriteByte('\n')
 		if r.content != "" {
+			// A body with no non-blank line has no common indent for the reload
+			// to strip back off, so indenting it here would add a level on every
+			// pass, without bound. Leave it as it stands.
+			allBlank := true
 			for _, l := range strings.Split(r.content, "\n") {
-				if l != "" {
+				if strings.TrimSpace(l) != "" {
+					allBlank = false
+					break
+				}
+			}
+			for _, l := range strings.Split(r.content, "\n") {
+				if l != "" && !allBlank {
 					out.WriteString(bodyPad)
 				}
 				out.WriteString(l)
@@ -1883,7 +2408,7 @@ func (d *Document) emitNode(idx, depth int, wouldMerge bool, out *strings.Builde
 	d.emitChildren(d.arena[idx].children, depth+1, out)
 	// Comments this block owns with no child to carry them, one deeper.
 	ipad := strings.Repeat("\t", depth+1)
-	for _, c := range d.arena[idx].inside {
+	for _, c := range d.arena[idx].inside() {
 		if c.blankBefore && out.Len() > 0 {
 			out.WriteByte('\n')
 		}
@@ -1892,7 +2417,7 @@ func (d *Document) emitNode(idx, depth int, wouldMerge bool, out *strings.Builde
 		out.WriteByte('\n')
 	}
 	// Comments that hung on this block after its last child.
-	for _, c := range d.arena[idx].after {
+	for _, c := range d.arena[idx].after() {
 		if c.blankBefore && out.Len() > 0 {
 			out.WriteByte('\n')
 		}
@@ -1902,7 +2427,13 @@ func (d *Document) emitNode(idx, depth int, wouldMerge bool, out *strings.Builde
 	}
 }
 
-func emitName(name string) string {
+// escapeName emits a stored (escape-resolved) name in a spelling that reads
+// back as the same name: bare when it can be, else quoted with the escapes
+// applyEscapes undoes. This is a true inverse of the name parse, which quoteText
+// is not - that one picks a quote style to AVOID escaping and never escapes a
+// backslash, which is right for a value (stored in its escaped spelling) and
+// wrong for a name (stored resolved).
+func escapeName(name string) string {
 	if name != "" {
 		bare := true
 		for _, c := range name {
@@ -1915,7 +2446,28 @@ func emitName(name string) string {
 			return name
 		}
 	}
-	return quoteText(name)
+	var out strings.Builder
+	out.WriteByte('"')
+	for i := 0; i < len(name); i++ {
+		switch name[i] {
+		case '\\':
+			out.WriteString(`\\`)
+		case '"':
+			out.WriteString(`\"`)
+		case '\t':
+			out.WriteString(`\t`)
+		case '\n':
+			out.WriteString(`\n`)
+		default:
+			out.WriteByte(name[i])
+		}
+	}
+	out.WriteByte('"')
+	return out.String()
+}
+
+func emitName(name string) string {
+	return escapeName(name)
 }
 
 // QuoteSegment quotes one path segment so it can be spliced into a lookup
@@ -2008,8 +2560,274 @@ func SuppressDeclaredRepeats(schema *Document, diags []Diagnostic) []Diagnostic 
 	return kept
 }
 
+// WriteFileAtomic is the file tier's write mechanism (also what the CLI's
+// `--write` uses): a temp file in the same dir, then a rename over the
+// target, so an interrupted write can never truncate the config it rewrites.
+// The data is synced before the rename so a crash cannot publish an empty file.
+//
+// A rename publishes a new inode, so the target is resolved through symlinks
+// first (otherwise a linked-in config gets replaced by a regular file and the
+// real one is left stale) and the original's mode is copied onto the temp file
+// (otherwise a 600 config comes back at whatever the umask allows). Other hard
+// links to the old inode cannot survive a rename and keep the old content.
+// The i/o failures wrap rather than flatten, so a caller can tell a permission
+// failure from a full disk with errors.Is instead of matching on prose.
+func WriteFileAtomic(file, data string) error {
+	// EvalSymlinks fails when the target does not exist yet; that is a plain
+	// create, so the path as given is already the right one.
+	target := file
+	if resolved, rerr := filepath.EvalSymlinks(file); rerr == nil {
+		target = resolved
+	}
+	dir := filepath.Dir(target)
+	base := filepath.Base(target)
+	// Exclusive create: the name is predictable, so anything already sitting
+	// there - including a symlink someone else planted - must make this fail
+	// rather than be written through. Retry past a stale collision, then give
+	// up; refusing to write beats writing somewhere unintended.
+	// A file that already exists keeps its own mode, so its temp is born private
+	// and the real mode goes on below - the copy is never briefly readable to
+	// anyone the original was not. A file that does not exist yet has no mode to
+	// preserve, so it takes the one an ordinary create would: 0666 narrowed by
+	// the umask, like every other file the user's tools produce.
+	existing, existErr := os.Stat(target)
+	born := os.FileMode(0o600)
+	if existErr != nil {
+		born = 0o666
+	}
+	var f *os.File
+	var tmp string
+	var last error
+	for attempt := 0; attempt < 8; attempt++ {
+		tmp = filepath.Join(dir, "."+base+".tmp"+strconv.Itoa(os.Getpid())+"."+strconv.Itoa(attempt))
+		h, oerr := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, born)
+		if oerr == nil {
+			f = h
+			break
+		}
+		last = oerr
+	}
+	if f == nil {
+		return fmt.Errorf("%s: cannot create temporary file: %w", file, last)
+	}
+	// On the handle, so umask cannot narrow it the way it narrows a create
+	// mode. Best effort: a filesystem that cannot carry the mode is not a
+	// reason to fail a write that otherwise succeeded.
+	if existErr == nil {
+		_ = f.Chmod(existing.Mode().Perm())
+	}
+	var err error
+	if _, werr := f.WriteString(data); werr != nil {
+		err = werr
+	} else {
+		err = f.Sync()
+	}
+	f.Close()
+	if err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("%s: %w", file, err)
+	}
+	if rerr := publishFile(tmp, target); rerr != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("%s: %w", file, rerr)
+	}
+	syncDir(dir)
+	return nil
+}
+
+// publishFile moves the finished temp file over the target. Rename is atomic
+// within a filesystem, which is all POSIX needs. The windows build swaps this
+// out for one that goes through ReplaceFile (shcl_windows.go): a rename there
+// publishes a brand-new file and leaves the destination's ACLs, attributes and
+// named streams behind.
+//
+// A hook rather than a build-tagged pair so that this file still compiles and
+// works on its own - the drop-in story is the whole point of the single file,
+// and a tree that took the module gets the better windows publish anyway.
+var publishFile = func(tmp, target string) error { return os.Rename(tmp, target) }
+
+// syncDir fsyncs the directory a save published into. The Sync on the file only
+// covered the file; the rename is a directory change, so without this a power
+// cut right after a save can lose the publish and leave the old content. Best
+// effort - windows has no directory fsync, and a filesystem that refuses one is
+// not a reason to fail a write that already succeeded.
+func syncDir(dir string) {
+	if d, derr := os.Open(dir); derr == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
+}
+
+// FileStatus is what LoadFile found: the four cases a consumer's own load
+// path otherwise confuses. FileClean and FileHadErrors both carry a usable
+// document; FileNotFound and FileUnreadable come back with an empty one.
+type FileStatus int
+
+const (
+	FileClean      FileStatus = iota // read and parsed, no error diagnostics (hints allowed)
+	FileHadErrors                    // read and parsed, but error diagnostics are present
+	FileNotFound                     // no file at the path
+	FileUnreadable                   // exists but could not be read (permissions, a directory, bad encoding)
+)
+
+// String names the file status, so logging one reads as a case rather than a
+// number.
+func (s FileStatus) String() string {
+	switch s {
+	case FileClean:
+		return "Clean"
+	case FileHadErrors:
+		return "HadErrors"
+	case FileNotFound:
+		return "NotFound"
+	case FileUnreadable:
+		return "Unreadable"
+	}
+	return "Clean"
+}
+
+// LoadFile is the file tier's load half: read and parse path at Standard.
+// Never fails - the document always comes back usable (empty when the file
+// could not be read), and the status separates the four cases consumers
+// otherwise confuse: absent, present-but-unreadable, parsed with errors,
+// clean.
+func LoadFile(path string) (*Document, FileStatus) {
+	return LoadFileWith(path, Standard)
+}
+
+// LoadFileWith is LoadFile at a chosen strictness. A strict-failing file
+// reports FileHadErrors; the recover-and-continue document still comes back.
+func LoadFileWith(path string, level Strictness) (*Document, FileStatus) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		st := FileUnreadable
+		if os.IsNotExist(err) {
+			st = FileNotFound
+		}
+		return newParser().parse("", level), st
+	}
+	// Reading succeeds on any bytes here, unlike the reference's read-to-string
+	// and python's decoding open - so bad encoding needs its own test, or a
+	// binary file loads Clean, reads back mangled, and a later save writes the
+	// mangled version over the original.
+	if !utf8.Valid(data) {
+		return newParser().parse("", level), FileUnreadable
+	}
+	doc := newParser().parse(string(data), level)
+	for _, d := range doc.diags {
+		if d.Severity == SeverityError {
+			return doc, FileHadErrors
+		}
+	}
+	return doc, FileClean
+}
+
+// SaveRefused is the error SaveFile returns when the lost-content gate fires.
+// It is its own type so a caller can tell a refusal from a write failure with
+// errors.As rather than by matching on the message: a refusal is the caller's
+// to reverse (SaveFileLossy is the override), a write failure is the disk's
+// answer.
+type SaveRefused struct {
+	Path string
+	Lost int // lines/values the load dropped (see LostCount)
+}
+
+func (e *SaveRefused) Error() string {
+	return fmt.Sprintf("%s: refusing to save: load dropped %d line(s)/value(s) this write would delete (see diagnostics; SaveFileLossy overrides)", e.Path, e.Lost)
+}
+
+// SaveFile is the file tier's save half: write this document's canonical text
+// to path through WriteFileAtomic, so an interrupted save can never truncate
+// the config it rewrites - the same mechanics the CLI's `--write` uses.
+// Refuses when parsing lost content that a save would silently delete (see
+// LostCount); SaveFileLossy writes anyway. A refusal comes back as
+// *SaveRefused, a write failure as the wrapped i/o error.
+func (d *Document) SaveFile(path string) error {
+	if d.lost > 0 {
+		return &SaveRefused{Path: path, Lost: d.lost}
+	}
+	return WriteFileAtomic(path, d.ToCanonical())
+}
+
+// SaveFileLossy is SaveFile without the lost-content gate: writes even when
+// parsing dropped lines this save deletes. The caller owns that choice. It
+// never returns *SaveRefused - the gate is the one thing it skips.
+func (d *Document) SaveFileLossy(path string) error {
+	return WriteFileAtomic(path, d.ToCanonical())
+}
+
+// h002Head is the single H002 wording site: the merge hint and the schema
+// suppressor both come here, same discipline as h001Head.
+func h002Head(name string) string {
+	return fmt.Sprintf("merged with '%s' at ", name)
+}
+
+// SuppressDeclaredReopens drops the H002 hints a schema disavows: a section
+// whose entry declares `reopen: true` is MEANT to be written in parts, so the
+// merge hint is structurally a false positive there. Matching is by leaf
+// name, same as the H001 suppressor, and it errs toward quiet, for a hint.
+// Used by `check --schema` and LoadAndValidate; call it wherever doc
+// diagnostics and a schema meet. Returns a fresh slice like the H001 one.
+func SuppressDeclaredReopens(schema *Document, diags []Diagnostic) []Diagnostic {
+	type group struct {
+		base  string
+		paths []string
+	}
+	groups := []group{{"field", schema.Instances("field")}}
+	for k := 0; k < schema.Count("fragment"); k++ {
+		base := fmt.Sprintf("fragment[#%d].field", k)
+		groups = append(groups, group{base, schema.Instances(base)})
+	}
+	var names []string
+	for _, g := range groups {
+		for i, p := range g.paths {
+			re := schema.ReadBool(fmt.Sprintf("%s[#%d].reopen", g.base, i))
+			if re.Status != Good || !re.Value {
+				continue
+			}
+			scan, err := scanLookup(p)
+			if err != nil || len(scan.segments) == 0 {
+				continue
+			}
+			seg := scan.segments[len(scan.segments)-1]
+			if seg.star {
+				continue // name wildcard: no single leaf name to disavow
+			}
+			names = append(names, seg.name)
+		}
+	}
+	if len(names) == 0 {
+		return diags
+	}
+	heads := make([]string, len(names))
+	for i, n := range names {
+		heads[i] = h002Head(n)
+	}
+	kept := make([]Diagnostic, 0, len(diags))
+	for _, d := range diags {
+		if d.Code == "H002" {
+			drop := false
+			for _, h := range heads {
+				if strings.HasPrefix(d.Message, h) {
+					drop = true
+					break
+				}
+			}
+			if drop {
+				continue
+			}
+		}
+		kept = append(kept, d)
+	}
+	return kept
+}
+
 // emitElement uses minimal quoting: bare unless a reserved character (or
 // lookalike hazard) forces it.
+// One addition: an author-quoted element keeps its quotes unless the text reads as
+// one of SHCL's own data formats - quoting those is just spelling (readers type the
+// value either way), but quoting a plain string is the escape and must survive
+// canonicalization. This clause only ever adds quoting, so a bare emit stays safe.
 func emitElement(e *element) string {
 	t := e.text
 	needs := t == ""
@@ -2024,10 +2842,24 @@ func emitElement(e *element) string {
 			}
 		}
 	}
+	// Edge whitespace beyond the space/tab above still has to force quotes: the
+	// parser trims the full White_Space set, so a bare NBSP (or VT, FF, NEL,
+	// ideographic space) at either end would not survive the reload. Edges only
+	// - interior whitespace is never trimmed and quoting it would move bytes.
+	if !needs && t != "" {
+		r, _ := utf8.DecodeRuneInString(t)
+		l, _ := utf8.DecodeLastRuneInString(t)
+		if unicode.IsSpace(r) || unicode.IsSpace(l) {
+			needs = true
+		}
+	}
 	if !needs {
 		if _, _, _, ok := fenceOpen(t); ok {
 			needs = true
 		}
+	}
+	if !needs && e.quoted && !isDataFormat(e) {
+		needs = true
 	}
 	if needs {
 		return quoteText(t)
@@ -2035,12 +2867,53 @@ func emitElement(e *element) string {
 	return t
 }
 
+// isDataFormat reports whether the text reads as an int, float, bool, or
+// datetime at standard strictness - fixed there deliberately, so canonical
+// form cannot vary with the load strictness.
+func isDataFormat(e *element) bool {
+	// One pass over the bytes before any coercion. At Standard the int, float
+	// and datetime forms all require at least one ASCII digit; the only formats
+	// that do not are the boolean words, and the longest of those is "false".
+	// An ordinary quoted string fails both tests, so emit stops running four
+	// full coercions on every quoted element it writes.
+	hasDigit := false
+	for i := 0; i < len(e.text); i++ {
+		if e.text[i] >= '0' && e.text[i] <= '9' {
+			hasDigit = true
+			break
+		}
+	}
+	if !hasDigit {
+		t := strings.TrimSpace(e.text)
+		if len(t) > 5 {
+			return false
+		}
+		_, ok := parseBoolText(t, Standard)
+		return ok
+	}
+	if _, ok := parseIntText(e, Standard); ok {
+		return true
+	}
+	if _, ok := parseFloatText(e, Standard); ok {
+		return true
+	}
+	if _, ok := parseBoolText(e.text, Standard); ok {
+		return true
+	}
+	if _, ok := ParseDateTime(e.text); ok {
+		return true
+	}
+	return false
+}
+
 // bareQuoteCounts counts quote chars that are NOT already escaped in the raw
 // text; escaped ones must stay untouched or every round-trip would re-escape them.
 func bareQuoteCounts(t string) (dq, sq int) {
-	rs := []rune(t)
-	for i := 0; i < len(rs); i++ {
-		switch rs[i] {
+	// Bytes: the three characters matched are ASCII, and a continuation byte
+	// matches none of them, so skipping one byte after a backslash counts the
+	// same as skipping one rune.
+	for i := 0; i < len(t); i++ {
+		switch t[i] {
 		case '\\':
 			i++
 		case '"':
@@ -2070,19 +2943,18 @@ func quoteText(t string) string {
 	// Both quote kinds appear bare: escape the doubles, wrap in doubles.
 	var out strings.Builder
 	out.WriteByte('"')
-	rs := []rune(t)
-	for i := 0; i < len(rs); i++ {
-		switch rs[i] {
+	for i := 0; i < len(t); i++ {
+		switch t[i] {
 		case '\\':
-			out.WriteRune(rs[i])
-			if i+1 < len(rs) {
+			out.WriteByte(t[i])
+			if i+1 < len(t) {
 				i++
-				out.WriteRune(rs[i])
+				out.WriteByte(t[i])
 			}
 		case '"':
 			out.WriteString("\\\"")
 		default:
-			out.WriteRune(rs[i])
+			out.WriteByte(t[i])
 		}
 	}
 	out.WriteByte('"')
@@ -2161,7 +3033,7 @@ func (d *Document) resolveFrom(start []int, segs []segment) resolved {
 			want := applyEscapes(seg.sel.value)
 			var filtered []int
 			for _, c := range next {
-				if dispKey(&d.arena[c].value) == want {
+				if dispKey(&d.arena[c].value) == want && (!seg.sel.quoted || singleScalar(&d.arena[c].value)) {
 					filtered = append(filtered, c)
 				}
 			}
@@ -2274,6 +3146,22 @@ func (d *Document) Line(path string) int {
 		return 0
 	}
 	return d.arena[r.one].line
+}
+
+// AuthoredName is the field name at a path exactly as the author spelled it
+// (case unfolded, outer quotes stripped), so a message can echo `SYMBOLS` when
+// the file said SYMBOLS. Escape sequences stay as written too: a name is
+// stored, compared and emitted with its escapes RESOLVED, so this is the one
+// call that hands the source spelling back - which is what an as-authored
+// accessor is for. Resolution mirrors Line(): empty when the path does not resolve to
+// exactly one node. Merged instances keep the first binding's spelling; a
+// writer-built node keeps the spelling the setter's path used.
+func (d *Document) AuthoredName(path string) string {
+	r, ok := d.resolve(path)
+	if !ok || r.kind != resOne {
+		return ""
+	}
+	return d.arena[r.one].authored()
 }
 
 // Lines is the plural Line(): 1-based source lines at a path, in file order,
@@ -2449,22 +3337,13 @@ func New() *Document {
 	return Parse("")
 }
 
-func (d *Document) newChild(parent int, name string, v value) int {
+func (d *Document) newChild(parent int, name, nameSrc string, v value) int {
 	idx := len(d.arena)
 	// Hand-written files separate top-level sections with a blank line;
 	// writer-built ones do the same (the emitter never blanks line 1).
-	d.arena = append(d.arena, nodeData{name: name, value: v, parent: parent, blankBefore: parent == root})
+	d.arena = append(d.arena, nodeData{name: name, nameSrc: spelled(name, nameSrc), value: v, parent: parent, blankBefore: parent == root})
 	d.arena[parent].children = append(d.arena[parent].children, idx)
 	return idx
-}
-
-func (d *Document) childOrCreate(parent int, name string) int {
-	for _, c := range d.arena[parent].children {
-		if d.arena[c].name == name {
-			return c
-		}
-	}
-	return d.newChild(parent, name, value{kind: vEmpty})
 }
 
 // WriteReason reports why a write at this path would fail - the reason behind
@@ -2476,24 +3355,45 @@ func (d *Document) WriteReason(path string) WriteReason {
 	if err != nil {
 		return BadPath
 	}
+	r, _ := d.probeWrite(scan)
+	return r
+}
+
+// probeWrite is the validation walk WriteReason and place share. The returned
+// trail records where each segment landed - -1 from the point the path falls
+// off the existing tree - so place can create from exactly there instead of
+// scanning the path and walking the tree a second time.
+func (d *Document) probeWrite(scan pathScan) (WriteReason, []int) {
 	if scan.valueText != nil {
-		return ValueInPath
+		return ValueInPath, nil
 	}
 	if len(scan.segments) == 0 {
-		return BadPath
+		return BadPath, nil
 	}
 	// Writer side of the load-time nesting cap: never create deeper.
 	if len(scan.segments) > MaxDepth {
-		return TooDeep
+		return TooDeep, nil
 	}
 	// The probe walk place() validates with: once it falls off the existing
 	// tree, a later `[#k]` can never match (fresh intermediates are created
 	// childless), so an index segment past that point is unresolvable.
+	trail := make([]int, 0, len(scan.segments))
 	probe, alive := root, true
 	for i := range scan.segments {
 		seg := &scan.segments[i]
 		if seg.star {
-			return Wildcard
+			return Wildcard, nil
+		}
+		// A newline in a SELECTOR has no one-line spelling, so the emitted
+		// binding would split across two lines and reparse as neither. The
+		// selector stores its path text raw and the value emitter never escapes
+		// a line break, so nothing downstream can rescue it - and the reload
+		// loses nothing it can count, so the save gate would not catch it. A
+		// newline in a NAME is fine: names are stored escape-resolved and
+		// emitted through the name escaper, which spells a line break \n and
+		// reads it back as one.
+		if seg.sel != nil && seg.sel.kind == selByValue && strings.Contains(seg.sel.value, "\n") {
+			return BadPath, nil
 		}
 		switch {
 		case seg.sel == nil:
@@ -2511,7 +3411,7 @@ func (d *Document) WriteReason(path string) WriteReason {
 				want := applyEscapes(seg.sel.value)
 				alive = false
 				for _, c := range d.arena[probe].children {
-					if d.arena[c].name == seg.name && dispKey(&d.arena[c].value) == want {
+					if d.arena[c].name == seg.name && dispKey(&d.arena[c].value) == want && (!seg.sel.quoted || singleScalar(&d.arena[c].value)) {
 						probe, alive = c, true
 						break
 					}
@@ -2519,7 +3419,7 @@ func (d *Document) WriteReason(path string) WriteReason {
 			}
 		case seg.sel.kind == selByIndex:
 			if !alive {
-				return NoSuchIndex
+				return NoSuchIndex, nil
 			}
 			var matches []int
 			for _, c := range d.arena[probe].children {
@@ -2528,14 +3428,19 @@ func (d *Document) WriteReason(path string) WriteReason {
 				}
 			}
 			if seg.sel.index >= uint64(len(matches)) {
-				return NoSuchIndex
+				return NoSuchIndex, nil
 			}
 			probe = matches[seg.sel.index]
 		default:
-			return Wildcard
+			return Wildcard, nil
+		}
+		if alive {
+			trail = append(trail, probe)
+		} else {
+			trail = append(trail, -1)
 		}
 	}
-	return Writable
+	return Writable, trail
 }
 
 // place walks (creating as needed) to the node a write targets. A trailing name
@@ -2545,49 +3450,32 @@ func (d *Document) WriteReason(path string) WriteReason {
 // why). Validation runs first, so a doomed path leaves no half-created
 // intermediates behind.
 func (d *Document) place(path string) (int, bool) {
-	if d.WriteReason(path) != Writable {
-		return 0, false
-	}
 	scan, err := scanLookup(path)
 	if err != nil {
+		return 0, false
+	}
+	reason, trail := d.probeWrite(scan)
+	if reason != Writable {
 		return 0, false
 	}
 	cur := root
 	for i := range scan.segments {
 		seg := &scan.segments[i]
-		if seg.star {
-			return 0, false // WriteReason gates this; belt only
+		// The probe already resolved every segment that exists; only the tail
+		// it fell off has anything to create.
+		if trail[i] >= 0 {
+			cur = trail[i]
+			continue
 		}
 		switch {
 		case seg.sel == nil:
-			cur = d.childOrCreate(cur, seg.name)
+			cur = d.newChild(cur, seg.name, seg.nameSrc, value{kind: vEmpty})
 		case seg.sel.kind == selByValue:
-			want := applyEscapes(seg.sel.value)
-			found := -1
-			for _, c := range d.arena[cur].children {
-				if d.arena[c].name == seg.name && dispKey(&d.arena[c].value) == want {
-					found = c
-					break
-				}
-			}
-			if found >= 0 {
-				cur = found
-			} else {
-				cur = d.newChild(cur, seg.name, cellOf(seg.sel.value))
-			}
-		case seg.sel.kind == selByIndex:
-			var matches []int
-			for _, c := range d.arena[cur].children {
-				if d.arena[c].name == seg.name {
-					matches = append(matches, c)
-				}
-			}
-			if seg.sel.index >= uint64(len(matches)) {
-				return 0, false
-			}
-			cur = matches[seg.sel.index]
+			cur = d.newChild(cur, seg.name, seg.nameSrc, cellOf(seg.sel.value))
 		default:
-			return 0, false // wildcard is query-only
+			// Unreachable: probeWrite refuses a wildcard outright and an
+			// unresolvable index, so neither reaches an empty trail slot.
+			return 0, false
 		}
 	}
 	return cur, true
@@ -2710,12 +3598,15 @@ func (d *Document) SetComment(path, text string) bool {
 	if !strings.HasPrefix(line, "#") {
 		line = "# " + line
 	}
-	d.arena[idx].leading = append(d.arena[idx].leading, plainLead(line))
+	t := d.arena[idx].trivMut()
+	t.leading = append(t.leading, plainLead(line))
 	return true
 }
 
 // SetInt binds an integer at path, creating the path as needed; false = path
-// not writable (WriteReason says why - same for every setter).
+// not writable (WriteReason says why - same for every setter). Worth checking
+// rather than assuming: an ignored false means the save that follows writes a
+// document missing the edit, and reports success doing it.
 func (d *Document) SetInt(path string, v int64) bool {
 	return d.setValue(path, cellOf(strconv.FormatInt(v, 10)))
 }
@@ -2748,7 +3639,7 @@ func (d *Document) SetEmpty(path string) bool {
 // SetRaw binds a raw block at path, picking a fence longer than any content line.
 func (d *Document) SetRaw(path, content, info string) bool {
 	fc, fl := chooseFence(content)
-	return d.setValue(path, value{kind: vRaw, raw: rawValue{content: content, info: info, fenceChar: fc, fenceLen: fl}})
+	return d.setValue(path, value{kind: vRaw, raw: &rawValue{content: content, info: info, fenceChar: fc, fenceLen: fl}})
 }
 
 // SetIntArray binds an inline integer array at path.
@@ -2920,6 +3811,7 @@ func (d *Document) SetDateTimeArrayDefault(path string, v []DateTime) bool {
 // Load(defaults, site, user) is a left fold of this: each later file overlaid
 // on the earlier ones.
 func (d *Document) Merge(over *Document) {
+	d.lost += over.lost
 	d.overlay(root, over, root)
 	// Layers commonly share a footer; keeping one copy of each keeps a
 	// stack of files from repeating it once per layer.
@@ -2946,19 +3838,23 @@ func (d *Document) Merge(over *Document) {
 // comments have to move onto it or they are lost. Same rule as an in-file
 // merge: leading concatenates in layer order, first trailing wins.
 func (d *Document) adoptTrivia(base int, over *Document, ok int) {
-	src := &over.arena[ok]
+	st := over.arena[ok].trivia
+	if st == nil {
+		return
+	}
+	bt := d.arena[base].trivMut()
 	// append copies the lead values, so the merged doc never shares a
 	// backing array with over, which the caller may still mutate.
-	d.arena[base].leading = append(d.arena[base].leading, src.leading...)
-	if src.trailing != "" {
-		if d.arena[base].trailing == "" {
-			d.arena[base].trailing = src.trailing
+	bt.leading = append(bt.leading, st.leading...)
+	if st.trailing != "" {
+		if bt.trailing == "" {
+			bt.trailing = st.trailing
 		} else {
-			d.arena[base].leading = append(d.arena[base].leading, plainLead(src.trailing))
+			bt.leading = append(bt.leading, plainLead(st.trailing))
 		}
 	}
-	d.arena[base].after = append(d.arena[base].after, src.after...)
-	d.arena[base].inside = append(d.arena[base].inside, src.inside...)
+	bt.after = append(bt.after, st.after...)
+	bt.inside = append(bt.inside, st.inside...)
 }
 
 func (d *Document) overlay(baseParent int, over *Document, overParent int) {
@@ -2995,6 +3891,7 @@ func (d *Document) overlay(baseParent int, over *Document, overParent int) {
 	// instances, and replaced names base never had) keeps processing order.
 	replace := map[string][]int{}
 	var appended []int
+	emptyKey := (&value{kind: vEmpty}).key()
 	for _, name := range order {
 		group := groups[name]
 		overLeafy := true
@@ -3018,9 +3915,27 @@ func (d *Document) overlay(baseParent int, over *Document, overParent int) {
 		} else {
 			for _, ok := range group {
 				okey := over.arena[ok].value.key()
-				if b, found := byKey[[2]string{name, okey}]; found {
-					d.adoptTrivia(b, over, ok)
-					d.overlay(b, over, ok)
+				target, found := byKey[[2]string{name, okey}]
+				// A raw block in the higher layer fills a same-named empty
+				// binding below, exactly as a fence line fills one inside a
+				// single file. Without it, merging two documents and parsing
+				// them run together disagree: both bindings survive here and
+				// fold there, so the merged output is not a formatter fixpoint.
+				if !found && over.arena[ok].value.kind == vRaw {
+					empty := [2]string{name, emptyKey}
+					if b, hit := byKey[empty]; hit {
+						cv := cloneValue(&over.arena[ok].value)
+						d.arena[b].value = cv
+						delete(byKey, empty)
+						if _, dup := byKey[[2]string{name, okey}]; !dup {
+							byKey[[2]string{name, okey}] = b
+						}
+						target, found = b, true
+					}
+				}
+				if found {
+					d.adoptTrivia(target, over, ok)
+					d.overlay(target, over, ok)
 				} else {
 					c := d.cloneSubtree(over, ok, baseParent)
 					appended = append(appended, c)
@@ -3051,13 +3966,37 @@ func (d *Document) overlay(baseParent int, over *Document, overParent int) {
 	d.arena[baseParent].children = newKids
 }
 
+// cloneValue copies the value's storage too - a struct copy would share the
+// els backing array (and the raw block) with `over`, and the clone must
+// survive `over` being released.
+func cloneValue(v *value) value {
+	cv := *v
+	cv.els = append([]element(nil), cv.els...)
+	if cv.raw != nil {
+		r := *cv.raw
+		cv.raw = &r
+	}
+	return cv
+}
+
+// cloneTrivia deep-copies a trivia sidecar (nil stays nil).
+func cloneTrivia(t *trivia) *trivia {
+	if t == nil {
+		return nil
+	}
+	c := trivia{
+		leading:  append([]lead(nil), t.leading...),
+		trailing: t.trailing,
+		after:    append([]lead(nil), t.after...),
+		inside:   append([]lead(nil), t.inside...),
+	}
+	return &c
+}
+
 // cloneSubtree deep-copies over's subtree at oi into d's arena under parent.
 func (d *Document) cloneSubtree(over *Document, oi, parent int) int {
 	src := over.arena[oi]
-	// Copy the element storage too - a struct copy would share the els backing
-	// array with `over`, and the clone must survive `over` being released.
-	cv := src.value
-	cv.els = append([]element(nil), cv.els...)
+	cv := cloneValue(&src.value)
 	var srcCopy *string
 	if src.src != nil {
 		s := *src.src
@@ -3065,16 +4004,15 @@ func (d *Document) cloneSubtree(over *Document, oi, parent int) int {
 	}
 	nd := nodeData{
 		name:        src.name,
+		nameSrc:     src.nameSrc,
 		value:       cv,
 		parent:      parent,
 		line:        src.line,
 		starList:    src.starList,
 		starMixed:   src.starMixed,
-		leading:     append([]lead(nil), src.leading...),
-		trailing:    src.trailing,
-		after:       append([]lead(nil), src.after...),
-		inside:      append([]lead(nil), src.inside...),
+		trivia:      cloneTrivia(src.trivia),
 		blankBefore: src.blankBefore,
+		srcSet:      src.srcSet,
 		src:         srcCopy,
 	}
 	idx := len(d.arena)
@@ -3328,6 +4266,8 @@ func parseU32(s string) (int, bool) {
 	return int(v), true
 }
 
+// The Atoi error discards through this date cluster are safe: every input is
+// length-bounded and allDigits-checked first, so Atoi cannot fail on it.
 func parseYear4(s string) (int, bool) {
 	if len(s) != 4 || !allDigits(s) {
 		return 0, false
@@ -3880,6 +4820,40 @@ func (d *Document) GetDateTime(path string) (DateTime, Status) {
 	return r.Value, r.Status
 }
 
+// The array forms of the same reduction. The status is the whole read's, so a
+// partially-resolved array reports non-Good with the resolved slots still in
+// the value; the per-slot statuses are the Read*Array tier's Slots.
+
+// GetIntArray is ReadIntArray reduced to (value, status).
+func (d *Document) GetIntArray(path string) ([]int64, Status) {
+	r := d.ReadIntArray(path)
+	return r.Value, r.Status
+}
+
+// GetFloatArray is ReadFloatArray reduced to (value, status).
+func (d *Document) GetFloatArray(path string) ([]float64, Status) {
+	r := d.ReadFloatArray(path)
+	return r.Value, r.Status
+}
+
+// GetBoolArray is ReadBoolArray reduced to (value, status).
+func (d *Document) GetBoolArray(path string) ([]bool, Status) {
+	r := d.ReadBoolArray(path)
+	return r.Value, r.Status
+}
+
+// GetStringArray is ReadStringArray reduced to (value, status).
+func (d *Document) GetStringArray(path string) ([]string, Status) {
+	r := d.ReadStringArray(path)
+	return r.Value, r.Status
+}
+
+// GetDateTimeArray is ReadDateTimeArray reduced to (value, status).
+func (d *Document) GetDateTimeArray(path string) ([]DateTime, Status) {
+	r := d.ReadDateTimeArray(path)
+	return r.Value, r.Status
+}
+
 // Convenience tier: one value, one call-site fallback, no status to inspect.
 // The fallback is returned unless the read is Good (matching the reference's
 // get_int(path).unwrap_or(def)), so an empty/missing/bad/ambiguous read can
@@ -3982,8 +4956,8 @@ func (d *Document) GetDateTimeArrayOr(path string, def []DateTime) []DateTime {
 // spec.md "Schema validation"). Validation reuses the accessor's path scan and
 // the typed coercions, so document strictness composes for free. Schema faults
 // (V09x) come first and the surviving constraints still check the document;
-// only the unknown-field sweep needs a fault-free schema. One line-number
-// space per result.
+// the unknown-field sweep skips only when a fault cost a path spelling. One
+// line-number space per result.
 
 var schemaTypes = []string{
 	"int",
@@ -4043,6 +5017,11 @@ type constraint struct {
 type schemaDef struct {
 	cons  []constraint
 	frags map[string][]constraint
+	// False when a fault cost the schema a path spelling (unreadable `field:`
+	// path, or a mount naming no declared fragment). Key-level faults keep
+	// their entry's chain, so only these two classes can turn declared fields
+	// into false unknowns - the sweep runs unless one of them happened.
+	pathsComplete bool
 }
 
 func vdiag(out *[]Diagnostic, line int, msg string) {
@@ -4079,12 +5058,15 @@ func buildSchema(schema *Document) (schemaDef, []Diagnostic) {
 	var faults []Diagnostic
 	var cons []constraint
 	frags := map[string][]constraint{}
+	pathsComplete := true
 	for _, f := range schema.arena[root].children {
 		node := &schema.arena[f]
 		switch node.name {
 		case "field":
 			if c, ok := parseField(schema, f, &faults); ok {
 				cons = append(cons, c)
+			} else {
+				pathsComplete = false
 			}
 		case "fragment":
 			name, ok := singleText(&node.value)
@@ -4102,6 +5084,8 @@ func buildSchema(schema *Document) (schemaDef, []Diagnostic) {
 				if kid.name == "field" {
 					if c, ok := parseField(schema, k, &faults); ok {
 						fcs = append(fcs, c)
+					} else {
+						pathsComplete = false
 					}
 				} else {
 					vdiag(&faults, kid.line, fmt.Sprintf("bad schema fragment '%s': unknown key '%s'", name, kid.name))
@@ -4120,6 +5104,7 @@ func buildSchema(schema *Document) (schemaDef, []Diagnostic) {
 		}
 		if _, ok := frags[c.inherits]; !ok {
 			vdiag(&faults, c.inheritsLine, fmt.Sprintf("unknown schema fragment '%s'", c.inherits))
+			pathsComplete = false
 		}
 	}
 	for i := range cons {
@@ -4132,7 +5117,7 @@ func buildSchema(schema *Document) (schemaDef, []Diagnostic) {
 	}
 	// One constraint per line in practice, so line order = file order.
 	sort.SliceStable(faults, func(i, j int) bool { return faults[i].Line < faults[j].Line })
-	return schemaDef{cons: cons, frags: frags}, faults
+	return schemaDef{cons: cons, frags: frags, pathsComplete: pathsComplete}, faults
 }
 
 // parseField turns one `field:` instance (top-level or inside a fragment) into
@@ -4152,6 +5137,7 @@ func parseField(schema *Document, f int, faults *[]Diagnostic) (constraint, bool
 	c := constraint{path: path, segs: scan.segments}
 	// Deferred so `min: 1` may precede `type: int` in the file.
 	var required *bool
+	reopenSeen := false
 	allowedAt := -1
 	minAt := -1
 	maxAt := -1
@@ -4188,6 +5174,19 @@ func parseField(schema *Document, f int, faults *[]Diagnostic) (constraint, bool
 				required = &b
 			} else {
 				vdiag(faults, kid.line, "bad schema constraint 'required'")
+			}
+		// Consumed by the H002 suppressor (which reads the schema document
+		// directly); validation itself ignores it, but a bad value still
+		// faults so a typo cannot silently disavow nothing.
+		case "reopen":
+			t, ok := singleText(&kid.value)
+			if ok {
+				_, ok = parseBoolText(t, Standard)
+			}
+			if ok && !reopenSeen {
+				reopenSeen = true
+			} else {
+				vdiag(faults, kid.line, "bad schema constraint 'reopen'")
 			}
 		case "allowed":
 			if kid.value.kind == vCell && allowedAt < 0 {
@@ -4668,7 +5667,7 @@ const genBanner = "#\n" +
 	"# \"Simple Hierarchical Config Language\"\n" +
 	"#    Home     https://github.com/jim-collier/shcl\n" +
 	"#    Syntax   https://github.com/jim-collier/shcl/blob/main/project/spec.md\n" +
-	"#    Legal    SHCL is Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]. License: MIT. No warranty.\n" +
+	"#    Legal    SHCL is Copyright © 2026 Jim Collier. License: MIT. No warranty.\n" +
 	"#\n"
 
 // genPathText renders parsed segments back as a dotted path, dropping
@@ -4690,7 +5689,11 @@ func genPathText(segs []segment) string {
 			switch s.sel.kind {
 			case selByValue:
 				out.WriteByte('[')
-				out.WriteString(s.sel.value)
+				if s.sel.quoted {
+					out.WriteString(quoteText(s.sel.value))
+				} else {
+					out.WriteString(s.sel.value)
+				}
 				out.WriteByte(']')
 			case selByIndex:
 				fmt.Fprintf(&out, "[#%d]", s.sel.index)
@@ -4791,17 +5794,22 @@ func min3(a, b, c int) int {
 // spec.md "Schema validation"). An empty result means the document conforms.
 // Diagnostic lines are document lines (0 = document scope); schema faults
 // (V09x, schema-file lines) come first, and the surviving constraints still
-// check the document. Only the unknown-field sweep needs a fault-free schema:
-// a dropped constraint would turn the fields it declared into false unknowns,
-// so that check skips rather than misfire.
+// check the document. The unknown-field sweep runs too, unless a fault cost
+// the schema a path spelling (an unreadable `field:` path, or a mount naming
+// no declared fragment) - only those can turn declared fields into false
+// unknowns; a key-level fault keeps its entry's chain.
+// The H001/H002 hints a schema disavows are NOT dropped by this call: they
+// live on the parse's diagnostics, which validation does not touch. Parse then
+// validate and they are still there - apply SuppressDeclaredRepeats /
+// SuppressDeclaredReopens yourself, or use LoadAndValidate, which runs both
+// for you.
 func (d *Document) Validate(schema *Document) []Diagnostic {
 	def, faults := buildSchema(schema)
-	schemaOK := len(faults) == 0
 	out := faults
 	for i := range def.cons {
 		d.vCheck(&def.cons[i], &def, &out)
 	}
-	if schemaOK {
+	if def.pathsComplete {
 		d.vUnknown(&def, &out)
 	}
 	return out
@@ -4849,7 +5857,7 @@ func (d *Document) vContexts(start []int, segs []segment, anchor int, out *[]vCo
 			want := applyEscapes(seg.sel.value)
 			cur = nil
 			for _, c := range next {
-				if dispKey(&d.arena[c].value) == want {
+				if dispKey(&d.arena[c].value) == want && (!seg.sel.quoted || singleScalar(&d.arena[c].value)) {
 					cur = append(cur, c)
 				}
 			}

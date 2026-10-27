@@ -7,7 +7,7 @@ import (
 	"embed"
 	"sync"
 
-	shcl "github.com/jim-collier/shcl/source/go"
+	"github.com/yottacore/gitniblet/internal/core/shclio"
 )
 
 // schema.shcl states the DDL's vocabulary for shcl's validator. Embedding it
@@ -23,22 +23,22 @@ var schemaFS embed.FS
 
 var (
 	schemaOnce sync.Once
-	schemaDocV *shcl.Document
+	schemaDocV *shclio.Doc
 )
 
 // schemaDoc returns the validation schema. Parsed once - it is immutable, and
 // Validate only reads it, so every DDL load shares the one document.
-func schemaDoc() *shcl.Document {
+func schemaDoc() *shclio.Doc {
 	schemaOnce.Do(func() {
 		text, err := schemaFS.ReadFile("schema.shcl")
 		if err != nil {
 			// Embedded at build time, so this cannot fail in a shipped binary;
 			// an empty schema degrades to "validate nothing" rather than
 			// refusing to open a database over a build problem.
-			schemaDocV = shcl.New()
+			schemaDocV = shclio.New()
 			return
 		}
-		schemaDocV = shcl.Parse(string(text))
+		schemaDocV, _ = shclio.Load(string(text), shclio.Standard)
 	})
 	return schemaDocV
 }

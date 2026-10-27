@@ -78,9 +78,13 @@ func (c *Catalog) FormChoices(api *crud.API, table string) (*LookupShow, error) 
 	return show, nil
 }
 
-// splitLiterals reads `"Bob", 'Sally', Ann` as its 3 values: commas inside
-// quotes don't split, and one outer quote pair is dropped.
+// splitLiterals reads `["Bob", 'Sally', Ann]` as its 3 values: commas inside
+// quotes don't split, and one outer quote pair is dropped. The brackets are
+// optional, as before shcl 3.
 func splitLiterals(source string) []string {
+	if trimmed := strings.TrimSpace(source); strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+		source = trimmed[1 : len(trimmed)-1]
+	}
 	var vals []string
 	var cur strings.Builder
 	var quote rune
