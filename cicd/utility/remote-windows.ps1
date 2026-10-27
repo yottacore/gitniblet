@@ -17,12 +17,14 @@
 param(
 	[Parameter(Mandatory)][string]$Work,
 	[int]$JobCap = 4,
-	[int]$Keep = 0
+	[int]$Keep = 0,
+	[string]$LeakCheck = '1'
 )
 $ErrorActionPreference = 'Stop'
 ## The test binaries write UTF-8. With no console this can throw, and the default then only garbles non-ASCII.
 try { [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false) } catch { }
 (Get-Process -Id $PID).PriorityClass = 'BelowNormal'
+if ($LeakCheck -eq '0') { $env:GITNIBLET_LEAKCHECK = '0' }
 
 ## Only the folder remote-test.bash made for this run, never a link.
 function Remove-RunFolder {
@@ -111,3 +113,4 @@ exit [int]($failed -ne 0)
 ##		- 20261025 JC: Raw test2json output per binary, for one line per test on the host.
 ##		- 20261025 JC: Load from GetSystemTimes, which a non-admin logon can read.
 ##		- 20261026 JC: Tests run with a fake home, checked after.
+##		- 20261026 JC: LeakCheck 0 turns goleak off in the test binaries.

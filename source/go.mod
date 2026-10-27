@@ -9,6 +9,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jim-collier/shclwrap/source/go v0.0.0-20261027004135-f03fe5e8fff3
 	github.com/rivo/tview v0.42.0
+	go.uber.org/goleak v1.3.0
 	golang.org/x/term v0.28.0
 	modernc.org/sqlite v1.53.0
 )

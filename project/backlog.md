@@ -475,7 +475,9 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - Go leak checks: `goleak.VerifyTestMain` in every package's tests.
 	- ID: 2026102520521021
 	- Type: Task
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: `cicd/cicd.bash --backlog-run-full`, plain arm. Remote tests run goleak on all 4 boxes for the first time, and Pipeline tests runs defqc and defqe.
+	- Needs external testing: hosted `ci.yml`, for goleak on the macOS job. Then `GITNIBLET_LEAKCHECK=0 cicd/utility/remote-test.bash windows`, for the new `LeakCheck` parameter of `remote-windows.ps1` on b29w.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261025-205210
 	- Opened by: JC
@@ -484,6 +486,25 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Every package with tests has a `TestMain` that calls `goleak.VerifyTestMain`, with `go.uber.org/goleak` vendored.
 		- Watched to fail first, with a test that leaks a goroutine on purpose.
 		- `--leakcheck` and `--no-leakcheck` turn something on and off once this is in, per the CICD style guide.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 20261026: `go.uber.org/goleak` v1.3.0, the newest, is vendored. New `internal/leakcheck` runs a package's tests through `goleak.VerifyTestMain` and returns the exit code. All 15 test packages and its own call it from a `TestMain`, and the TUI's existing one cleans up after it.
+		- `GITNIBLET_LEAKCHECK=0` turns it off. `--no-leakcheck` sets that for the run, the container and the test boxes, and `--leakcheck` sets it back to 1. `--list` prints `Leak checks: on` or `off`, and the run's header says when it's off.
+		- `--help` and design.md's CI/CD pipeline say so.
+		- Verified: the whole module passes with the check on, and under `-race` for the TUI. leakcheck defq9 passes, and fails with goleak skipped. A goroutine left in the guid tests fails that package, and passes with `GITNIBLET_LEAKCHECK=0`.
+		- Verified: flags-test defqc passes, and fails on the old `cicd.bash`. remote-skip-test defqe passes, and the old `remote-test.bash` sends no switch to the box. The rest of both scripts pass, and so do `--backlog-run-quick`, `testid check`, govulncheck, gosec and `go mod verify`.
+		- Verified: the suite took the same CPU time with the check on and off, 11.8s user, at load 16 to 21.
+		- Swept: every `_test.go` folder in `source/`, every place the tests run (`test.bash`, Race tests, the container, `remote-unix.bash`, `remote-windows.ps1`), and every place the leak flags appear, docs included.
+	- Decisions:
+		- One helper rather than a bare `goleak.VerifyTestMain` in each package, so the off switch lives in one place.
+		- An env var, not a test flag, since it reaches the container, the boxes' prebuilt test binaries and a hand `go test` alike.
+		- It runs in every run, `--quick` and `--backlog-run-quick` included, since it adds no time a run can measure. So `--leakcheck` adds nothing until the soak test, 2026102520521023, which it will turn on.
+		- `defqa` is the leaking test. It runs only as defq9's child, so every run lists it as a SKIP.
+		- `cicd/utility/testid` is its own module with no deps and no goroutines, so it's left out.
+		- The enterprise build fails on a missing shclwrap `go.sum` entry, which 2026102509204445 already notes. Not from this change.
+	- Branch: r1026
+	- Test case: `internal/leakcheck` defq9, `flags-test.bash` defqc and `remote-skip-test.bash` defqe. Every package's tests run the check itself.
 
 - Go leak checks: a soak test on heap in use and goroutine count.
 	- ID: 2026102520521023

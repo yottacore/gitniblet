@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/yottacore/gitniblet/internal/leakcheck"
 )
 
 // Every app a test builds reads the user's settings, and so the registry.
@@ -29,7 +31,7 @@ func TestMain(m *testing.M) {
 			os.Exit(1)
 		}
 	}
-	code := m.Run()
+	code := leakcheck.Run(m)
 	_ = os.RemoveAll(dir)
 	os.Exit(code)
 }

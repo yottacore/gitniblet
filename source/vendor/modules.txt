@@ -78,6 +78,10 @@ github.com/rivo/uniseg
 # github.com/yottacore/shcl/source/go/v2 v2.0.0-20261026200642-2174f0d94127
 ## explicit; go 1.20
 github.com/yottacore/shcl/source/go/v2
+# go.uber.org/goleak v1.3.0
+## explicit; go 1.20
+go.uber.org/goleak
+go.uber.org/goleak/internal/stack
 # golang.org/x/sys v0.44.0
 ## explicit; go 1.25.0
 golang.org/x/sys/plan9

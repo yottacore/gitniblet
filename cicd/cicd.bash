@@ -58,7 +58,7 @@ if [[ -z "${doQuietly+x}" ]]; then
 	declare     runMode="run"
 	declare  -a testAreas=()
 	declare  -i doList=0  doSync=1
-	declare     leakOpt=""            ## No leak checks yet, so this is only taken
+	declare     leakOpt=""            ## --leakcheck or --no-leakcheck, as given
 	declare     aliasNote=""
 	## --backlog-run-quick's areas, as "name|go packages", in --help order.
 	declare -ra testAreaDefs=(
@@ -138,7 +138,10 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "      --long          Also --slow. The default run, since nothing here takes"
 	fEcho_Clean "                      hours."
 	fEcho_Clean "      --leakcheck, --no-leakcheck"
-	fEcho_Clean "                      Taken. There are no leak checks yet."
+	fEcho_Clean "                      goleak after every package's tests, in every run, the"
+	fEcho_Clean "                      container and the test boxes included. --no-leakcheck"
+	fEcho_Clean "                      turns it off, as GITNIBLET_LEAKCHECK=0 does, and"
+	fEcho_Clean "                      --leakcheck turns it back on over that."
 	fEcho_Clean "      --backlog-run-quick [<area>...]"
 	fEcho_Clean "                      About 4 minutes: release build and CLI smoke, gofmt check,"
 	fEcho_Clean "                      staticcheck, and the tests, or only the tests of the areas"
@@ -254,6 +257,11 @@ fMain(){
 	if fIsHandsOff; then
 		doQuietly=1  doInstall=0  doHooks=0  doPublish=0  doDemo=0  doFormat=0  doSync=0
 	fi
+	## internal/leakcheck reads it, here, in the container and on the boxes.
+	case "${leakOpt}" in
+		--no-leakcheck) export GITNIBLET_LEAKCHECK=0 ;;
+		--leakcheck)    export GITNIBLET_LEAKCHECK=1 ;;
+	esac
 
 	## Commit message: -m wins; else auto-generate when running quiet/unattended.
 	## An empty message when interactive lets the publish step open an editor.
@@ -383,7 +391,7 @@ fMain(){
 		local -a headerLines=()
 		[[ -z "${aliasNote}" ]]  ||  headerLines+=("${aliasNote}")
 		((${#testAreas[@]} == 0))  ||  headerLines+=("Test areas: ${testAreas[*]}")
-		[[ -z "${leakOpt}" ]]  ||  headerLines+=("${leakOpt}: there are no leak checks yet.")
+		[[ "${GITNIBLET_LEAKCHECK:-}" != "0" ]]  ||  headerLines+=("Leak checks: off, by ${leakOpt:-GITNIBLET_LEAKCHECK=0}.")
 		fSteps_Header "${exeName} CI/CD, ${runMode}" "${headerLines[@]}" "${containerLine}" "CPUs: ${GITNIBLET_CORES}, load ${GITNIBLET_LOAD}. A step gets half, or a quarter for fuzz or when the load is over half."
 	fi
 
@@ -594,6 +602,7 @@ fList(){
 	fEcho_Clean "${exeName} CI/CD, ${runMode}: ${#stepsOn[@]} steps, ${#stepsOff[@]} off"
 	for s in "${stepsOn[@]}"; do fEcho_Clean "Step $((++n)): ${s}"; done
 	for s in "${stepsOff[@]}"; do fEcho_Clean "Off: ${s}"; done
+	fEcho_Clean "Leak checks: $([[ "${GITNIBLET_LEAKCHECK:-}" == "0" ]] && echo off || echo on)"
 	command -v go &> /dev/null  ||  { fEcho_Clean "No go here, so no test IDs."; return 0; }
 	ids="$(GOFLAGS='' go -C "${dirPath_Base}/cicd/utility/testid" run . ids "${dirPath_Base}")"  ||  fThrowError "Couldn't read the test IDs."
 
@@ -880,7 +889,7 @@ fStage_Container(){
 		--cpus "${GITNIBLET_JOBS_MAX}" --cpu-shares 256 --user "$(id -u):$(id -g)"
 		-v "${dirPath_Base}:${dirPath_Base}" -v "${containerVolume}:/cache" -w "${dirPath_Base}"
 		-v "${runDir}:${runDir}" -e GITNIBLET_RUN_DIR -e HOST_TEMP -e TMPDIR -e TEMP -e TMP -e GITNIBLET_IN_CONTAINER=1
-		-e GITNIBLET_STEPS -e "GITNIBLET_JOBS_CAP=${GITNIBLET_JOBS_MAX}")
+		-e GITNIBLET_STEPS -e GITNIBLET_LEAKCHECK -e "GITNIBLET_JOBS_CAP=${GITNIBLET_JOBS_MAX}")
 	((doKeepTemp))  ||  runArgs+=(--rm)
 	## The host's time zone, for the step lines' local time.
 	[[ ! -f /etc/localtime ]]  ||  runArgs+=(-v /etc/localtime:/etc/localtime:ro)
@@ -1239,3 +1248,4 @@ fMain  "${@}"
 ##		- 20261025 JC: GITNIBLET_HOOKS_DIR, so the plan's tests pass where ../../private/cicd-hooks is missing.
 ##		- 20261026 JC: Local hooks dir is ../private/cicd-hooks again, now that the project folder has its own private/.
 ##		- 20261026 JC: Race tests run with a fake home, as test.bash and the smoke do.
+##		- 20261026 JC: --leakcheck and --no-leakcheck turn goleak on and off, through GITNIBLET_LEAKCHECK.
