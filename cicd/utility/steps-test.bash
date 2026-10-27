@@ -155,12 +155,16 @@ fCheck dedq8 "a failing step closes with FAIL and the run stops" fFailRun
 printf '#!/bin/bash\necho "$*" >> "%s"\n[[ "$1" != version ]] || echo 29\n[[ "$1" != run ]] || printf "%%s\\n\\n" "[ 20261025-000000.00: Step 5 of 5; PASS Security + supply-chain ]"\nexit 0\n' "${runDir}/docker.log" > "${runDir}/bin/docker"
 chmod +x "${runDir}/bin/docker"
 fContainerArgs(){
-	local run
+	local run cpus cap
 	local -a ctrFlags=(-q --quick --no-sync --no-remote --no-install --no-hooks --no-publish --no-demo --no-format)
 	GITNIBLET_DOCKER="${runDir}/bin/docker" nice -n 19 bash "${repoRoot}/cicd/cicd.bash" "${ctrFlags[@]}" > "${runDir}/ctr.out" 2>&1  ||  { tail -20 "${runDir}/ctr.out"; return 1; }
 	run="$(grep '^run ' "${runDir}/docker.log")"
-	[[ "${run}" =~ --cpus\ ([0-9]+)\ --cpu-shares\ 256\ .*-e\ GITNIBLET_STEPS\ -e\ GITNIBLET_JOBS_CAP=([0-9]+)\ .*/etc/localtime:/etc/localtime:ro.*\ nice\ -n\ 19\ bash\  ]] \
-		&&  [[ "${BASH_REMATCH[1]}" == "$(( $(nproc) / 2 ))" && "${BASH_REMATCH[2]}" == "${BASH_REMATCH[1]}" ]] \
+	## Each part on its own, so a new -e between them can't break it.
+	[[ "${run}" =~ \ --cpus\ ([0-9]+)\ --cpu-shares\ 256\  ]]  &&  cpus="${BASH_REMATCH[1]}"
+	[[ "${run}" =~ \ -e\ GITNIBLET_JOBS_CAP=([0-9]+)\  ]]  &&  cap="${BASH_REMATCH[1]}"
+	[[ "${run} " == *" -e GITNIBLET_STEPS "* ]] \
+		&&  [[ "${run}" =~ /etc/localtime:/etc/localtime:ro\ .*\ nice\ -n\ 19\ bash\  ]] \
+		&&  [[ "${cpus:-}" == "$(( $(nproc) / 2 ))" && "${cap:-}" == "${cpus}" ]] \
 		&&  grep -qF 'Container: running gitniblet-' "${runDir}/ctr.out" \
 		||  { echo "  ${run}"; return 1; }
 }
@@ -180,3 +184,4 @@ exit $((fails > 0))
 ##		- 20261025 JC: Created.
 ##		- 20261025 JC: One blank after the run in the container.
 ##		- 20261025 JC: Run logs go in the test's folder.
+##		- 20261026 JC: dedq9 checks each container arg on its own, so a new -e between them is fine.

@@ -165,6 +165,9 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Verified: flags-test defqc passes, and fails on the old `cicd.bash`. remote-skip-test defqe passes, and the old `remote-test.bash` sends no switch to the box. The rest of both scripts pass, and so do `--backlog-run-quick`, `testid check`, govulncheck, gosec and `go mod verify`.
 		- Verified: the suite took the same CPU time with the check on and off, 11.8s user, at load 16 to 21.
 		- Swept: every `_test.go` folder in `source/`, every place the tests run (`test.bash`, Race tests, the container, `remote-unix.bash`, `remote-windows.ps1`), and every place the leak flags appear, docs included.
+		- 20261026: The full run failed steps-test dedq9, since its check wanted `-e GITNIBLET_STEPS` and `-e GITNIBLET_JOBS_CAP=N` side by side, and `-e GITNIBLET_LEAKCHECK` now sits between them. dedq9 now checks each container arg on its own. What it checks is the same.
+		- Verified: steps-test dedq9 and flags-test pass in full. dedq9's check still fails with the step list, the cap or `nice` taken out of the run line.
+		- Swept: every test that reads the docker run line. cleanup-test checks single args, and container-fallback-test reads none.
 	- Decisions:
 		- One helper rather than a bare `goleak.VerifyTestMain` in each package, so the off switch lives in one place.
 		- An env var, not a test flag, since it reaches the container, the boxes' prebuilt test binaries and a hand `go test` alike.
