@@ -81,7 +81,7 @@ Manually kicked off via `cicd/cicd.bash`. Stages, in order (each fails early and
 
 - **Profiler** (non-gating artifact): samples the CPU-hot tx-log replay path, renders an inferno flamegraph into `cicd/artifacts/profiling/` (GFS-rotated), and prints a hotspot summary (`flame-report.py`). Tooling misses warn and skip.
 
-- **Dogfood**: copy the native release to the local run path.
+- **Dogfood**: copy the native release to `~/synced/0-0/common/exec/app/linux/`, and when the run cross-built, the amd64 Windows and macOS builds to `mswin/` and `macos/` beside it, since the boxes that run them are amd64. A folder that isn't there, a copy that's already the same bytes, or one that a process here runs or holds open is skipped with one line. The copy goes in beside the old one and is renamed over it (`include/dogfood.bash`, checked by `dogfood-test.bash`).
 
 - **Screenshots**: regenerate the README thumbnails.
 

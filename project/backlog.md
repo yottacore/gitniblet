@@ -535,7 +535,10 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - Dogfood to `exec/app/<os>/`, and skip the copy when the binary is in use.
 	- ID: 2026102520521027
 	- Type: Task
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: the full run, for Pipeline tests: defr4 to defra in `dogfood-test.bash`.
+	- Needs external testing: `ci.yml` on the round branch, for defr4 to defra in its Pipeline tests step.
+	- Needs hand testing: the next default run on b23, to see the build land in `exec/app/linux/`, and a run with cross-compile for `mswin/` and `macos/`.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261025-205210
 	- Opened by: JC
@@ -544,6 +547,26 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Per the shared CICD rules, Dogfood. The Linux build goes to `~/synced/0-0/common/exec/app/linux/`, and the Windows and macOS builds to `mswin/` and `macos/` beside it, where the run built them.
 		- Skip the copy, with one line, when the binary there is in use.
 		- Today it goes to `exec/util/linux/bin/`, with a `/usr/local/sbin/` fallback through sudo.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261026: The Dogfood step copies the release build to `exec/app/linux/`. When the run cross-built, it also copies the amd64 Windows and macOS builds from `dist/` to `mswin/` and `macos/`. The `exec/util/linux/bin/` path and the sudo fallback are gone.
+		- A copy that a process here runs or holds open is skipped with one line, and so is a missing folder or one that already has the same bytes. The new copy goes in beside the old one and is renamed over it.
+		- The logic is in the new `cicd/utility/include/dogfood.bash`. design.md and `--help` say so.
+		- Verified: `dogfood-test.bash` defr4 to defra pass, and each fails with its part broken: the in-use check off (defr5, defr6), arm64 globs (defr7), the cross-built check ignored (defr8), no same-bytes skip (defr9), and the folder pick (defr4). defra runs `cicd.bash`'s own step, and fails on the old `cicd.bash` and with cross-built forced on. The /proc pass, for a box with no fuser, is checked in defr5 and defr6.
+		- Verified: `--backlog-run-quick`, `flags-test.bash` and shellcheck pass, and `--list` names the 7 new IDs.
+		- Not verified: a real dogfood copy, since a round never dogfoods.
+		- Swept: every dogfood and install path in `cicd.bash`, the scripts under `cicd/utility/`, the workflows and the docs. `preferredInstallPaths_Bash` is declared but read by nothing, so it stays as it was. Enterprise's `cicd.bash` has no Dogfood step, and vendor has no `cicd.bash`.
+	- Decisions:
+		- amd64 for Windows and macOS, since b29w and the Intel Mac boxes are amd64, and one binary name per folder leaves no room for both.
+		- Windows and macOS are copied only when Cross-compile + package is in this run's plan, so a `--quick` run never copies an older `dist/`.
+		- In use means a process on this box runs it or holds it open, through `fuser`, or one pass over /proc where there's no fuser. A copy in use on another box through the synced folder can't be seen from here.
+		- A missing folder is a skip, not a failure or a `mkdir`, per "first available location" in the shared rules.
+		- Same bytes, not mtime, decides "already this build", which replaces `cp --update=older`.
+		- A failed copy fails the step, now that there's no sudo fallback.
+		- `exec/app/linux/` isn't on PATH here, as for silkterm. The old `exec/util/linux/bin/ngdb` is left alone. The dogfood script, 2026102520521029, is what puts a launcher on PATH.
+	- Branch: r1026
+	- Test case: `cicd/utility/dogfood-test.bash` defr4 to defra.
 
 - A `dogfood_gitniblet.ps1` script with its launchers.
 	- ID: 2026102520521029

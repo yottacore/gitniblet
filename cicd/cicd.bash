@@ -40,7 +40,6 @@ if [[ -z "${doQuietly+x}" ]]; then
 	declare     filePath_CICD_TestExec="${dirPath_Base}/cicd/test.bash"
 	declare     gitAutomationScript="${dirPath_Base}/cicd/utility/n8git_backup-and-publish"
 	declare -ra preferredInstallPaths_Bash=("${HOME}/synced/0-0/common/exec/util/linux/bash"                    "/usr/local/sbin/"                                )  ## First one that exists, wins
-	declare -ra preferredInstallPaths_Linux_x8664=("${HOME}/synced/0-0/common/exec/util/linux/bin"              "/usr/local/sbin/"                                )  ## First one that exists, wins
 
 	## Generic constants
 	declare  -i doQuietly=0
@@ -118,7 +117,7 @@ fAbout(){ { ((doQuietly)) || ((wasShown_About)); } && return; wasShown_About=1;
 		fEcho_Clean "  • Cross-compile more versions. If those succeed:"
 	fi
 	fEcho_Clean "  • Run automated tests. If tests pass:"
-	fEcho_Clean "  • Update locally-installed version to what was just compiled for dogfood."
+	fEcho_Clean "  • Copy the release build to dogfood, unless the copy there is in use."
 	fEcho_Clean "  • Run git automation script (e.g. commit and push)."
 	#           X-------------------------------------------------------------------------------X
 	fEcho_Clean "" ;:;}
@@ -160,7 +159,7 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "      --no-sync       Skip the fetch and fast-forward from the remote before the"
 	fEcho_Clean "                      build. A diverged branch stops the run without it."
 	fEcho_Clean "      --no-arm        Build/package amd64 only (skip arm64) to trim a full run."
-	fEcho_Clean "      --no-install    Skip the dogfood install of the built binary."
+	fEcho_Clean "      --no-install    Skip the dogfood copy (~/synced/0-0/common/exec/app/)."
 	fEcho_Clean "      --no-hooks      Skip the pre-publish hooks (../private/cicd-hooks)."
 	fEcho_Clean "      --no-publish    Skip backup + publish: no commit, no push."
 	fEcho_Clean "      --no-demo       Skip the demo recording, which rewrites assets/demo.gif."
@@ -443,20 +442,12 @@ fMain(){
 		fStep_End
 	fi
 
+	## exec/app/<os>/, per include/dogfood.bash. Windows and macOS only when this
+	## run cross-built them, so --quick never copies an older dist/.
 	if fStep "Dogfood"; then
-
-		## Linux x86_64
-		for nextPath in "${preferredInstallPaths_Linux_x8664[@]}"; do
-			if [[ -d "${nextPath}" ]]; then
-				fEcho_Clean "copying ${filePath_ExecToTestAndInstall_FinalHome} -> ${nextPath%%/}/"
-				if { ! cp -av --update=older --reflink=auto "${filePath_ExecToTestAndInstall_FinalHome}"  "${nextPath%%/}/"; }  &&  [[ "${nextPath}" != "${HOME}/"* ]]; then
-					sudo cp -av --update=older --reflink=auto "${filePath_ExecToTestAndInstall_FinalHome}"  "${nextPath%%/}/"
-				fi
-				ls  -lA  --color=always  --human-readable  --time-style=+"%Y-%m-%d %H:%M:%S"  "$(which "$(basename "${filePath_ExecToTestAndInstall_FinalHome}")")"
-				fEcho_Clean "Installed (linux x86_64) -> ${nextPath%%/}/"
-				break
-			fi
-		done;:
+		local -i crossBuilt=0
+		! fStep_IsOn "Cross-compile + package"  ||  crossBuilt=1
+		fDogfood "${filePath_ExecToTestAndInstall_FinalHome}" "${dirPath_Base}/dist" "${crossBuilt}"  ||  fThrowError "Dogfood copy failed."
 		fStep_End
 	fi
 
@@ -1209,6 +1200,9 @@ source "${meDir}/utility/include/steps.bash"
 ## Fetch and fast-forward before the build (fRemoteSync)
 source "${meDir}/utility/include/sync.bash"
 
+## Dogfood copies, skipped when in use (fDogfood)
+source "${meDir}/utility/include/dogfood.bash"
+
 ## Invoke main
 fMain  "${@}"
 
@@ -1249,3 +1243,4 @@ fMain  "${@}"
 ##		- 20261026 JC: Local hooks dir is ../private/cicd-hooks again, now that the project folder has its own private/.
 ##		- 20261026 JC: Race tests run with a fake home, as test.bash and the smoke do.
 ##		- 20261026 JC: --leakcheck and --no-leakcheck turn goleak on and off, through GITNIBLET_LEAKCHECK.
+##		- 20261026 JC: Dogfood goes to exec/app/<os>/, Windows and macOS too when cross-built, and skips a copy that's in use. No sudo fallback.
