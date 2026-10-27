@@ -561,7 +561,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - Reproducible release archives.
 	- ID: 2026102520521031
 	- Type: Task
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs external testing: `ci.yml` on `r1026`, whose Linux merge gate runs `repro-test.bash` in Pipeline tests.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261025-205210
 	- Opened by: JC
@@ -570,6 +571,21 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Requirements [Feature]:
 		- goreleaser sets `mod_timestamp` from the commit time, for the binaries and the archive files, so 2 builds of one commit give the same bytes.
 		- A check builds twice and compares the checksums.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261026: `.goreleaser.yaml` sets `mod_timestamp` from `.CommitTimestamp`, and the archive's binary and files, the `.deb` and `.rpm`, and their files get `.CommitDate`. The archive's files are listed by name now, the same 3 the default globs took.
+		- `cicd/utility/repro-test.bash` builds HEAD twice, from 2 clones checked out 2 seconds apart, for linux and windows on amd64, and compares `checksums.txt`. It also checks the binary's mtime is the commit time. About 19 s wall, 35 s CPU, at load 10. It's a Pipeline test, so it runs in the full run and the hosted merge gate.
+		- Verified: defr0 and defr1 pass. Both fail on the old config. With only the package `mtime` dropped, defr0 fails on the `.deb` and `.rpm`.
+		- Not verified: darwin, freebsd and arm64, which the check leaves out to stay quick. They use the same settings.
+		- Departs from the requirements: the `.deb` and `.rpm` get the commit time too, since `checksums.txt` lists them.
+		- design.md says so, under CI/CD pipeline.
+	- Decisions:
+		- The check is a Pipeline test with a 2-target matrix, not a second full goreleaser run in packaging, so it adds about 20 s, not minutes.
+		- Fresh clones, so checkout times differ between the 2 builds, and the real `dist/` is never touched.
+	- Branch: r1026
+	- Commit: c063c25
+	- Test case: defr0 and defr1 in `cicd/utility/repro-test.bash`.
 
 - A FreeBSD `.pkg`.
 	- ID: 2026102520521033
@@ -586,7 +602,9 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - Hosted workflows read the Go and tool pins from where `cicd.bash` does.
 	- ID: 2026102520521642
 	- Type: Task
-	- Status: Queued
+	- Status: Waiting on automated testing
+		- After `ci.yml` passes, it goes to Stalled, held for the next release cut, for `release.yml`.
+	- Needs external testing: `ci.yml` on `r1026`, both jobs, for Go from `go.mod`. `release.yml` at the next release cut, for the pinned goreleaser.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261025-205216
 	- Opened by: JC
@@ -595,6 +613,21 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Requirements [Feature]:
 		- Today `ci.yml` and `release.yml` pin Go on their own, and the release takes any goreleaser v2.
 		- Both read the Go version from `source/go.mod`'s `toolchain` line and goreleaser from `tool-versions.bash`.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261026: All 3 `setup-go` steps take `go-version-file: source/go.mod`, which uses the `toolchain` line when there is one. A new `Tool pins` step in `release.yml` sources `tool-versions.bash` and hands the goreleaser action `v2.17.0`, and fails if it finds no version there.
+		- `cicd/utility/pins-test.bash` checks every `setup-go` reads `go.mod`, no workflow pins Go itself, and the goreleaser action takes the pins step's output. It runs that step's own text with a stand-in `GITHUB_OUTPUT`.
+		- Verified: defqw to defqz pass. All 4 fail on the old workflows. The pins step follows a changed pin. Both workflows parse. `--backlog-run-quick` and `flags-test.bash` pass.
+		- Not verified: the hosted runs.
+		- design.md says so, under CI/CD pipeline.
+		- Swept: every `go-version` and goreleaser pin in `.github/`, `cicd/`, `.goreleaser.yaml` and the docs. `cla.yml` has no Go. `ci.yml`'s merge gate already runs goreleaser through `cicd.bash` at the pin. `dependabot.yml` bumps only the action versions in the workflows, so nothing there pins Go now.
+	- Decisions:
+		- `go-version-file` over a step that parses `go.mod`, since `setup-go` reads the `toolchain` line itself.
+		- The pin stays in `tool-versions.bash` as a `go run` path. The workflow cuts the version off its end, so the file keeps one form.
+	- Branch: r1026
+	- Commit: c063c25
+	- Test case: defqw to defqz in `cicd/utility/pins-test.bash`.
 
 - Optional pessimistic record-level locking.
 	- ID: 2026102614444075
