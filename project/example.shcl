@@ -11,7 +11,7 @@ code:  ## Application-level
 database:
 	tables:
 		table: "table_name1"
-			aliases: table7, "old_table79"
+			aliases: [table7, "old_table79"]
 			access:  ## table-level access by user groups (default: all; admins can always read/write, owners can always delete)
 				read:
 					whitelist:  ## Defaults to all unless populated
@@ -31,7 +31,7 @@ database:
 						write:
 							whitelist:  ## Defaults to all unless populated
 							blacklist:  ## Defaults to none unless populated.
-					aliases: field99, "favorite_candy"
+					aliases: [field99, "favorite_candy"]
 					type:          string  #..........: string|int|float|bool|datetime[_local]|datetime_utc|binary  ## datetime[_local] stores UTC but displays in user's local time.
 					special:       "%|($0|$2|etc) [and other valid currency symbols]"  ## Defaults internal processing (e.g. % <--> float), defaults a UI format for currency unless overridden, etc.
 					is_active:            #..........: bool. Whether the field itself is in use.
@@ -63,7 +63,7 @@ database:
 							## Checkbox can only be "literal", listbox can be any.
 						list_source: ## string
 							## list_type:
-								## literal: e.g. "Bob", "Sally"
+								## literal: e.g. ["Bob", "Sally"]
 								## sql: e.g. `SELECT idx, title FROM ...`, etc.
 								## lookup: an idx from the 'lookups' table; the field stores the picked lookup_values.idx. Empty group = empty picker until populated.
 						lookup_in_lists: symbol  ## symbol|title|both. Default symbol; a value with no symbol falls back to its title. N/A if list_type <> "lookup".
@@ -78,7 +78,7 @@ database:
 				before_update:  #.............: Function that, if exists, is sent: table_name, and a key:value array of field values [or something], to validate and/or update. Return pass|fail boolean to cancel update.
 				after_update:  #..............: Function that, if exists, is sent: table_name, row_id.
 			uniques:  ## These get automatically named. These are also indexed.
-				unique: field_name1, field_name2
+				unique: [field_name1, field_name2]
 				unique: field_name2
 			indexes:  ## Warn if an identical index is already named as a unique (which is inherently also indexed).
 				index: field_name1
@@ -189,10 +189,10 @@ database:
 
 	seed:  ## Rows inserted log-first at open when their idx is absent; never overwrites - runtime edits to a seeded row win forever after.
 		table: lookups
-			row: idx=1, title="Task status"
+			row: [idx=1, "title=Task status"]
 		table: lookup_values
-			row: idx=1, lookups_idx=1, title="Open",   symbol="🟢", sort=1
-			row: idx=2, lookups_idx=1, title="Closed", symbol="✅", sort=2
+			row: [idx=1, lookups_idx=1, title=Open,   "symbol=🟢", sort=1]
+			row: [idx=2, lookups_idx=1, title=Closed, "symbol=✅", sort=2]
 
 database.relationships:
 	relationship: table1_table2  ## the 1:m link below
@@ -227,11 +227,11 @@ ui:
 						location:  ## <relative-to>, <above|below|left|right>, <%>
 					block: "people-pets"
 						table: table_pets
-						location: 1, right, 25%  ## Dynamically figures out where to go based on what came before. In this case, it splits block "1", giving itself 25% of the split to the right.
+						location: [1, right, 25%]  ## Dynamically figures out where to go based on what came before. In this case, it splits block "1", giving itself 25% of the split to the right.
 						type: grid
 				block: 3
 					table: subordinates
-					location: "top", below, 25%  ## Dynamically figures out where to go based on what came before. In this case, splits block "top", giving itself 25% of the split below.
+					location: ["top", below, 25%]  ## Dynamically figures out where to go based on what came before. In this case, splits block "top", giving itself 25% of the split below.
 					type: tree_grid  ## Hierarchical grid of records from the same table that are hierarchically related.
 					parent_field: parent_self_id  ## The field in the table that identifies parent from same table.
 					readonly: yes

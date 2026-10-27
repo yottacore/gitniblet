@@ -104,6 +104,33 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: r1026
 	- Test case: defpe, defpf, defpg and defph in `config-home-test.bash`, plus the check after `go test` in `test.bash`, which fails on any test that reaches the default registry.
 
+- Write lists in brackets in the docs and examples.
+	- ID: 2026102618065650
+	- Type: Task
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261026-180656
+	- Opened by: JC
+	- Related IDs: 2026102509204445
+	- Requirements [Feature]:
+		- `syntax.md`, the README's schema blocks, `project/example.shcl`, `project/example.queries.shcl` and `cicd/utility/smoke/issues.shcl` still show bare `a, b` lists and old seed rows. They load through the upgrade, but a new schema should be written the shcl 3 way.
+		- syntax.md's `list_source` and `row:` text describes the old comma lists. In 3.0 a seed row is `row: [idx=1, "title=Task status"]`.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261026: example.shcl, syntax.md and the docs' examples write lists in brackets: aliases, `unique:`, `location:`, a literal `list_source:` and seed rows. A seed row is `row: [idx=1, "title=Task status"]`.
+		- syntax.md's text on lists, literal `list_source`, uniques, `row:` and `location:` says the bracket form. The wording is otherwise the same.
+		- README.md, `example.queries.shcl` and `cicd/utility/smoke/issues.shcl` have no lists, and already load on 3.0 as they are. Not changed.
+		- Verified: every file and fenced block in README.md and syntax.md loads on 3.0 with no upgrade, 28 blocks. Before the change 3 of them needed it. The ddl tests, defpx included, and `--backlog-run-quick core` pass.
+		- Swept: every `aliases:`, `unique:`, `index:`, `row:`, `location:` and `list_source:` in README.md, syntax.md and the 3 example files.
+	- Decisions:
+		- A one-name `unique:` or `index:` stays bare, since 3.0 reads it as a one-item list.
+		- Seed rows quote only a pair that needs it, such as one with a space or an emoji, as the upgrade writes them.
+		- The column alignment and comments in example.shcl stay as typed.
+	- Branch: r1026
+	- Test case: defpx for the README.md and syntax.md blocks, and d9nwj, dec94 and dec96 for example.shcl.
+	- Closed: 20261026-184500
+
 - CICD reset: standard flags.
 	- ID: 2026102416210004
 	- Type: Task
@@ -346,18 +373,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- d9dzs, dec94 and dec96 are left as they are, since the issue names only the fuzz seed, and each says why it skipped.
 	- Branch: r1026
 	- Test case: defpr, defps, defpt, defpv, defpx, defpw (smoke), defpy (`remote-skip-test.bash`), and d9nwj.
-
-- Write lists in brackets in the docs and examples.
-	- ID: 2026102618065650
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261026-180656
-	- Opened by: JC
-	- Related IDs: 2026102509204445
-	- Requirements [Feature]:
-		- `syntax.md`, the README's schema blocks, `project/example.shcl`, `project/example.queries.shcl` and `cicd/utility/smoke/issues.shcl` still show bare `a, b` lists and old seed rows. They load through the upgrade, but a new schema should be written the shcl 3 way.
-		- syntax.md's `list_source` and `row:` text describes the old comma lists. In 3.0 a seed row is `row: [idx=1, "title=Task status"]`.
 
 - A config file of any name and path names the database's files.
 	- ID: 2026102509202821
