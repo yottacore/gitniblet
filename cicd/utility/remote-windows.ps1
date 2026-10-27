@@ -43,6 +43,11 @@ try {
 	if ($LASTEXITCODE -ne 0) { throw "tar failed" }
 	$null = New-Item -ItemType Directory tmp, logs
 	$env:TMP = $env:TEMP = $env:TMPDIR = "$Work\tmp"
+	## A fake home, as include/temp-run.bash's fConfigHome_Use makes. The old
+	## folder name is moved on any default registry lookup, which shows a leak.
+	$fakeCfg = "$Work\tmp\home\.config"
+	$null = New-Item -ItemType Directory "$fakeCfg\ngdb"
+	$env:HOME = "$Work\tmp\home"; $env:XDG_CONFIG_HOME = $env:AppData = $fakeCfg
 
 	## Half the cores, a quarter when busy, never past the caller's cap.
 	$cores = [Environment]::ProcessorCount
@@ -78,6 +83,8 @@ try {
 		"@@gitniblet-test end $rc"
 		if ($rc -ne 0) { $failed++ }
 	}
+	if ((Test-Path -LiteralPath "$fakeCfg\ngdb") -and -not (Test-Path -LiteralPath "$fakeCfg\gitniblet")) { "PASS config-home" }
+	else { "FAIL config-home: the default config folder was used"; $failed++ }
 
 	## The smoke script is bash. Git for Windows brings one; it isn't on PATH.
 	$bash = "$env:ProgramFiles\Git\bin\bash.exe"
@@ -103,3 +110,4 @@ exit [int]($failed -ne 0)
 ##		- 20261025 JC: -test.parallel passed.
 ##		- 20261025 JC: Raw test2json output per binary, for one line per test on the host.
 ##		- 20261025 JC: Load from GetSystemTimes, which a non-admin logon can read.
+##		- 20261026 JC: Tests run with a fake home, checked after.

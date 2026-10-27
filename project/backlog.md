@@ -72,7 +72,9 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - A pipeline test runs the binary against the real config folder.
 	- ID: 2026102613060001
 	- Type: Bug
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: `--backlog-run-full`, for the Race tests step and defpe to defph in Pipeline tests.
+	- Needs external testing: `ci.yml` on the round branch, for the macOS test step. The remote boxes, for the `config-home` line in `remote-unix.bash` and `remote-windows.ps1`.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261026-130600
 	- Opened by: JC
@@ -83,6 +85,24 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Expected behavior [Bug]: No test reads or writes the real config folder. Each one that runs the binary sets `HOME`, `XDG_CONFIG_HOME` and `AppData` to its run folder.
 	- Possible cause [Bug]: `smoke-cli.bash` sets none of them, and the host fallback run calls it.
 	- Workaround: `~/.config/ngdb` is a link to `gitniblet` on b23, so the installed `ngdb` still finds its databases.
+	- Reproduced [Bug]: 20261026 on b23, with a fake home holding `ngdb`. `go test ./internal/tui` moved it. The smoke and every other package left it alone.
+	- Actual cause [Bug]:
+		- Most tui tests build an app through `newApp`, which loads the settings and so looks up the default registry. Only the picker tests pointed it at a temp folder.
+		- No pipeline script gave `go test` a fake home, so the host fallback's test run reached `~/.config`.
+	- Progress log:
+		- 20261026: Not the smoke. Its data verbs pass `--config`, and `--version`, `--help` and an unknown verb don't touch the registry.
+		- 20261026: Verified: `test.bash ./internal/tui/...` failed on the new check before the tui fix and passed after.
+		- 20261026: Verified: `config-home-test.bash` defpe to defph pass. The quick gate passed, 256 tests, smoke and staticcheck clean. `container-fallback-test.bash` passed to the end on the host with an outer fake home, whose `ngdb` stayed put.
+		- Swept: every place that runs gitniblet or a Go test: `test.bash`, the Race tests step, fuzz, profile, the smoke, `remote-unix.bash`, `remote-windows.ps1` and the macOS CI job. The demo recorder and `screenshots.bash` already had their own home or `--config`. The other `*-test.bash` scripts get it through `cicd.bash`.
+		- Not done here: enterprise and vendor have the same scripts and no fake home. Not checked whether their tests reach the registry.
+	- Decisions:
+		- One helper pair in `include/temp-run.bash`, `fConfigHome_Use` and `fConfigHome_Check`, since every script that runs the binary or the tests already sources it.
+		- The fake home holds an `ngdb` folder. Any lookup of the default registry moves it, so a test that misses its own temp folder fails the run, rather than being hidden by the fake home.
+		- Go's cache, module cache and env file stay where they were, so a fake home costs no rebuild.
+		- The tui fix is a `TestMain` for the whole package, not more calls to `isolateConfig`, so a new tui test can't miss it.
+	- Actual fix [Bug]: The tui tests run against temp config folders. Every pipeline run of gitniblet or its tests gets a fake home, and fails if the default registry was used.
+	- Branch: r1026
+	- Test case: defpe, defpf, defpg and defph in `config-home-test.bash`, plus the check after `go test` in `test.bash`, which fails on any test that reaches the default registry.
 
 - CICD reset: standard flags.
 	- ID: 2026102416210004

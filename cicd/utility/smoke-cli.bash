@@ -10,7 +10,8 @@
 ##	Notes:
 ##		Works in its own temp folder with its own registry (--config), inside
 ##		the cicd run's folder when there is one, and removes it on exit through
-##		the guard in include/temp-run.bash.
+##		the guard in include/temp-run.bash. HOME and the config folders point
+##		there too, so nothing reaches the real registry.
 
 ##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 ##	SPDX-License-Identifier: AGPL-3.0-only
@@ -26,6 +27,8 @@ exe="${1:-${dirPath_Base}/bin/gitniblet}"
 source "$(dirname "${BASH_SOURCE[0]}")/include/temp-run.bash"
 work="$(fTempDir_Make smoke)"
 trap 'fSafeRm "${work}" > /dev/null' EXIT
+## --config covers the data verbs. This covers the rest, and the next one added.
+fConfigHome_Use "${work}/fake"
 
 fail(){ echo "smoke-cli: FAIL: $*" >&2; exit 1; }
 gitniblet(){ "${exe}" --config "${work}/registry" "$@"; }
@@ -72,5 +75,7 @@ gitniblet get issues issue "${id}" | grep -q 'Smoke row' || fail "get did not re
 gitniblet update issues issue "${id}" title="Smoke row 2" > /dev/null || fail "update"
 gitniblet replay issues > /dev/null || fail "replay"
 gitniblet query issues "SELECT title FROM issue WHERE id = id('${id}')" | grep -q 'Smoke row 2' || fail "query after replay"
+
+fConfigHome_Check "${work}/fake" || fail "the default config folder was used"
 
 echo "smoke-cli: PASS"

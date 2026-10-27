@@ -404,8 +404,11 @@ fMain(){
 
 	if fStep "Race tests"; then
 		fEcho_Clean "go test -race ${racePkgs[*]}"
-		( cd "${dirPath_Source}"  &&  CGO_ENABLED=1 go test -race -json -mod=vendor -p "${GITNIBLET_JOBS}" -parallel "${GITNIBLET_JOBS}" "${racePkgs[@]}" ) \
+		local raceHome; raceHome="$(fTempDir_Make race-home)"
+		( fConfigHome_Use "${raceHome}"  &&  cd "${dirPath_Source}"  &&  CGO_ENABLED=1 go test -race -json -mod=vendor -p "${GITNIBLET_JOBS}" -parallel "${GITNIBLET_JOBS}" "${racePkgs[@]}" ) \
 			| GOFLAGS='' go -C "${dirPath_Base}/cicd/utility/testid" run . report "${dirPath_Base}"
+		fConfigHome_Check "${raceHome}"  ||  fThrowError "A race test used the default config folder."
+		fSafeRm "${raceHome}" > /dev/null
 		fStep_End
 	fi
 
@@ -1235,3 +1238,4 @@ fMain  "${@}"
 ##		- 20261025 JC: Race tests (the TUI under -race) and Pipeline tests (cicd/utility/*-test.bash) on this host; GITNIBLET_LOG_DIR; the container is polled, not waited on.
 ##		- 20261025 JC: GITNIBLET_HOOKS_DIR, so the plan's tests pass where ../../private/cicd-hooks is missing.
 ##		- 20261026 JC: Local hooks dir is ../private/cicd-hooks again, now that the project folder has its own private/.
+##		- 20261026 JC: Race tests run with a fake home, as test.bash and the smoke do.

@@ -37,6 +37,9 @@ trap fCleanup EXIT
 cd "${work}" || exit 1
 mkdir -p tmp logs
 export TMPDIR="${work}/tmp"
+# shellcheck source=include/temp-run.bash
+source "${work}/cicd/utility/include/temp-run.bash"
+fConfigHome_Use "${work}/tmp" || exit 1
 
 ## Half the cores, a quarter when busy, never past the caller's cap.
 cores="$(nproc 2> /dev/null || sysctl -n hw.ncpu 2> /dev/null || echo 2)"
@@ -61,6 +64,7 @@ while read -r name dir pkg; do
 	echo "@@gitniblet-test end ${rc}"
 	((rc == 0)) || failed=$((failed + 1))
 done < "${work}/tests/manifest"
+if fConfigHome_Check "${work}/tmp"; then echo "PASS config-home"; else echo "FAIL config-home"; failed=$((failed + 1)); fi
 
 if GITNIBLET_SMOKE_EXPECT_DATE=1 nice -n 19 bash "${work}/cicd/utility/smoke-cli.bash" "${work}/gitniblet" > "${work}/logs/smoke.log" 2>&1; then
 	echo "PASS smoke-cli"
@@ -77,3 +81,4 @@ fi
 ##		- 20261025 JC: Created.
 ##		- 20261025 JC: Idle I/O where there's ionice, and -test.parallel passed.
 ##		- 20261025 JC: Raw test2json output per binary, for one line per test on the host.
+##		- 20261026 JC: Tests run with a fake home, checked after.

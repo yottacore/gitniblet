@@ -51,6 +51,7 @@ source "${meDir}/include/temp-run.bash"     ## fTempDir_Make + fSafeRm
 cd "${meDir}/../../source"                              ## module root (go.mod)
 stamp="$(date +%Y%m%d-%H%M%S)"
 tmp="$(fTempDir_Make profile)"; trap 'fSafeRm "${tmp}" > /dev/null' EXIT
+fConfigHome_Use "${tmp}"
 
 ## Sample the replay benchmark. A build/run failure here is an app problem, but
 ## the stage stays non-gating - it warns and skips so a profiler hiccup never
@@ -86,3 +87,4 @@ python3 "${meDir}/flame-report.py" --dir "${profDir}" || echo "profile.bash: hot
 ##	Script history:
 ##		- 20260709: Created.
 ##		- 20261025: Works in the run folder, removed through the guard.
+##		- 20261026: The benchmark runs with a fake home.

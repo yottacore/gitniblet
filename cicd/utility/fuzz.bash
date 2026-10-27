@@ -56,6 +56,7 @@ while read -r p n i; do testID["${p} ${n}"]="${i:------}"; done < <(GOFLAGS='' g
 
 tmp="$(fTempDir_Make fuzz)"; trap 'fSafeRm "${tmp}" > /dev/null' EXIT
 out="${tmp}/out"
+fConfigHome_Use "${tmp}"
 
 fRunTarget() {   ## $1 = import path, $2 = target name
 	go test -mod=vendor -p "${GITNIBLET_JOBS}" -parallel "${GITNIBLET_JOBS}" -run '^$' -fuzz="^${2}\$" -fuzztime="${fuzzTime}" "$1" >"${out}" 2>&1
@@ -100,3 +101,4 @@ echo "fuzz.bash: all targets clean"
 ##		- 20261025: Output goes in the run folder, not a fixed /tmp file.
 ##		- 20261025: A quarter of the cores, and the worker count passed explicitly.
 ##		- 20261025: One PASS or FAIL line per target, with its test ID.
+##		- 20261026: Targets run with a fake home.
