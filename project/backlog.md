@@ -376,7 +376,9 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - A `dogfood_gitniblet.ps1` script with its launchers.
 	- ID: 2026102520521029
 	- Type: Task
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs external testing: `dogfood_gitniblet.cmd` and `.ps1` on b29w as `wintest`, with a stand-in `gitniblet.exe` in a stand-in `Dropbox\0-0\common\exec\app\mswin\` and `LOCALAPPDATA`: the pool, the fixed name in `Programs\gitniblet\` through the hard link or copy fallback, and arguments and the exit code passed through.
+	- Needs hand testing: the next default run on b23, to see the script and launchers land in the synced util folders, and `dogfood_gitniblet --version` by name.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261025-205210
 	- Opened by: JC
@@ -385,6 +387,26 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- The script reads from the dogfood folders that item sets up.
 	- Requirements [Feature]:
 		- Per the shared CICD rules, Dogfood script: one pwsh 7 script, plus Linux, Windows and macOS launchers, with the master copies in `utility/`.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 20261028: New `utility/dogfood_gitniblet.ps1`, from shcl's `dogfood_shcl.ps1`. It takes a new build from the synced `exec/app/<os>/` folder into a pool of dated versions, points a fixed name at the newest, and runs it with every argument and the exit code passed through. The pool is `~/.local/bin/gitniblet_versions/` on Linux, `~/Applications/gitniblet_versions/` on macOS, and `%LOCALAPPDATA%\Programs\gitniblet_versions\` on Windows.
+		- The pool is GFS-rotated every run, to 5 to 10 versions with 1 GB deciding between, and a running version is never removed. `--no-update` runs what's held.
+		- Launchers: `utility/dogfood_gitniblet` for Linux, BSD and macOS, and `utility/dogfood_gitniblet.cmd` for Windows. `.gitattributes` keeps the `.cmd` CRLF and the bash launcher LF.
+		- The Dogfood step copies all 3 to `exec/util/0_crossplatform/`, `linux/bash/`, `macos/bash/` and `mswin/cli/by-self/cmd/`, each skipped with one line when missing, the same bytes, or in use. `--help` and design.md say so.
+		- Verified: `dogfood-script-test.bash` dehyr to dehyx pass under pwsh 7.6 here, and each fails with its part broken: the exit code dropped (dehyr), the in-use check off (dehys), a regular file at the fixed name replaced (dehyt), the launcher joining its arguments (dehyv), the step's call taken out or the `.cmd` saved LF (dehyw), aliases in the script (dehyx), the `-File` argument fix off (dehyr, dehyx), and no same-bytes check (dehyr). With no pwsh, dehyr to dehyv and dehyx are SKIP and dehyw still runs.
+		- Verified: `dogfood-test.bash` defr4 to defra, `flags-test.bash`, `testid check`, shellcheck and `--backlog-run-quick` pass, and `--list` names the 6 new IDs under Pipeline tests.
+		- Swept: every dogfood path in `cicd.bash`, `include/dogfood.bash` and `install.ps1`'s user folder, which the Windows fixed name matches. Enterprise has no Dogfood step, and vendor has no `cicd.bash`.
+	- Decisions:
+		- Windows runs it unelevated in the same window, as shcl decided, where the shared rules say elevated. An elevated CLI's output lands in a new window that closes. The fixed name falls back to a hard link, then a copy, where a symlink needs rights the account lacks.
+		- The Windows fixed name is `%LOCALAPPDATA%\Programs\gitniblet\gitniblet.exe`, which install.ps1 already puts on PATH, rather than a bare `Programs\gitniblet` file that would clash with that folder.
+		- macOS keeps the pool and fixed name in `~/Applications/`, per the shared rules, though install puts gitniblet in `~/.local/bin` there.
+		- On Linux the fixed name is install.bash's `~/.local/bin/gitniblet`. A regular file there, such as a user install, is left alone, with one line on a run that took a build.
+		- Windows PowerShell 5.1 still runs it, through the `.cmd`, as for shcl.
+		- No stray cleanup or `.desktop` file. gitniblet has no desktop entry, and the old `exec/util/linux/bin/ngdb` is still in use by name on b23.
+		- The script and launchers go every Dogfood run, cross-built or not, since the script picks its own build.
+	- Branch: r1028
+	- Test case: `cicd/utility/dogfood-script-test.bash` dehyr to dehyx.
 
 - A FreeBSD `.pkg`.
 	- ID: 2026102520521033

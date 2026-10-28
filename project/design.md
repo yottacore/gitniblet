@@ -87,6 +87,8 @@ Manually kicked off via `cicd/cicd.bash`. Stages, in order (each fails early and
 
 - **Dogfood**: copy the native release to `~/synced/0-0/common/exec/app/linux/`, and when the run cross-built, the amd64 Windows and macOS builds to `mswin/` and `macos/` beside it, since the boxes that run them are amd64. A folder that isn't there, a copy that's already the same bytes, or one that a process here runs or holds open is skipped with one line. The copy goes in beside the old one and is renamed over it (`include/dogfood.bash`, checked by `dogfood-test.bash`).
 
+- **Dogfood script**: `utility/dogfood_gitniblet.ps1`, for pwsh 7 or Windows PowerShell 5.1, runs the newest dogfood build with every argument passed through. It copies a new build from the synced `exec/app/<os>/` folder into a local pool of dated versions, `~/.local/bin/gitniblet_versions/` on Linux, `~/Applications/gitniblet_versions/` on macOS and `%LOCALAPPDATA%\Programs\gitniblet_versions\` on Windows, and points a fixed name beside it at the newest: `~/.local/bin/gitniblet`, `~/Applications/gitniblet`, or `%LOCALAPPDATA%\Programs\gitniblet\gitniblet.exe`, which is install.ps1's folder. The pool is GFS-rotated on every run to between 5 and 10 versions, under 1 GB between those, and a version that's running is never removed. A regular file at the fixed name is left alone. `--no-update` runs what's held. On Windows it runs unelevated, in the same window, so that way the output stays readable. The bash launcher `utility/dogfood_gitniblet` and `utility/dogfood_gitniblet.cmd` start it, and the Dogfood step copies all 3 to the synced util folders that exist (`dogfood-script-test.bash`).
+
 - **Screenshots**: regenerate the README thumbnails.
 
 - **Publish**: `n8git_backup-and-publish`.

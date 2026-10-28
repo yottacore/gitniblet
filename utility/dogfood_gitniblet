@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+##	Purpose:
+##		Lets 'dogfood_gitniblet' be typed at a shell without anyone having to
+##		know it is a pwsh script. Hands off to dogfood_gitniblet.ps1 in the same
+##		window and passes everything through. The same file goes in the
+##		linux/bash and macos/bash util dirs; the .ps1 works out the per-platform
+##		paths itself.
+##	History: At bottom of script.
+
+##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
+##	Licensed under The MIT License (MIT). Full text at:
+##		https://mit-license.org/
+##	SPDX-License-Identifier: MIT
+
+set -eu
+
+## Resolve through any symlinks, so the sibling lookup works from a link on PATH
+## as well as from the file itself.
+self="${BASH_SOURCE[0]}"
+while [[ -L "${self}" ]]; do
+	target="$(readlink "${self}")"
+	if [[ "${target}" == /* ]]; then self="${target}"
+	else                             self="$(dirname "${self}")/${target}"; fi
+done
+selfDir="$(cd -P "$(dirname "${self}")" && pwd)"
+
+## Two levels under the util dir, beside which 0_crossplatform sits. The repo
+## keeps all three files side by side, and the home-relative spelling is for a
+## copy dropped somewhere else.
+ps1=""
+for candidate in \
+	"${selfDir}/../../0_crossplatform/dogfood_gitniblet.ps1" \
+	"${selfDir}/dogfood_gitniblet.ps1" \
+	"${HOME}/synced/0-0/common/exec/util/0_crossplatform/dogfood_gitniblet.ps1"; do
+	if [[ -f "${candidate}" ]]; then ps1="${candidate}"; break; fi
+done
+[[ -n "${ps1}" ]] || ps1="$(command -v dogfood_gitniblet.ps1 2>/dev/null || true)"
+if [[ -z "${ps1}" ]]; then
+	echo "dogfood_gitniblet: dogfood_gitniblet.ps1 not found" >&2
+	exit 1
+fi
+if ! command -v pwsh >/dev/null 2>&1; then
+	echo "dogfood_gitniblet: needs PowerShell 7 (pwsh) on PATH" >&2
+	exit 1
+fi
+
+exec pwsh -NoProfile -File "${ps1}" "$@"
+
+##	History:
+##		- 2026-10-28 JC: Created from shcl's dogfood_shcl.

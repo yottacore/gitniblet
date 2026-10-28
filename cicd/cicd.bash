@@ -120,6 +120,7 @@ fAbout(){ { ((doQuietly)) || ((wasShown_About)); } && return; wasShown_About=1;
 	fi
 	fEcho_Clean "  • Run automated tests. If tests pass:"
 	fEcho_Clean "  • Copy the release build to dogfood, unless the copy there is in use."
+	fEcho_Clean "  • Copy the dogfood_gitniblet script and launchers beside the other utils."
 	fEcho_Clean "  • Run git automation script (e.g. commit and push)."
 	#           X-------------------------------------------------------------------------------X
 	fEcho_Clean "" ;:;}
@@ -447,11 +448,13 @@ fMain(){
 	fi
 
 	## exec/app/<os>/, per include/dogfood.bash. Windows and macOS only when this
-	## run cross-built them, so --quick never copies an older dist/.
+	## run cross-built them, so --quick never copies an older dist/. Then the
+	## dogfood_gitniblet script and launchers that run it.
 	if fStep "Dogfood"; then
 		local -i crossBuilt=0
 		! fStep_IsOn "Cross-compile + package"  ||  crossBuilt=1
 		fDogfood "${filePath_ExecToTestAndInstall_FinalHome}" "${dirPath_Base}/dist" "${crossBuilt}"  ||  fThrowError "Dogfood copy failed."
+		fDogfood_Script "${dirPath_Base}/utility"  ||  fThrowError "Dogfood script copy failed."
 		fStep_End
 	fi
 
@@ -1287,3 +1290,4 @@ fMain  "${@}"
 ##		- 20261026 JC: Dogfood goes to exec/app/<os>/, Windows and macOS too when cross-built, and skips a copy that's in use. No sudo fallback.
 ##		- 20261028 JC: Soak test step, a minute in every run and 30 under --leakcheck or --long.
 ##		- 20261028 JC: CodeQL step, from a pinned bundle over the module and vendor/.
+##		- 20261028 JC: Dogfood also copies dogfood_gitniblet.ps1 and its launchers.
