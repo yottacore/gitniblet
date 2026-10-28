@@ -189,7 +189,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - Move to shclwrap's newest dev, and drop the upgrade workarounds it made needless.
 	- ID: 2026102621002700
 	- Type: Task
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: `cicd.bash --backlog-run-full`, plain, for the cross-builds and the remote boxes on the new vendored shclwrap.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261026-210027
 	- Opened by: JC
@@ -198,6 +199,20 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- `source/go.mod` takes shclwrap dev 54dc6c6 or newer, and enterprise's `go.mod` follows, per deft0.
 		- shclwrap now keeps a 2.x file's blank lines on upgrade and reads a quoted comma as 2.0 did. `shclio`'s own line put-back and `legacyRow`'s seed-row rewrite go, unless a test shows a case shclwrap still misses.
 		- The backtick-value swap stays until shclwrap's 2026102618065645 is in.
+	- Progress log:
+		- 20261028: floss takes shclwrap 54dc6c6, its dev head, which still pins shcl dev 2174f0d9. shcl's dev head, 96447295, adds only a backlog edit. The vendor refresh changes only shclwrap.
+		- `shclio`'s line put-back is gone, since the upgrade now keeps blank lines. defnx has a new case for a run of blank lines.
+		- `legacyRow` stays. shclwrap mends a quoted comma only on a key set once, and seed rows repeat, so `title="a, b"` still splits. The issue text for shclwrap is drafted in the floss upstream folder, under this ID.
+		- The backtick swap stays, since shclwrap 2026102618065645 is still Queued.
+		- Enterprise isn't changed here. Its `go.mod` needs shclwrap moved from f03fe5e to 54dc6c6, plus the matching `go.sum` lines. With that alone, a copy of enterprise builds and vets against this floss.
+		- Verified: defnx fails on the old shclwrap without the put-back, and passes on 54dc6c6. dec93 and defp0 fail with `legacyRow` taken out, and pass with it.
+		- Verified: `--backlog-run-quick` passed, 262 tests, with gofmt and staticcheck clean and the CLI smoke passing. `go mod verify`, govulncheck and gosec are clean, and the ddl and config fuzz targets ran 15s each with no crash.
+		- Swept: every `shclio.Load` and `Current` caller (config, schema, queries, rename, DDL parse), and the docs for the old pin or the line put-back. No other copy of the put-back exists.
+	- Decisions:
+		- `legacyRow` is kept rather than worked around a second way, as the requirement allows when a test shows a case shclwrap misses.
+		- Enterprise's bump is left to its own round, per this job's note.
+	- Branch: r1028
+	- Test case: defnx (blank lines keep their numbers), dec93 and defp0 (old seed rows).
 
 - A config file of any name and path names the database's files.
 	- ID: 2026102509202821

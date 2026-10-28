@@ -283,7 +283,8 @@ func FormatOf(text string) int {
 // reports errors on is ErrRefused, with those errors in
 // Diags. A 2.x file comes out reading what 2.0 read, backslash escapes
 // included, and one that can't is ErrRefused too. 2.x's block is swapped for
-// the current one where it sits, and the lines end as the file's did.
+// the current one where it sits, and the lines end as the file's did. Blank
+// lines shcl's conversion drops are put back, so a line keeps its number.
 func Upgrade(text string, from int) (Upgraded, error) {
 	if f := max(FormatOf(text), from); f > FormatMajor {
 		return Upgraded{Text: text, From: f}, tooNew("", f)
@@ -328,6 +329,9 @@ func Upgrade(text string, from int) (Upgraded, error) {
 	if len(u.ErrorsLeft) > 0 {
 		return Upgraded{Text: text, From: u.Format}, &shclw.Error{Kind: shclw.ErrRefused,
 			Msg: fmt.Sprintf("%d lines would still have an error once converted; fix them and upgrade again", len(u.ErrorsLeft))}
+	}
+	if out.Changed {
+		out.Text = shclw.KeepBlanks(in, mendReads(old, out.Text), infoEdit)
 	}
 	lost, err := checkReads(old, out.Text, FormatOf(text) == 1)
 	if err != nil {
@@ -473,6 +477,48 @@ func checkReads(old *shcl2.Document, up string, namesAsTyped bool) ([]int, error
 	}
 	return nil, &shclw.Error{Kind: shclw.ErrRefused, Diags: bad,
 		Msg: fmt.Sprintf("%d lines don't read as shcl 2.0 read them; fix them and upgrade again", len(lines))}
+}
+
+// mendReads sets each value of up, the upgraded text, that reads otherwise
+// than 2.0 read it in old back to 2.0's reading. shcl's migrate splits a 2.x
+// element at a comma inside quotes, as in title="a, b", which 1.2 and 2.0
+// read whole (2026102618065640). checkReads still checks the result.
+func mendReads(old *shcl2.Document, up string) string {
+	now := shcl.Parse(up)
+	var d *shcl.Document
+	for _, p := range old.Paths() {
+		if old.Count(p) != 1 || now.Count(p) != 1 || now.ReadRaw(p).Status == shcl.Good {
+			continue
+		}
+		was, is := old.ReadStringArray(p), now.ReadStringArray(p)
+		if was.Status != shcl2.Good || is.Status != shcl.Good || slices.Equal(was.Value, is.Value) {
+			continue
+		}
+		if d == nil {
+			var err error
+			if d, err = shcl.ParseKeepLines(up, shcl.Standard); err != nil {
+				return up
+			}
+		}
+		// 2.0's ReadString is Good on a list too, so its length says which.
+		var st shcl.SetStatus
+		if len(was.Value) == 1 {
+			st = d.SetString(p, was.Value[0])
+		} else {
+			st = d.SetStringArray(p, was.Value)
+		}
+		if st != shcl.SetOk {
+			return up
+		}
+	}
+	if d == nil {
+		return up
+	}
+	text, kept := d.ToTextKeepLines()
+	if !kept {
+		return up
+	}
+	return text
 }
 
 func carryDiag(line int, msg string) Diag {

@@ -23,6 +23,7 @@ func TestCurrent(t *testing.T) {
 		{"bare list", "t:\n\taliases: a, b\n", []string{"a", "b"}, "", 2},
 		{"bare list and backtick", "t:\n\taliases: a, b\n\tsql: " + sql + "\n", []string{"a", "b"}, sql, 2},
 		{"leading blank lines", "\n\nt:\n\taliases: a, b\n\tsql: " + sql + "\n", []string{"a", "b"}, sql, 4},
+		{"blank run", "t:\n\n\n\n\taliases: a, b\n\n\n\tsql: " + sql + "\n", []string{"a", "b"}, sql, 5},
 		{"current", "t:\n\taliases: [a, b]\n\tsql: " + sql + "\n", []string{"a", "b"}, sql, 2},
 	}
 	for _, c := range cases {
