@@ -11,3 +11,7 @@ GITNIBLET_STATICCHECK="honnef.co/go/tools/cmd/staticcheck@v0.7.0"
 GITNIBLET_GOVULNCHECK="golang.org/x/vuln/cmd/govulncheck@v1.6.0"
 GITNIBLET_GOSEC="github.com/securego/gosec/v2/cmd/gosec@v2.27.1"
 GITNIBLET_GORELEASER="github.com/goreleaser/goreleaser/v2@v2.17.0"
+## CodeQL's Go bundle, the CLI with its queries, from github/codeql-action's
+## codeql-bundle-v<ver> release. codeql.bash fetches it and checks the sha256.
+GITNIBLET_CODEQL_VER="2.27.3"
+GITNIBLET_CODEQL_SHA256="71513c904dcf7f40577c46e3daf466cd92ec6b2d99239fcc7573a791954ac812"

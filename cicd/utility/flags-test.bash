@@ -47,7 +47,7 @@ fHandsOff(){
 		[[ "$(fPlan "${mode}")" != *Dogfood* ]]  ||  bad=1
 	done
 	fWant "$(fPlan --backlog-run-quick)" 'Build (native release)|Lint + format|Tests'  ||  bad=1
-	fWant "$(fPlan --backlog-run-full)" 'Build (native debug)|Build (native release)|Cross-compile + package|Lint + format|Tests|Fuzz|Soak test|Security + supply-chain|Race tests|Pipeline tests|Remote tests|Profiler'  ||  bad=1
+	fWant "$(fPlan --backlog-run-full)" 'Build (native debug)|Build (native release)|Cross-compile + package|Lint + format|Tests|Fuzz|Soak test|Security + supply-chain|CodeQL|Race tests|Pipeline tests|Remote tests|Profiler'  ||  bad=1
 	fWant "$(fPlan --merge-gate)" "$(fPlan --backlog-run-full)"  ||  bad=1
 	return "${bad}"
 }
@@ -61,7 +61,7 @@ fOtherModes(){
 	[[ "${full}" == *"|Cross-compile + package|"*"|Remote tests|Dogfood|Profiler|"* ]]  ||  { echo "  default: ${full}"; bad=1; }
 	fWant "$(fPlan --quick --no-remote)" "$(fPlan --quick)"  ||  bad=1
 	[[ "$(fPlan --quick)" == *"|Fuzz|Security + supply-chain|Race tests|Dogfood|"* ]]  ||  { echo "  quick: $(fPlan --quick)"; bad=1; }
-	[[ "$(fOff --quick)" == 'Cross-compile + package (--quick)|Soak test (--quick)|Pipeline tests (--quick)|Remote tests (--quick)|Profiler (--quick)|Demo recording (--quick)' ]]  ||  { echo "  quick off: $(fOff --quick)"; bad=1; }
+	[[ "$(fOff --quick)" == 'Cross-compile + package (--quick)|Soak test (--quick)|CodeQL (--quick)|Pipeline tests (--quick)|Remote tests (--quick)|Profiler (--quick)|Demo recording (--quick)' ]]  ||  { echo "  quick off: $(fOff --quick)"; bad=1; }
 	[[ "$(fOff --no-remote)" == *'Remote tests (--no-remote)'* ]]  ||  bad=1
 	return "${bad}"
 }
@@ -96,7 +96,7 @@ fCheck deehh "with no hooks folder, Local hooks is off and the rest of the plan 
 fRaceAndPipeline(){
 	local bad=0 out script id want
 	out="$(bash "${cicd}" --list 2>&1)"
-	[[ "|$(fPlan)|" == *"|Security + supply-chain|Race tests|Pipeline tests|Remote tests|"* ]]  ||  { echo "  default: $(fPlan)"; bad=1; }
+	[[ "|$(fPlan)|" == *"|Security + supply-chain|CodeQL|Race tests|Pipeline tests|Remote tests|"* ]]  ||  { echo "  default: $(fPlan)"; bad=1; }
 	[[ "$(fOff --backlog-run-quick)" == *'Race tests (--backlog-run-quick)|Pipeline tests (--backlog-run-quick)'* ]]  ||  { echo "  quick gate off: $(fOff --backlog-run-quick)"; bad=1; }
 	[[ "|$(CC=nosuchcc fOff)|" == *'|Race tests (no nosuchcc for -race)|'* ]]  ||  { echo "  no cc: $(CC=nosuchcc fOff)"; bad=1; }
 	sed -n '/^Race tests:$/,/^Pipeline tests:$/p' <<< "${out}" | grep -qE '^dec9z internal/tui TestLookupsShowInTUI$'  ||  { echo "  race list lacks dec9z"; bad=1; }

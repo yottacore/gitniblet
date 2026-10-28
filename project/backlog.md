@@ -32,6 +32,18 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 ## Issues
 
+- The tx log append and the sync's line append drop Close's error.
+	- ID: 2026102808450278
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261028-084502
+	- Opened by: JC
+	- Related IDs: 2026102520521025
+	- Incorrect behavior [Bug]: `Log.Append` in `txlog/txlog.go` closes its file in a defer and returns only the write's error. `appendLinesOnce` in `txlog/sync.go` does the same. A write the OS takes but fails to flush, such as on a network share, reports success.
+	- Expected behavior [Bug]: Each returns Close's error when the write itself passed.
+	- Reproduced [Bug]: No. Found by the CodeQL step's go/unhandled-writable-file-close.
+
 - Dogfood to `exec/app/<os>/`, and skip the copy when the binary is in use.
 	- ID: 2026102520521027
 	- Type: Task
@@ -330,14 +342,36 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - CodeQL from a pinned CLI over the vendored tree.
 	- ID: 2026102520521025
 	- Type: Task
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: `cicd.bash --backlog-run-full`, plain, for the CodeQL step through `cicd.bash` in the container, and codeql-test (dehy4 to dehya) in its Pipeline tests step.
+	- Needs external testing: `ci.yml`, for the CodeQL step in the Linux merge gate on the runner.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261025-205210
 	- Opened by: JC
 	- Parent ID: 2026102416210008
+	- Related IDs: 2026102808450278
 	- Requirements [Feature]:
 		- A `cicd.bash` step runs the CodeQL CLI at a pinned version, kept with the other pins, over the module and `vendor/`.
 		- Its findings go under `cicd/artifacts/lint/`. Watched to fail first.
+	- Progress log:
+		- 20261028: A CodeQL step after Security + supply-chain runs `cicd/utility/codeql.bash`. It fetches CodeQL 2.27.3's Go bundle once, checks its sha256, keeps it in the cache, and runs `go-security-and-quality` over the module and `vendor/`. Both pins are in `tool-versions.bash`. The SARIF goes to `cicd/artifacts/lint/codeql_<stamp>.sarif`, rotated like the run logs.
+		- A result fails the step unless `codeql-accepted.txt` lists its rule and file with a reason. That's every result in our own code, and only the security ones in `vendor/`. An entry that matches nothing fails too.
+		- It's in the default run, `--long`, `--backlog-run-full` and `--merge-gate`, at a quarter of the cores. `--quick` and `--backlog-run-quick` leave it out. The container gets zstd for the bundle, so its image is new.
+		- First run: 674 results, 665 of them quality ones in `vendor/`. The 9 left are accepted with reasons: 4 by design in our code, 3 integer conversions in tcell and shcl, and 2 dropped Close errors, filed as Bug 2026102808450278.
+		- The CodeQL terms allow automated runs on an open source repo hosted on GitHub.com. floss is AGPL and public on GitHub, so it qualifies. Enterprise and vendor are private and don't.
+		- 20261028: flags-test's plan checks take CodeQL after Security + supply-chain: deecd and deef1 add `CodeQL` to the plan, and deece adds `CodeQL (--quick)` to what `--quick` turns off. The rest of each is the same.
+		- Verified: `codeql.bash` passed on the host in 87s wall at load 5 (408s user), and in the new image through the cache volume in 96s at load 12, with 9 accepted and 0 new.
+		- Verified: it failed with a self-compare put in our code, an accepted line taken out for a vendor result, and an entry for a file that isn't there: 2 FAIL lines, 1 STALE, exit 1.
+		- Verified: codeql-test dehy4 to dehya pass, and fail against codeql-check with the vendor filter, the stale check, or the line check taken out. flags-test, steps-test, cleanup-test, container-fallback-test, pins-test, sync-test, dogfood-test, config-home-test and remote-skip-test pass. `--backlog-run-quick` passed.
+		- Swept: every `fStep_Plan` and heavy-step site in `cicd.bash`, `--help`, design.md and README, and the plan lists in flags-test and steps-test. Enterprise and vendor get none, since CodeQL's terms don't cover private repos.
+	- Decisions:
+		- The Go-only bundle (114 MB) rather than the full CLI, since it carries the CLI and its Go queries at one version, so nothing else is fetched.
+		- It runs in the container with the other build and lint steps, and its bundle lives in the cache volume there, or in `~/.cache/gitniblet` on a host run, never in the repo.
+		- `vendor/` counts only for security results. Its quality results are third-party style we'd never change, and are kept in the SARIF.
+		- Accepted entries match on rule and file, not line, so an edit nearby doesn't break them.
+		- The filter is a small stdlib Go program beside testid, since the image has neither python nor jq.
+	- Branch: r1028
+	- Test case: codeql-test dehy4 to dehya (what fails the step, and the pins). The CodeQL step itself runs in every full run.
 
 - A `dogfood_gitniblet.ps1` script with its launchers.
 	- ID: 2026102520521029

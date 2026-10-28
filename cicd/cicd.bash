@@ -130,12 +130,12 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "Usage: ${meName} [options]"
 	fEcho_Clean "  (no flags)          The default run, up to about an hour: remote sync, builds,"
 	fEcho_Clean "                      cross-builds and packages, lint, tests, fuzz, a 1-minute"
-	fEcho_Clean "                      soak test, security, the TUI tests under -race, the"
-	fEcho_Clean "                      pipeline's own tests, remote tests, dogfood, profiler,"
-	fEcho_Clean "                      demo, hooks, then back up and publish."
+	fEcho_Clean "                      soak test, security, CodeQL, the TUI tests under -race,"
+	fEcho_Clean "                      the pipeline's own tests, remote tests, dogfood,"
+	fEcho_Clean "                      profiler, demo, hooks, then back up and publish."
 	fEcho_Clean "      --quick         About 10 minutes. Skips cross-builds, packaging, the soak"
-	fEcho_Clean "                      test, the pipeline's own tests, remote tests, profiler"
-	fEcho_Clean "                      and demo. Still dogfoods the release build."
+	fEcho_Clean "                      test, CodeQL, the pipeline's own tests, remote tests,"
+	fEcho_Clean "                      profiler and demo. Still dogfoods the release build."
 	fEcho_Clean "      --long          Also --slow. The default run, with a 30-minute soak test."
 	fEcho_Clean "      --leakcheck, --no-leakcheck"
 	fEcho_Clean "                      goleak runs after every package's tests, in every run,"
@@ -193,8 +193,8 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "than the one before the current, and build cache older than a week."
 	fEcho_Clean ""
 	fEcho_Clean "Every step runs at nice 19 and idle I/O, on half the CPUs, or a quarter for"
-	fEcho_Clean "fuzz, -race and the soak test or when the 1-minute load is over half of them,"
-	fEcho_Clean "checked before each step."
+	fEcho_Clean "fuzz, -race, the soak test and CodeQL, or when the 1-minute load is over half"
+	fEcho_Clean "of them, checked before each step."
 	fEcho_Clean ""
 	fEcho_Clean "The run log goes to cicd/artifacts/lint/, or to GITNIBLET_LOG_DIR when it's set,"
 	fEcho_Clean "as the pipeline's own tests do for the runs they start. GITNIBLET_HOOKS_DIR stands in"
@@ -543,6 +543,7 @@ fSteps_PlanAll(){
 	why="";  [[ "${GITNIBLET_LEAKCHECK:-}" != "0" ]]  ||  why="${leakOpt:-GITNIBLET_LEAKCHECK=0}"
 	fStep_Plan "Soak test" "${bq:-${quick:-${why}}}"
 	fStep_Plan "Security + supply-chain" "${bq}"
+	fStep_Plan "CodeQL" "${bq:-${quick}}"
 	## The rest runs on this machine, never in the container.
 	((! inContainer))  ||  return 0
 
@@ -670,7 +671,7 @@ fStep_IsOn(){ local s; for s in "${stepsOn[@]}"; do [[ "${s}" != "${1}" ]]  ||  
 fStep(){
 	fStep_Start "${1}"  ||  return 1
 	local busy=""
-	if [[ "${1}" == "Fuzz" || "${1}" == "Race tests" || "${1}" == "Soak test" ]]; then fCpuLimit heavy; else fCpuLimit; fi
+	case "${1}" in "Fuzz"|"Race tests"|"Soak test"|"CodeQL") fCpuLimit heavy ;; *) fCpuLimit ;; esac
 	((! GITNIBLET_BUSY))  ||  busy=", busy"
 	fEcho_Clean "Jobs: ${GITNIBLET_JOBS} of ${GITNIBLET_CORES} CPUs, load ${GITNIBLET_LOAD}${busy}"
 }
@@ -832,6 +833,14 @@ fStages_BuildAndTest(){
 		( cd "${dirPath_Source}"  &&  GOFLAGS=  go run "${GITNIBLET_GOSEC}" -concurrency "${GITNIBLET_JOBS}" \
 			-exclude=G101,G104,G124,G202,G203,G204,G301,G302,G304,G306,G703 -quiet ./... )
 		fEcho_Clean "No security findings (gosec)"
+		fStep_End
+	fi
+
+	## CodeQL over the module and vendor/, from the pinned bundle, which the
+	## container keeps in its cache volume. About 2 minutes, so not in --quick.
+	## Results not in codeql-accepted.txt fail it.
+	if fStep "CodeQL"; then
+		"${dirPath_Base}/cicd/utility/codeql.bash" --out "${dirPath_ArtifactsLint}"
 		fStep_End
 	fi
 
@@ -1277,3 +1286,4 @@ fMain  "${@}"
 ##		- 20261026 JC: --leakcheck and --no-leakcheck turn goleak on and off, through GITNIBLET_LEAKCHECK.
 ##		- 20261026 JC: Dogfood goes to exec/app/<os>/, Windows and macOS too when cross-built, and skips a copy that's in use. No sudo fallback.
 ##		- 20261028 JC: Soak test step, a minute in every run and 30 under --leakcheck or --long.
+##		- 20261028 JC: CodeQL step, from a pinned bundle over the module and vendor/.
