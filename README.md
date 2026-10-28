@@ -153,7 +153,8 @@ Pick your platform from the [latest release](https://github.com/yottacore/gitnib
 | Debian, Ubuntu | `gitniblet_<version>_linux_<arch>.deb`
 | Fedora, RHEL, openSUSE | `gitniblet_<version>_linux_<arch>.rpm`
 | Windows | `gitniblet-<version>-windows-<arch>-setup.exe` (updates an existing install in place)
-| macOS, FreeBSD, other Linux | the matching `.tar.gz`, then copy `gitniblet` onto your `PATH`
+| FreeBSD | `gitniblet-<version>-freebsd-<arch>.pkg`, then `pkg add` it as root
+| macOS, other Linux | the matching `.tar.gz`, then copy `gitniblet` onto your `PATH`
 
 Every release also carries a `checksums.txt` if you'd like to verify what you downloaded.
 
@@ -311,7 +312,7 @@ gofmt -l cmd internal        # must print nothing
 
 Cross-compile by exporting `GOOS` and `GOARCH` before `./cicd/build.bash`. Every target builds from any machine, because it is all pure Go.
 
-`./cicd/cicd.bash` runs the full local pipeline: build, lint, test, fuzz, a vulnerability and security scan, the TUI tests under the race detector, the pipeline's own tests, a profiling pass, and packaging. The race detector needs a C compiler such as gcc, and is skipped without one. `--quick` skips the slow stages, and `--backlog-run-quick` is the few-minute check before a commit. A plain run or `--quick` fast-forwards your branch from its upstream first, and stops if the two have diverged; `--no-sync` skips that. Its extra tools are fetched on demand by `go run`, except the flamegraph renderer (`cargo install inferno`), which the profiling stage skips if missing. Build and test run in a Debian container with Go pinned, from `cicd/container/Dockerfile`, when docker is there. Without it they run on your machine, and `--no-container` asks for that.
+`./cicd/cicd.bash` runs the full local pipeline: build, lint, test, fuzz, a soak test for memory and goroutine leaks, a vulnerability and security scan, CodeQL, the TUI tests under the race detector, the pipeline's own tests, a profiling pass, and packaging. The race detector needs a C compiler such as gcc, and is skipped without one. `--quick` skips the slow stages, and `--backlog-run-quick` is the few-minute check before a commit. A plain run or `--quick` fast-forwards your branch from its upstream first, and stops if the two have diverged; `--no-sync` skips that. Its extra tools are fetched on demand by `go run`, except the flamegraph renderer (`cargo install inferno`), which the profiling stage skips if missing. Build and test run in a Debian container with Go pinned, from `cicd/container/Dockerfile`, when docker is there. Without it they run on your machine, and `--no-container` asks for that.
 
 Contributions are welcome - see [contributing.md](contributing.md).
 

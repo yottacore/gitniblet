@@ -95,7 +95,8 @@ func unquote(val string) string {
 // legacyRow is a seed row from before shcl 3, `row: idx=1, title="a, b"`, in
 // 3's bracket form, `row: [idx=1, "title=a, b"]`. The 1.2 rules kept a
 // quoted value's commas and applied its escapes, and the upgrade's 2.x
-// reading splits it at the comma instead.
+// reading splits it at the comma instead. shclwrap mends that only for a key
+// set once, and seed rows repeat (2026102621002700).
 func legacyRow(line string) (string, bool) {
 	key, value, ok := strings.Cut(line, ":")
 	if !ok || strings.TrimSpace(key) != "row" {

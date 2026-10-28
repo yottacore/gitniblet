@@ -81,7 +81,8 @@ func Current(text string, fixes ...LineFix) string {
 	case !u.Changed:
 		u.Text = held
 	}
-	out := strings.Split(align(held, u.Text), "\n")
+	// The upgrade keeps blank lines, so each line keeps its number.
+	out := strings.Split(u.Text, "\n")
 	for i, line := range out {
 		if _, value, ok := strings.Cut(line, ":"); ok {
 			if fixed, ok := kept[strings.TrimSpace(value)]; ok {
@@ -90,44 +91,6 @@ func Current(text string, fixes ...LineFix) string {
 		}
 	}
 	return strings.Join(out, "\n")
-}
-
-// align puts now's lines on the lines was had them on. The upgrade drops
-// blank lines at the top and folds runs of them, which would move every line
-// a diagnostic names. Lines are matched in order, skipping blanks, and now
-// comes back as it is when a pair doesn't set the same key.
-func align(was, now string) string {
-	old := strings.Split(was, "\n")
-	lines := strings.Split(now, "\n")
-	var full []int
-	for i, line := range lines {
-		if strings.TrimSpace(line) != "" {
-			full = append(full, i)
-		}
-	}
-	out := make([]string, len(old))
-	k, last := 0, -1
-	for i, line := range old {
-		if strings.TrimSpace(line) == "" {
-			out[i] = line
-			continue
-		}
-		if k == len(full) || keyOf(lines[full[k]]) != keyOf(line) {
-			return now
-		}
-		out[i], last = lines[full[k]], full[k]
-		k++
-	}
-	text := strings.Join(out, "\n")
-	if rest := strings.Join(lines[last+1:], "\n"); strings.TrimSpace(rest) != "" {
-		text = strings.TrimRight(text, "\n") + "\n" + rest
-	}
-	return text
-}
-
-func keyOf(line string) string {
-	key, _, _ := strings.Cut(line, ":")
-	return strings.TrimSpace(key)
 }
 
 // keepBacktick keeps a backtick value as typed. 3 reads it as its text, as

@@ -132,11 +132,14 @@ fQuickRun(){
 		&&  [[ "$(grep -cE '^Jobs: [0-9]+ of [0-9]+ CPUs, load ' "${runDir}/pass.out")" == "$(grep -cE 'Step [0-9]+ of [0-9]+; Starting ' "${runDir}/pass.out")" ]]
 }
 lintDir="${repoRoot}/cicd/artifacts/lint"
-lintBefore="$(find "${lintDir}" -maxdepth 1 -name 'run_*.log' -newer "${runDir}" 2> /dev/null | wc -l)"
+## Names, not a count by mtime: an outer run's own log is still growing, so it can turn newer between two counts.
+lintBefore="$(find "${lintDir}" -maxdepth 1 -name 'run_*.log' -printf '%f\n' 2> /dev/null | sort)"
 fCheck dedq7 "a quick host run numbers every step and closes each with PASS" fQuickRun
 fLogDir(){
 	compgen -G "${GITNIBLET_LOG_DIR}/run_*.log" > /dev/null  ||  { echo "  no run log in ${GITNIBLET_LOG_DIR}"; return 1; }
-	(( $(find "${lintDir}" -maxdepth 1 -name 'run_*.log' -newer "${runDir}" 2> /dev/null | wc -l) == lintBefore ))  ||  { echo "  a new log in ${lintDir}"; return 1; }
+	local after
+	after="$(find "${lintDir}" -maxdepth 1 -name 'run_*.log' -printf '%f\n' 2> /dev/null | sort)"
+	[[ -z "$(comm -13 <(echo "${lintBefore}") <(echo "${after}"))" ]]  ||  { echo "  a new log in ${lintDir}"; return 1; }
 }
 fCheck deef2 "a run's log goes to GITNIBLET_LOG_DIR, not cicd/artifacts/lint" fLogDir
 

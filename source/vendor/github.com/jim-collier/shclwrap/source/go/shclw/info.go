@@ -190,6 +190,67 @@ func PlaceBlock(text string, marked bool, e InfoEdit) (string, error) {
 	return off[:len(off)-len(body)] + out, nil
 }
 
+// KeepBlanks is up, shcl's conversion of orig, with the blank lines it
+// dropped put back, so each line keeps its number and a diagnostic names the
+// file's line (2026102618065634). The conversion keeps every other line in
+// order, so the n-th line of up with text on it is the n-th of orig's, except
+// where it writes one as two, as 2.x's x: ~~~ comes out as x: and a fence
+// under it. Where putting them back would change a value, up comes back as
+// it was.
+func KeepBlanks(orig, up string, e InfoEdit) string {
+	bom := ""
+	if strings.HasPrefix(up, "\ufeff") {
+		bom = "\ufeff"
+	}
+	was, now := splitInfoLines(strings.TrimPrefix(orig, "\ufeff")), splitInfoLines(strings.TrimPrefix(up, bom))
+	var gaps [][]string
+	var texts []string
+	var gap []string
+	for _, l := range was.lines {
+		if blankLine(l) {
+			gap = append(gap, l)
+			continue
+		}
+		gaps, gap, texts = append(gaps, gap), nil, append(texts, strings.Trim(l, " \t"))
+	}
+	g := &infoLines{eol: now.eol}
+	k, seen := 0, 0
+	for i, l := range now.lines {
+		switch {
+		case blankLine(l):
+			seen++
+		case k < len(texts) && strings.Trim(l, " \t") != texts[k] && nextText(now.lines, i) == texts[k]:
+			// A line the conversion added.
+			seen = 0
+		default:
+			if k < len(gaps) {
+				for _, b := range gaps[k][min(seen, len(gaps[k])):] {
+					g.lines, g.ends = append(g.lines, b), append(g.ends, now.eol)
+				}
+			}
+			k, seen = k+1, 0
+		}
+		g.lines, g.ends = append(g.lines, l), append(g.ends, now.ends[i])
+	}
+	out := bom + g.join()
+	if out == up || e.Values(out) != e.Values(up) {
+		return up
+	}
+	return out
+}
+
+// nextText is the first line after lines[i] with text on it, trimmed.
+func nextText(lines []string, i int) string {
+	for _, l := range lines[i+1:] {
+		if !blankLine(l) {
+			return strings.Trim(l, " \t")
+		}
+	}
+	return ""
+}
+
+func blankLine(l string) bool { return strings.Trim(l, " \t") == "" }
+
 // SameEnds is text, an upgrade of orig, with orig's line ends, where shcl
 // wrote it out again with LF only.
 func SameEnds(orig, text string, e InfoEdit) string {

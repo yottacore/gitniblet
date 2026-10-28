@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `--version` on a non-release build shows the build date, in the local time zone of whoever runs it.
 
+- A FreeBSD package, `gitniblet-<version>-freebsd-<arch>.pkg`, for `pkg add`.
+
 ### Changed
 
 - The project is now GitNiblet. The command is `gitniblet`, the config folder is `gitniblet` and an existing `ngdb` folder is moved there on first run, env vars start with `GITNIBLET_`, and the repo is `yottacore/gitniblet`.

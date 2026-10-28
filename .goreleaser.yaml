@@ -1,10 +1,10 @@
 # Release packaging for the public binary. Pure-Go, so every OS/arch below
 # cross-compiles from one Linux box with no C toolchain. Produces: binaries for
 # linux/darwin/windows/freebsd (amd64+arm64), .deb/.rpm for linux (nfpm), a
-# tar.gz/zip archive per target, and checksums. The Windows single-file .exe
-# installer is built separately (cicd/utility/windows-installer.bash, NSIS).
-# Deferred (need the target OS's own tooling/signing host): macOS .dmg, Windows
-# .msi, FreeBSD .pkg - those ship as archives for now.
+# .pkg for freebsd (build hook below), a tar.gz/zip archive per target, and
+# checksums. The Windows single-file .exe installer is built separately
+# (cicd/utility/windows-installer.bash, NSIS). Deferred (need the target OS's
+# own tooling/signing host): macOS .dmg, Windows .msi - those ship as archives.
 # app.Version is authoritative in source; only app.CommitTime is stamped, which
 # gives the build number. No build date, so release binaries show none.
 version: 2
@@ -26,6 +26,11 @@ builds:
     goarch: [amd64, arm64]  # flow-style so cicd.bash --no-arm can filter this line
     # Commit time, not build time, so 2 builds of one commit match byte for byte.
     mod_timestamp: "{{ .CommitTimestamp }}"
+    # nfpm has no FreeBSD packager. A no-op for the other OSes.
+    hooks:
+      post:
+        - cmd: bash cicd/utility/freebsd-pkg.bash "{{ .Os }}" "{{ .Arch }}" "{{ .Path }}" "{{ .Version }}" "{{ .CommitTimestamp }}"
+          output: true
 
 archives:
   - id: gitniblet
@@ -66,8 +71,12 @@ nfpms:
 
 checksum:
   name_template: checksums.txt
+  extra_files:
+    - glob: ./dist/*.pkg
 
 release:
+  extra_files:
+    - glob: ./dist/*.pkg
   # The same first line as --version. release.yml sets GITNIBLET_BUILD.
   header: "gitniblet v{{ .Version }} build {{ .Env.GITNIBLET_BUILD }}"
   # -alpha/-beta/-rc tags land as a GitHub pre-release (not flagged Latest)

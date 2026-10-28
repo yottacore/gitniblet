@@ -11,6 +11,8 @@
 ##		- fDogfood BIN DIST CROSS: the Linux build, then with CROSS=1 the amd64
 ##		  Windows and macOS builds from goreleaser's DIST, since the boxes that
 ##		  run those are amd64.
+##		- fDogfood_Script UTILDIR: dogfood_gitniblet.ps1 and its launchers, from
+##		  the repo's utility/ to the synced util folders, each where it's found.
 ##		Uses the caller's fEcho_Clean.
 ##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
 ##	Licensed under The MIT License (MIT). Full text at:
@@ -22,6 +24,7 @@ fDogfood_Dirs(){
 	dogfoodDirs_Linux=("${HOME}/synced/0-0/common/exec/app/linux")
 	dogfoodDirs_Mswin=("${HOME}/synced/0-0/common/exec/app/mswin")
 	dogfoodDirs_Macos=("${HOME}/synced/0-0/common/exec/app/macos")
+	dogfoodDirs_Util="${HOME}/synced/0-0/common/exec/util"
 }
 
 fDogfood_InUse(){
@@ -54,6 +57,7 @@ fDogfood(){
 	local bin="${1}" dist="${2}" exe="${1##*/}"
 	local -i cross="${3:-0}"
 	local -a dogfoodDirs_Linux dogfoodDirs_Mswin dogfoodDirs_Macos found
+	local dogfoodDirs_Util
 	fDogfood_Dirs
 	fDogfood_Copy "${bin}" "${dogfoodDirs_Linux[@]}"  ||  return 1
 	if ((! cross)); then fEcho_Clean "Dogfood: no Windows or macOS build this run, skipped."; return 0; fi
@@ -63,4 +67,16 @@ fDogfood(){
 	found=("${dist}"/*_darwin_amd64*/"${exe}")
 	if [[ -f "${found[0]}" ]]; then fDogfood_Copy "${found[0]}" "${dogfoodDirs_Macos[@]}"  ||  return 1
 	else fEcho_Clean "Dogfood: no macOS amd64 build in ${dist}, skipped."; fi
+}
+
+## The bash launcher serves Linux, BSD and macOS alike. The .ps1 finds the build
+## itself, so these go every run, cross-built or not.
+fDogfood_Script(){
+	local src="${1%/}" name="dogfood_gitniblet" dogfoodDirs_Util
+	local -a dogfoodDirs_Linux dogfoodDirs_Mswin dogfoodDirs_Macos
+	fDogfood_Dirs
+	fDogfood_Copy "${src}/${name}.ps1" "${dogfoodDirs_Util}/0_crossplatform"  \
+		&&  fDogfood_Copy "${src}/${name}"     "${dogfoodDirs_Util}/linux/bash"  \
+		&&  fDogfood_Copy "${src}/${name}"     "${dogfoodDirs_Util}/macos/bash"  \
+		&&  fDogfood_Copy "${src}/${name}.cmd" "${dogfoodDirs_Util}/mswin/cli/by-self/cmd"
 }

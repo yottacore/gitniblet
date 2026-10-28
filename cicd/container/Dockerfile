@@ -11,10 +11,11 @@
 FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
 
 # Apt is pinned only as far as the base image is. The Go toolchain is what
-# matters, and it comes from the tarball below. nsis is for the Windows installer.
+# matters, and it comes from the tarball below. nsis is for the Windows installer,
+# and zstd unpacks the CodeQL bundle.
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
-		bash ca-certificates curl git nsis \
+		bash ca-certificates curl git nsis zstd \
 	&& rm -rf /var/lib/apt/lists/*
 
 ARG GO_VER=1.26.10

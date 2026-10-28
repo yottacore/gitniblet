@@ -15,8 +15,8 @@ github.com/hashicorp/golang-lru/v2 v2.0.7 h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs
 github.com/hashicorp/golang-lru/v2 v2.0.7/go.mod h1:QeFd9opnmA6QUJc5vARoKUSoFhyfM2/ZepoAG6RGpeM=
 github.com/jim-collier/shcl/source/go/v2 v2.0.0 h1:jfHFipn/h5seFCYj3EBLdBsV7NJxJKonNdiFdA4kYuQ=
 github.com/jim-collier/shcl/source/go/v2 v2.0.0/go.mod h1:A4/dewqlAvr+OcaRSFOe4u8lIWz2p0Ejm6p62ydk1lk=
-github.com/jim-collier/shclwrap/source/go v0.0.0-20261027004135-f03fe5e8fff3 h1:Gm21DDA5hugWb5xxX2ZXs6fYKRBW07B2fdCjGp8XsYQ=
-github.com/jim-collier/shclwrap/source/go v0.0.0-20261027004135-f03fe5e8fff3/go.mod h1:m9nR+6DC9iR+8oETJlKJsa6N7L4YM7uaA3wxRoFt52c=
+github.com/jim-collier/shclwrap/source/go v0.0.0-20261027035944-54dc6c66cbb5 h1:GhGq5XwQJ5g1RRCcpF1n/6onzWaMLo2A0ANRUurOaEc=
+github.com/jim-collier/shclwrap/source/go v0.0.0-20261027035944-54dc6c66cbb5/go.mod h1:m9nR+6DC9iR+8oETJlKJsa6N7L4YM7uaA3wxRoFt52c=
 github.com/lucasb-eyer/go-colorful v1.2.0 h1:1nnpGOrhyZZuNyfu1QjKiUICQ74+3FNCN69Aj6K7nkY=
 github.com/lucasb-eyer/go-colorful v1.2.0/go.mod h1:R4dSotOR9KMtayYi1e77YzuveK+i7ruzyGqttikkLy0=
 github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=

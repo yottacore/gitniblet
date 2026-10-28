@@ -32,43 +32,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 ## Issues
 
-- Dogfood to `exec/app/<os>/`, and skip the copy when the binary is in use.
-	- ID: 2026102520521027
-	- Type: Task
-	- Status: Waiting on UAT
-	- Needs local test suite run?: No
-	- Needs external testing: No
-	- Needs hand testing: the next default run on b23, to see the build land in `exec/app/linux/`, and a run with cross-compile for `mswin/` and `macos/`.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-205210
-	- Opened by: JC
-	- Parent ID: 2026102416210008
-	- Requirements [Feature]:
-		- Per the shared CICD rules, Dogfood. The Linux build goes to `~/synced/0-0/common/exec/app/linux/`, and the Windows and macOS builds to `mswin/` and `macos/` beside it, where the run built them.
-		- Skip the copy, with one line, when the binary there is in use.
-		- Today it goes to `exec/util/linux/bin/`, with a `/usr/local/sbin/` fallback through sudo.
-	- Estimated effort: Low
-	- Actual effort: Low
-	- Progress log:
-		- 20261026: The Dogfood step copies the release build to `exec/app/linux/`. When the run cross-built, it also copies the amd64 Windows and macOS builds from `dist/` to `mswin/` and `macos/`. The `exec/util/linux/bin/` path and the sudo fallback are gone.
-		- A copy that a process here runs or holds open is skipped with one line, and so is a missing folder or one that already has the same bytes. The new copy goes in beside the old one and is renamed over it.
-		- The logic is in the new `cicd/utility/include/dogfood.bash`. design.md and `--help` say so.
-		- Verified: `dogfood-test.bash` defr4 to defra pass, and each fails with its part broken: the in-use check off (defr5, defr6), arm64 globs (defr7), the cross-built check ignored (defr8), no same-bytes skip (defr9), and the folder pick (defr4). defra runs `cicd.bash`'s own step, and fails on the old `cicd.bash` and with cross-built forced on. The /proc pass, for a box with no fuser, is checked in defr5 and defr6.
-		- Verified: `--backlog-run-quick`, `flags-test.bash` and shellcheck pass, and `--list` names the 7 new IDs.
-		- Not verified: a real dogfood copy, since a round never dogfoods.
-		- Swept: every dogfood and install path in `cicd.bash`, the scripts under `cicd/utility/`, the workflows and the docs. `preferredInstallPaths_Bash` is declared but read by nothing, so it stays as it was. Enterprise's `cicd.bash` has no Dogfood step, and vendor has no `cicd.bash`.
-	- Decisions:
-		- amd64 for Windows and macOS, since b29w and the Intel Mac boxes are amd64, and one binary name per folder leaves no room for both.
-		- Windows and macOS are copied only when Cross-compile + package is in this run's plan, so a `--quick` run never copies an older `dist/`.
-		- In use means a process on this box runs it or holds it open, through `fuser`, or one pass over /proc where there's no fuser. A copy in use on another box through the synced folder can't be seen from here.
-		- A missing folder is a skip, not a failure or a `mkdir`, per "first available location" in the shared rules.
-		- Same bytes, not mtime, decides "already this build", which replaces `cp --update=older`.
-		- A failed copy fails the step, now that there's no sudo fallback.
-		- `exec/app/linux/` isn't on PATH here, as for silkterm. The old `exec/util/linux/bin/ngdb` is left alone. The dogfood script, 2026102520521029, is what puts a launcher on PATH.
-	- Branch: r1026
-	- Test case: `cicd/utility/dogfood-test.bash` defr4 to defra.
-	- 2026-10-26 Verified: cicd.bash --backlog-run-full passed all 11 steps at r1026 (run 20261026-193900; Windows, FreeBSD and macOS passed, vmDebARM64 didn't answer and was skipped), and hosted ci.yml run 40439675727 passed both jobs. defr4 to defra passed. Only the hand row is left: the next default run on b23, since a round never dogfoods.
-
 - `cleanup-test.bash` dedpb can take 30s to stop after Ctrl+C under load.
 	- ID: 2026102520025738
 	- Type: Bug
@@ -173,31 +136,18 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Commit: e37fe11
 	- Test case: `TestBuildNumber` (dedrs) and `TestVersionLine` (debg5) in `source/app/app_test.go`, and the version checks in `smoke-cli.bash`.
 
-- Move to shclwrap's newest dev, and drop the upgrade workarounds it made needless.
-	- ID: 2026102621002700
+- Check the FreeBSD `.pkg` upload at the next release cut.
+	- ID: 2026102809554655
 	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261026-210027
+	- Status: Stalled
+		- Held for the next release cut, since release.yml runs only on a push to `main`.
+	- Needs external testing: release.yml at the next release cut: the two `gitniblet-<version>-freebsd-<arch>.pkg` files on the release, and listed in its `checksums.txt`.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261028-095546
 	- Opened by: JC
-	- Related IDs: 2026102509204445
-	- Requirements [Feature]:
-		- `source/go.mod` takes shclwrap dev 54dc6c6 or newer, and enterprise's `go.mod` follows, per deft0.
-		- shclwrap now keeps a 2.x file's blank lines on upgrade and reads a quoted comma as 2.0 did. `shclio`'s own line put-back and `legacyRow`'s seed-row rewrite go, unless a test shows a case shclwrap still misses.
-		- The backtick-value swap stays until shclwrap's 2026102618065645 is in.
-
-- steps-test deef2 fails when the outer run's own log is written mid-test.
-	- ID: 2026102619384200
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261026-193842
-	- Opened by: JC
-	- Steps to reproduce [Bug]: Run `cicd/cicd.bash --backlog-run-full`, so `steps-test.bash` runs inside a run that tees to `cicd/artifacts/lint/`.
-	- Incorrect behavior [Bug]: `FAIL deef2`, "a new log in cicd/artifacts/lint". It failed once in round r1026's full run, and passed when `steps-test.bash` ran alone.
-	- Expected behavior [Bug]: deef2 fails only when the nested run writes its log to the lint folder.
-	- Possible cause [Bug]: It counts `run_*.log` files newer than its run folder before dedq7 and again after. The outer run's own log is open and growing, so it can be older at the first count and newer at the second. Compare the set of file names instead, or leave out the outer run's log.
-	- Test case: deef2.
+	- Related IDs: 2026102520521033
+	- Requirements [Feature]: The last open part of 2026102520521033, split out so that item could close.
+	- Estimated effort: Low
 
 - A config file of any name and path names the database's files.
 	- ID: 2026102509202821
@@ -271,56 +221,17 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Decisions:
 		- The whole suite under `-race` in every full run gets no child here. It's 2026102520474880, which already runs the TUI tests under `-race` and has the same cgo problem to solve.
 
-- Go leak checks: a soak test on heap in use and goroutine count.
-	- ID: 2026102520521023
-	- Type: Task
+- The tx log append and the sync's line append drop Close's error.
+	- ID: 2026102808450278
+	- Type: Bug
 	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-205210
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261028-084502
 	- Opened by: JC
-	- Parent ID: 2026102416210008
-	- Prereq IDs: 2026102520521021
-	- Requirements [Feature]:
-		- Repeat a realistic workload, such as open, write, sync and replay, and fail when heap in use or the goroutine count keeps climbing.
-		- A short run in every full run, and a long one under `--leakcheck`. It takes a quarter of the CPUs, per Machine use.
-		- Watched to fail first, with a leak put in on purpose.
-
-- CodeQL from a pinned CLI over the vendored tree.
-	- ID: 2026102520521025
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-205210
-	- Opened by: JC
-	- Parent ID: 2026102416210008
-	- Requirements [Feature]:
-		- A `cicd.bash` step runs the CodeQL CLI at a pinned version, kept with the other pins, over the module and `vendor/`.
-		- Its findings go under `cicd/artifacts/lint/`. Watched to fail first.
-
-- A `dogfood_gitniblet.ps1` script with its launchers.
-	- ID: 2026102520521029
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-205210
-	- Opened by: JC
-	- Parent ID: 2026102416210008
-	- Prereq IDs: 2026102520521027
-		- The script reads from the dogfood folders that item sets up.
-	- Requirements [Feature]:
-		- Per the shared CICD rules, Dogfood script: one pwsh 7 script, plus Linux, Windows and macOS launchers, with the master copies in `utility/`.
-
-- A FreeBSD `.pkg`.
-	- ID: 2026102520521033
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-205210
-	- Opened by: JC
-	- Parent ID: 2026102416210008
-	- Requirements [Feature]:
-		- Package the FreeBSD builds as `.pkg`, beside the archives, and check it installs on vmFreeBSD.
-		- Overrides the FreeBSD `.pkg` deferral in the private notes, under cicd-packaging.
+	- Related IDs: 2026102520521025
+	- Incorrect behavior [Bug]: `Log.Append` in `txlog/txlog.go` closes its file in a defer and returns only the write's error. `appendLinesOnce` in `txlog/sync.go` does the same. A write the OS takes but fails to flush, such as on a network share, reports success.
+	- Expected behavior [Bug]: Each returns Close's error when the write itself passed.
+	- Reproduced [Bug]: No. Found by the CodeQL step's go/unhandled-writable-file-close.
 
 - A user table that restates a built-in table merges into it, as a system field does.
 	- ID: 2026102409431186
@@ -1045,6 +956,24 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Test case: `cicd/utility/container-fallback-test.bash`, dedmb to dedme: no docker, docker not answering, an image that won't build, and a stale `GO_VER`. The container path itself runs on every `cicd.bash` run.
 	- Closed: 20261025-070309
 
+- steps-test deef2 fails when the outer run's own log is written mid-test.
+	- ID: 2026102619384200
+	- Type: Bug
+	- Status: Done
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261026-193842
+	- Opened by: JC
+	- Steps to reproduce [Bug]: Run `cicd/cicd.bash --backlog-run-full`, so `steps-test.bash` runs inside a run that tees to `cicd/artifacts/lint/`.
+	- Incorrect behavior [Bug]: `FAIL deef2`, "a new log in cicd/artifacts/lint". It failed once in round r1026's full run, and passed when `steps-test.bash` ran alone.
+	- Expected behavior [Bug]: deef2 fails only when the nested run writes its log to the lint folder.
+	- Possible cause [Bug]: It counts `run_*.log` files newer than its run folder before dedq7 and again after. The outer run's own log is open and growing, so it can be older at the first count and newer at the second. Compare the set of file names instead, or leave out the outer run's log.
+	- Test case: deef2.
+	- Needs local test suite run?: No
+	- 20261028: deef2 now compares the set of run_*.log names in cicd/artifacts/lint from before dedq7 and after, in place of a count by mtime, so the outer run's own log can't count as new. Verified: steps-test.bash alone passes with a fake log touched every 10s, and --backlog-run-quick passes. Not shown failing on the old check: the timing is chance.
+	- Decisions: names, not an mtime count, since the outer log exists before the first snapshot. Swept: no other mtime-count of run logs in cicd/utility.
+	- Closed: 20261028-0940
+	- Verified: 2026-10-28, deef2 passed in r1028's full run on d6dd5bb, with the outer run's log growing (run dir 20261028-091500_001).
+
 - Tests wrote to the real database registry on macOS.
 	- ID: 2026102318473520
 	- Type: Bug
@@ -1152,6 +1081,230 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Actual fix [Bug]: The hooks dir is now `../../private/cicd-hooks`, which is the same folder from the main checkout and from a worktree beside it.
 	- Branch: ciflow
 	- Test case: Not applicable, a path in a local-only stage.
+
+- Move to shclwrap's newest dev, and drop the upgrade workarounds it made needless.
+	- ID: 2026102621002700
+	- Type: Task
+	- Status: Done
+	- Needs local test suite run?: No
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261026-210027
+	- Opened by: JC
+	- Related IDs: 2026102509204445
+	- Requirements [Feature]:
+		- `source/go.mod` takes shclwrap dev 54dc6c6 or newer, and enterprise's `go.mod` follows, per deft0.
+		- shclwrap now keeps a 2.x file's blank lines on upgrade and reads a quoted comma as 2.0 did. `shclio`'s own line put-back and `legacyRow`'s seed-row rewrite go, unless a test shows a case shclwrap still misses.
+		- The backtick-value swap stays until shclwrap's 2026102618065645 is in.
+	- Progress log:
+		- 20261028: floss takes shclwrap 54dc6c6, its dev head, which still pins shcl dev 2174f0d9. shcl's dev head, 96447295, adds only a backlog edit. The vendor refresh changes only shclwrap.
+		- `shclio`'s line put-back is gone, since the upgrade now keeps blank lines. defnx has a new case for a run of blank lines.
+		- `legacyRow` stays. shclwrap mends a quoted comma only on a key set once, and seed rows repeat, so `title="a, b"` still splits. The issue text for shclwrap is drafted in the floss upstream folder, under this ID.
+		- The backtick swap stays, since shclwrap 2026102618065645 is still Queued.
+		- Enterprise isn't changed here. Its `go.mod` needs shclwrap moved from f03fe5e to 54dc6c6, plus the matching `go.sum` lines. With that alone, a copy of enterprise builds and vets against this floss.
+		- Verified: defnx fails on the old shclwrap without the put-back, and passes on 54dc6c6. dec93 and defp0 fail with `legacyRow` taken out, and pass with it.
+		- Verified: `--backlog-run-quick` passed, 262 tests, with gofmt and staticcheck clean and the CLI smoke passing. `go mod verify`, govulncheck and gosec are clean, and the ddl and config fuzz targets ran 15s each with no crash.
+		- Swept: every `shclio.Load` and `Current` caller (config, schema, queries, rename, DDL parse), and the docs for the old pin or the line put-back. No other copy of the put-back exists.
+	- Decisions:
+		- `legacyRow` is kept rather than worked around a second way, as the requirement allows when a test shows a case shclwrap misses.
+		- Enterprise's bump is left to its own round, per this job's note.
+	- Branch: r1028
+	- Test case: defnx (blank lines keep their numbers), dec93 and defp0 (old seed rows).
+	- Closed: 20261028-0940
+	- Verified: 2026-10-28, r1028's full run on d6dd5bb passed all 13 steps, cross-builds and the 4 remote boxes included, on shclwrap 54dc6c6.
+
+- Go leak checks: a soak test on heap in use and goroutine count.
+	- ID: 2026102520521023
+	- Type: Task
+	- Status: Done
+	- Needs local test suite run?: No
+	- Needs external testing: No
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Prereq IDs: 2026102520521021
+	- Requirements [Feature]:
+		- Repeat a realistic workload, such as open, write, sync and replay, and fail when heap in use or the goroutine count keeps climbing.
+		- A short run in every full run, and a long one under `--leakcheck`. It takes a quarter of the CPUs, per Machine use.
+		- Watched to fail first, with a leak put in on purpose.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261028: New `internal/soak`. Two clones of one remote take turns: open, which replays the log, then write, sync through git, replay what the pull brought, and close. After each round it reads heap in use and the goroutine count. It fails when each third of the run's low point is over the one before, by more than 1 MiB or a tenth for the heap.
+		- A Soak test step after Fuzz runs it for a minute, then runs it again with a goroutine leak and with a heap leak, and fails if either is missed. `--leakcheck` and `--long` make it 30 minutes. It's off in `--quick`, `--backlog-run-quick` and `--no-leakcheck`, and gets a quarter of the CPUs. `--list` shows its time and IDs.
+		- `--help`, design.md's CI/CD pipeline and the README say so.
+		- Verified: TestSoak passes, 35 rounds in 12s and 473 in 3 minutes, with heap in use at about 1.2 MiB and 2 goroutines throughout. Left open, the store keeps a goroutine, and the goroutine count went 8, 18, 28. Holding 256 KiB a round, heap in use went 2.5, 5.2, 7.7 MiB. Both runs fail. dehwp passes with both leaks.
+		- Verified: the step's own command passes, and returns 1 with a heap leak put in. flags-test dehwt passes, and fails on the old `cicd.bash`. flags-test, steps-test, sync-test, cleanup-test, container-fallback-test, `--backlog-run-quick` and shellcheck pass, with no new shellcheck warnings.
+		- Verified: the 30-minute soak passed, 5329 rounds, with heap in use lows by thirds of 1000, 1280 and 1328 KiB and 2 goroutines throughout. It took 371s user and 155s system CPU at load 5 to 9. Most of the heap rise is in the first third, and it stays well under the 1 MiB slack.
+		- 20261028: flags-test deecd's `--backlog-run-full` plan went from `...|Fuzz|Security + supply-chain|...` to `...|Fuzz|Soak test|Security + supply-chain|...`. deece's `--quick` off list gained `Soak test (--quick)` after `Cross-compile + package (--quick)`. The rest of both is the same.
+		- Swept: every place that names the leak flags, the heavy steps or the step list: `cicd.bash` (plan, `fStep`, `fInnerArgs`, `--list`, `--help`), design.md, the README, flags-test, steps-test and container-fallback-test. `test.bash`, `ci.yml` and the boxes need nothing, since the soak tests are a `SKIP` without `GITNIBLET_SOAK`. Enterprise's `cicd.bash` has its own leak flags and packages, and isn't changed.
+	- Decisions:
+		- Low points by thirds, not a slope. One late GC only lifts a sample, and a cache that fills once steps up and stays, so neither fails. A leak has to lift all 3.
+		- The soak test runs only when `GITNIBLET_SOAK` gives it a time, so `go test ./...` stays quick. The step sets it. By hand, `GITNIBLET_SOAK=4h go test ./internal/soak` runs a longer one.
+		- A short run is a minute, about 2 with the leak checks, at little CPU, since most of a round is git. The long one is 30 minutes.
+		- `--long` runs the long soak too, per the CICD style guide, which puts the leak checks that take long under `--long`. The step plan is the same as the default run's, so `--long` still matches the default plan.
+		- It's off in `--quick`. The issue asks for every full run, and the pipeline tests start nested `--quick` runs, which would each add about 2 minutes.
+		- Its own step, in the container after Fuzz, not part of Tests, so it gets the heavy CPU share and its own `PASS` or `FAIL` line.
+		- The SQLite engine keeps its memory outside the Go heap, so a store left open shows as a goroutine, not as heap. Watching RSS as well would catch that, and isn't asked for here.
+		- Git runs with the box's global and system config left out, so a signing or hook setting can't fail it.
+	- Branch: r1028
+	- Test case: `internal/soak` dehwn (the soak), dehwp (both leaks caught) and dehwq (the climb check), and `flags-test.bash` dehwt.
+	- Closed: 20261028-1000
+	- Verified: 2026-10-28, r1028's full run on d6dd5bb passed the step and its pipeline tests, and hosted ci.yml run 40724980430 passed it in the Linux merge gate.
+
+- CodeQL from a pinned CLI over the vendored tree.
+	- ID: 2026102520521025
+	- Type: Task
+	- Status: Done
+	- Needs local test suite run?: No
+	- Needs external testing: No
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Related IDs: 2026102808450278
+	- Requirements [Feature]:
+		- A `cicd.bash` step runs the CodeQL CLI at a pinned version, kept with the other pins, over the module and `vendor/`.
+		- Its findings go under `cicd/artifacts/lint/`. Watched to fail first.
+	- Progress log:
+		- 20261028: A CodeQL step after Security + supply-chain runs `cicd/utility/codeql.bash`. It fetches CodeQL 2.27.3's Go bundle once, checks its sha256, keeps it in the cache, and runs `go-security-and-quality` over the module and `vendor/`. Both pins are in `tool-versions.bash`. The SARIF goes to `cicd/artifacts/lint/codeql_<stamp>.sarif`, rotated like the run logs.
+		- A result fails the step unless `codeql-accepted.txt` lists its rule and file with a reason. That's every result in our own code, and only the security ones in `vendor/`. An entry that matches nothing fails too.
+		- It's in the default run, `--long`, `--backlog-run-full` and `--merge-gate`, at a quarter of the cores. `--quick` and `--backlog-run-quick` leave it out. The container gets zstd for the bundle, so its image is new.
+		- First run: 674 results, 665 of them quality ones in `vendor/`. The 9 left are accepted with reasons: 4 by design in our code, 3 integer conversions in tcell and shcl, and 2 dropped Close errors, filed as Bug 2026102808450278.
+		- The CodeQL terms allow automated runs on an open source repo hosted on GitHub.com. floss is AGPL and public on GitHub, so it qualifies. Enterprise and vendor are private and don't.
+		- 20261028: flags-test's plan checks take CodeQL after Security + supply-chain: deecd and deef1 add `CodeQL` to the plan, and deece adds `CodeQL (--quick)` to what `--quick` turns off. The rest of each is the same.
+		- Verified: `codeql.bash` passed on the host in 87s wall at load 5 (408s user), and in the new image through the cache volume in 96s at load 12, with 9 accepted and 0 new.
+		- Verified: it failed with a self-compare put in our code, an accepted line taken out for a vendor result, and an entry for a file that isn't there: 2 FAIL lines, 1 STALE, exit 1.
+		- Verified: codeql-test dehy4 to dehya pass, and fail against codeql-check with the vendor filter, the stale check, or the line check taken out. flags-test, steps-test, cleanup-test, container-fallback-test, pins-test, sync-test, dogfood-test, config-home-test and remote-skip-test pass. `--backlog-run-quick` passed.
+		- Swept: every `fStep_Plan` and heavy-step site in `cicd.bash`, `--help`, design.md and README, and the plan lists in flags-test and steps-test. Enterprise and vendor get none, since CodeQL's terms don't cover private repos.
+	- Decisions:
+		- The Go-only bundle (114 MB) rather than the full CLI, since it carries the CLI and its Go queries at one version, so nothing else is fetched.
+		- It runs in the container with the other build and lint steps, and its bundle lives in the cache volume there, or in `~/.cache/gitniblet` on a host run, never in the repo.
+		- `vendor/` counts only for security results. Its quality results are third-party style we'd never change, and are kept in the SARIF.
+		- Accepted entries match on rule and file, not line, so an edit nearby doesn't break them.
+		- The filter is a small stdlib Go program beside testid, since the image has neither python nor jq.
+	- Branch: r1028
+	- Test case: codeql-test dehy4 to dehya (what fails the step, and the pins). The CodeQL step itself runs in every full run.
+	- Closed: 20261028-1000
+	- Verified: 2026-10-28, r1028's full run on d6dd5bb passed the step and its pipeline tests, and hosted ci.yml run 40724980430 passed it in the Linux merge gate.
+
+- A `dogfood_gitniblet.ps1` script with its launchers.
+	- ID: 2026102520521029
+	- Type: Task
+	- Status: Done
+	- Needs external testing: `dogfood_gitniblet.cmd` and `.ps1` on b29w as `wintest`, with a stand-in `gitniblet.exe` in a stand-in `Dropbox\0-0\common\exec\app\mswin\` and `LOCALAPPDATA`: the pool, the fixed name in `Programs\gitniblet\` through the hard link or copy fallback, and arguments and the exit code passed through.
+	- Needs hand testing: the next default run on b23, to see the script and launchers land in the synced util folders, and `dogfood_gitniblet --version` by name.
+		- Stand-in: on b23, `cicd.bash`'s own Dogfood functions ran against a temp home in place of the real synced folders, from the r1028 full run's `bin/` and `dist/`. The script and both launchers landed in the 4 util folders with the same bytes, the bash ones executable, and a second pass copied nothing. `dogfood_gitniblet --version` by name, from the copied `linux/bash/`, took the build into the pool, linked `~/.local/bin/gitniblet` to it, printed `gitniblet v1.0.0-beta.2 build dehzk`, and passed exit code 1 through on a bad command.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Prereq IDs: 2026102520521027
+		- The script reads from the dogfood folders that item sets up.
+	- Requirements [Feature]:
+		- Per the shared CICD rules, Dogfood script: one pwsh 7 script, plus Linux, Windows and macOS launchers, with the master copies in `utility/`.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 20261028: New `utility/dogfood_gitniblet.ps1`, from shcl's `dogfood_shcl.ps1`. It takes a new build from the synced `exec/app/<os>/` folder into a pool of dated versions, points a fixed name at the newest, and runs it with every argument and the exit code passed through. The pool is `~/.local/bin/gitniblet_versions/` on Linux, `~/Applications/gitniblet_versions/` on macOS, and `%LOCALAPPDATA%\Programs\gitniblet_versions\` on Windows.
+		- The pool is GFS-rotated every run, to 5 to 10 versions with 1 GB deciding between, and a running version is never removed. `--no-update` runs what's held.
+		- Launchers: `utility/dogfood_gitniblet` for Linux, BSD and macOS, and `utility/dogfood_gitniblet.cmd` for Windows. `.gitattributes` keeps the `.cmd` CRLF and the bash launcher LF.
+		- The Dogfood step copies all 3 to `exec/util/0_crossplatform/`, `linux/bash/`, `macos/bash/` and `mswin/cli/by-self/cmd/`, each skipped with one line when missing, the same bytes, or in use. `--help` and design.md say so.
+		- Verified: `dogfood-script-test.bash` dehyr to dehyx pass under pwsh 7.6 here, and each fails with its part broken: the exit code dropped (dehyr), the in-use check off (dehys), a regular file at the fixed name replaced (dehyt), the launcher joining its arguments (dehyv), the step's call taken out or the `.cmd` saved LF (dehyw), aliases in the script (dehyx), the `-File` argument fix off (dehyr, dehyx), and no same-bytes check (dehyr). With no pwsh, dehyr to dehyv and dehyx are SKIP and dehyw still runs.
+		- Verified: `dogfood-test.bash` defr4 to defra, `flags-test.bash`, `testid check`, shellcheck and `--backlog-run-quick` pass, and `--list` names the 6 new IDs under Pipeline tests.
+		- Swept: every dogfood path in `cicd.bash`, `include/dogfood.bash` and `install.ps1`'s user folder, which the Windows fixed name matches. Enterprise has no Dogfood step, and vendor has no `cicd.bash`.
+		- 20261028 Verified: the full run 20261028-091500 on r1028 d6dd5bb passed all 13 steps, with dehyr to dehyx PASS.
+		- 20261028 Verified on b29w as `wintest`, pwsh 7.6.6 and Windows PowerShell 5.1, with stand-in builds in a stand-in `Dropbox\0-0\common\exec\app\mswin\` and `LOCALAPPDATA`: the `.cmd` from the `mswin\cli\by-self\cmd\` layout, `.ps1` through `pwsh -File`, and 5.1 through the `.cmd` with no pwsh on PATH all passed arguments with spaces, `=`, `://`, `--k:v` and `-v` as typed, and exit codes 7, 3 and 5. Each newer build went into the pool, a restamped same build wasn't taken again, and `--no-update` copied nothing. The fixed name in `Programs\gitniblet\` came out a hard link, since `wintest` can't make a symlink, and moved to each newest build. The real Windows build's `--version` ran through the `.cmd`.
+		- Not reached on Windows: the copy fallback, since the hard link worked, and the "in use" line, since the fixed name was replaced even with a process started from it still running. The newest build ran either way.
+	- Decisions:
+		- Windows runs it unelevated in the same window, as shcl decided, where the shared rules say elevated. An elevated CLI's output lands in a new window that closes. The fixed name falls back to a hard link, then a copy, where a symlink needs rights the account lacks.
+		- The Windows fixed name is `%LOCALAPPDATA%\Programs\gitniblet\gitniblet.exe`, which install.ps1 already puts on PATH, rather than a bare `Programs\gitniblet` file that would clash with that folder.
+		- macOS keeps the pool and fixed name in `~/Applications/`, per the shared rules, though install puts gitniblet in `~/.local/bin` there.
+		- On Linux the fixed name is install.bash's `~/.local/bin/gitniblet`. A regular file there, such as a user install, is left alone, with one line on a run that took a build.
+		- Windows PowerShell 5.1 still runs it, through the `.cmd`, as for shcl.
+		- No stray cleanup or `.desktop` file. gitniblet has no desktop entry, and the old `exec/util/linux/bin/ngdb` is still in use by name on b23.
+		- The script and launchers go every Dogfood run, cross-built or not, since the script picks its own build.
+	- Branch: r1028
+	- Test case: `cicd/utility/dogfood-script-test.bash` dehyr to dehyx.
+	- Acceptance signoff: Self-closed: dehyr to dehyx passed in the r1028 full run, the launchers passed on b29w as `wintest`, and the Dogfood step's copy and `dogfood_gitniblet --version` by name passed on b23 into a temp home.
+	- Closed: 20261028-095800
+
+- A FreeBSD `.pkg`.
+	- ID: 2026102520521033
+	- Type: Task
+	- Status: Done
+	- Needs local test suite run?: `--backlog-run-full`: Cross-compile + package, for the hook on freebsd amd64 and arm64 in the container. Pipeline tests dehz9 to dehzc, and defr0 and defr1. Remote tests dehzd on vmFreeBSD.
+	- Needs external testing: release.yml at the next release cut, for the `.pkg` upload. That check is now 2026102809554655.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Related IDs: 2026102809554655
+	- Requirements [Feature]:
+		- Package the FreeBSD builds as `.pkg`, beside the archives, and check it installs on vmFreeBSD.
+		- Overrides the FreeBSD `.pkg` deferral in the private notes, under cicd-packaging.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261028: goreleaser makes `gitniblet-<version>-freebsd-<arch>.pkg` for amd64 and arm64, beside the archives, through a post-build hook, `cicd/utility/freebsd-pkg.bash`. It's in `checksums.txt` and goes up with the release.
+		- The remote tests make the same `.pkg` from the binary they test, then as root on vmFreeBSD install it into a throwaway root, run `--version`, `pkg check -s` it and delete it. The box's own packages aren't touched.
+		- `repro-test.bash` builds freebsd too now, so defr0 covers the `.pkg` bytes.
+		- design.md says so, under CI/CD pipeline, and README's install table and the changelog have it.
+		- Verified: dehz9 to dehzc pass, and each fails with the maker broken: relative names, manifests last, no snapshot strip, no OS check. dehzd passes on vmFreeBSD, and fails on a `.pkg` with wrong checksums. A real `pkg add`, run and `pkg delete` on vmFreeBSD as root passed too, the files and folder gone after. A goreleaser run on linux and freebsd made the `.pkg` and listed it in `checksums.txt`. `goreleaser check`, `--backlog-run-quick`, `pins-test.bash`, `flags-test.bash` and `remote-skip-test.bash` pass, and defr0 and defr1 pass with freebsd in the build.
+		- Not verified: the arm64 `.pkg` on a box, since there's no FreeBSD arm64 box. The release upload, until the next release cut.
+		- Swept: every `.pkg` and deferral mention in `.goreleaser.yaml`, `cicd.bash`, the workflows, README.md, design.md and changelog.md. `install.bash` still takes the `.tar.gz` on FreeBSD, unchanged. `release.yml` needs no step, since goreleaser uploads the `extra_files`.
+		- 20261028 Verified: the full run 20261028-091500 on r1028 d6dd5bb passed all 13 steps. Cross-compile + package made `gitniblet-1.0.0-beta.2-SNAPSHOT-d6dd5bb-freebsd-amd64.pkg` and `-arm64.pkg` through the hook. dehz9 to dehzc, defr0 and defr1 PASS, and dehzd PASS on vmFreeBSD.
+		- The release upload check is split out as 2026102809554655, Stalled for the next release cut, so this one could close.
+	- Decisions:
+		- pkg's own format written by a script, since nfpm has no FreeBSD packager and building on the box would tie packaging to a VM that may not answer.
+		- A goreleaser post-build hook, not a step after goreleaser like the Windows installer, so the `.pkg` lands in `checksums.txt` and the release with no extra workflow step.
+		- The install check runs as root, since pkg can't install as a user: it chowns to root. A throwaway root keeps the box's package database as it was.
+		- A snapshot `.pkg` keeps its release's version, since the ports form of `-SNAPSHOT-<commit>` reads badly. `--version` tells builds apart.
+		- The outward choices are in questions.md, as a Check.
+	- Branch: r1028
+	- Test case: dehz9 to dehzc in `cicd/utility/freebsd-pkg-test.bash`, dehzd in `cicd/utility/remote-test.bash`, and defr0 in `cicd/utility/repro-test.bash`.
+	- Closed: 20261028-095800
+
+- Dogfood to `exec/app/<os>/`, and skip the copy when the binary is in use.
+	- ID: 2026102520521027
+	- Type: Task
+	- Status: Done
+	- Needs local test suite run?: No
+	- Needs external testing: No
+	- Needs hand testing: the next default run on b23, to see the build land in `exec/app/linux/`, and a run with cross-compile for `mswin/` and `macos/`.
+		- Stand-in: on b23, `cicd.bash`'s own `fDogfood` ran against a temp home in place of the real synced folders, with cross-built on, from the r1028 full run's `bin/` and `dist/`. The release build landed in `exec/app/linux/`, executable, and the amd64 Windows and macOS builds in `mswin/` and `macos/`, each with the same bytes and no partial copy left. A second pass said "already this build" for each and copied nothing.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Requirements [Feature]:
+		- Per the shared CICD rules, Dogfood. The Linux build goes to `~/synced/0-0/common/exec/app/linux/`, and the Windows and macOS builds to `mswin/` and `macos/` beside it, where the run built them.
+		- Skip the copy, with one line, when the binary there is in use.
+		- Today it goes to `exec/util/linux/bin/`, with a `/usr/local/sbin/` fallback through sudo.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261026: The Dogfood step copies the release build to `exec/app/linux/`. When the run cross-built, it also copies the amd64 Windows and macOS builds from `dist/` to `mswin/` and `macos/`. The `exec/util/linux/bin/` path and the sudo fallback are gone.
+		- A copy that a process here runs or holds open is skipped with one line, and so is a missing folder or one that already has the same bytes. The new copy goes in beside the old one and is renamed over it.
+		- The logic is in the new `cicd/utility/include/dogfood.bash`. design.md and `--help` say so.
+		- Verified: `dogfood-test.bash` defr4 to defra pass, and each fails with its part broken: the in-use check off (defr5, defr6), arm64 globs (defr7), the cross-built check ignored (defr8), no same-bytes skip (defr9), and the folder pick (defr4). defra runs `cicd.bash`'s own step, and fails on the old `cicd.bash` and with cross-built forced on. The /proc pass, for a box with no fuser, is checked in defr5 and defr6.
+		- Verified: `--backlog-run-quick`, `flags-test.bash` and shellcheck pass, and `--list` names the 7 new IDs.
+		- Not verified: a real dogfood copy, since a round never dogfoods.
+		- Swept: every dogfood and install path in `cicd.bash`, the scripts under `cicd/utility/`, the workflows and the docs. `preferredInstallPaths_Bash` is declared but read by nothing, so it stays as it was. Enterprise's `cicd.bash` has no Dogfood step, and vendor has no `cicd.bash`.
+	- Decisions:
+		- amd64 for Windows and macOS, since b29w and the Intel Mac boxes are amd64, and one binary name per folder leaves no room for both.
+		- Windows and macOS are copied only when Cross-compile + package is in this run's plan, so a `--quick` run never copies an older `dist/`.
+		- In use means a process on this box runs it or holds it open, through `fuser`, or one pass over /proc where there's no fuser. A copy in use on another box through the synced folder can't be seen from here.
+		- A missing folder is a skip, not a failure or a `mkdir`, per "first available location" in the shared rules.
+		- Same bytes, not mtime, decides "already this build", which replaces `cp --update=older`.
+		- A failed copy fails the step, now that there's no sudo fallback.
+		- `exec/app/linux/` isn't on PATH here, as for silkterm. The old `exec/util/linux/bin/ngdb` is left alone. The dogfood script, 2026102520521029, is what puts a launcher on PATH.
+	- Branch: r1026
+	- Test case: `cicd/utility/dogfood-test.bash` defr4 to defra.
+	- 2026-10-26 Verified: cicd.bash --backlog-run-full passed all 11 steps at r1026 (run 20261026-193900; Windows, FreeBSD and macOS passed, vmDebARM64 didn't answer and was skipped), and hosted ci.yml run 40439675727 passed both jobs. defr4 to defra passed. Only the hand row is left: the next default run on b23, since a round never dogfoods.
+	- 2026-10-28 Verified: the full run 20261028-091500 on r1028 d6dd5bb passed all 13 steps, with defr4 to defra PASS.
+	- Acceptance signoff: Self-closed: defr4 to defra passed in the r1028 full run, and the Dogfood step's copy passed on b23 into a temp home, cross-built.
+	- Closed: 20261028-095800
 
 - Go leak checks: `goleak.VerifyTestMain` in every package's tests.
 	- ID: 2026102520521021

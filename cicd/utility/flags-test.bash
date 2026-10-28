@@ -47,7 +47,7 @@ fHandsOff(){
 		[[ "$(fPlan "${mode}")" != *Dogfood* ]]  ||  bad=1
 	done
 	fWant "$(fPlan --backlog-run-quick)" 'Build (native release)|Lint + format|Tests'  ||  bad=1
-	fWant "$(fPlan --backlog-run-full)" 'Build (native debug)|Build (native release)|Cross-compile + package|Lint + format|Tests|Fuzz|Security + supply-chain|Race tests|Pipeline tests|Remote tests|Profiler'  ||  bad=1
+	fWant "$(fPlan --backlog-run-full)" 'Build (native debug)|Build (native release)|Cross-compile + package|Lint + format|Tests|Fuzz|Soak test|Security + supply-chain|CodeQL|Race tests|Pipeline tests|Remote tests|Profiler'  ||  bad=1
 	fWant "$(fPlan --merge-gate)" "$(fPlan --backlog-run-full)"  ||  bad=1
 	return "${bad}"
 }
@@ -61,7 +61,7 @@ fOtherModes(){
 	[[ "${full}" == *"|Cross-compile + package|"*"|Remote tests|Dogfood|Profiler|"* ]]  ||  { echo "  default: ${full}"; bad=1; }
 	fWant "$(fPlan --quick --no-remote)" "$(fPlan --quick)"  ||  bad=1
 	[[ "$(fPlan --quick)" == *"|Fuzz|Security + supply-chain|Race tests|Dogfood|"* ]]  ||  { echo "  quick: $(fPlan --quick)"; bad=1; }
-	[[ "$(fOff --quick)" == 'Cross-compile + package (--quick)|Pipeline tests (--quick)|Remote tests (--quick)|Profiler (--quick)|Demo recording (--quick)' ]]  ||  { echo "  quick off: $(fOff --quick)"; bad=1; }
+	[[ "$(fOff --quick)" == 'Cross-compile + package (--quick)|Soak test (--quick)|CodeQL (--quick)|Pipeline tests (--quick)|Remote tests (--quick)|Profiler (--quick)|Demo recording (--quick)' ]]  ||  { echo "  quick off: $(fOff --quick)"; bad=1; }
 	[[ "$(fOff --no-remote)" == *'Remote tests (--no-remote)'* ]]  ||  bad=1
 	return "${bad}"
 }
@@ -96,7 +96,7 @@ fCheck deehh "with no hooks folder, Local hooks is off and the rest of the plan 
 fRaceAndPipeline(){
 	local bad=0 out script id want
 	out="$(bash "${cicd}" --list 2>&1)"
-	[[ "|$(fPlan)|" == *"|Security + supply-chain|Race tests|Pipeline tests|Remote tests|"* ]]  ||  { echo "  default: $(fPlan)"; bad=1; }
+	[[ "|$(fPlan)|" == *"|Security + supply-chain|CodeQL|Race tests|Pipeline tests|Remote tests|"* ]]  ||  { echo "  default: $(fPlan)"; bad=1; }
 	[[ "$(fOff --backlog-run-quick)" == *'Race tests (--backlog-run-quick)|Pipeline tests (--backlog-run-quick)'* ]]  ||  { echo "  quick gate off: $(fOff --backlog-run-quick)"; bad=1; }
 	[[ "|$(CC=nosuchcc fOff)|" == *'|Race tests (no nosuchcc for -race)|'* ]]  ||  { echo "  no cc: $(CC=nosuchcc fOff)"; bad=1; }
 	sed -n '/^Race tests:$/,/^Pipeline tests:$/p' <<< "${out}" | grep -qE '^dec9z internal/tui TestLookupsShowInTUI$'  ||  { echo "  race list lacks dec9z"; bad=1; }
@@ -133,6 +133,24 @@ fLeakFlags(){
 	return "${bad}"
 }
 fCheck defqc "--no-leakcheck and GITNIBLET_LEAKCHECK=0 turn the leak checks off, and --leakcheck back on" fLeakFlags
+
+## The soak test's time, from the --list line above its IDs.
+fSoakPlan(){
+	local bad=0
+	fSoakLine(){ bash "${cicd}" --list --no-sync --no-container "$@" 2>&1 | grep '^Soak test, ' ; }
+	[[ "$(unset GITNIBLET_LEAKCHECK; fSoakLine)" == "Soak test, 1m:" ]]  ||  { echo "  default isn't 1m"; bad=1; }
+	[[ "$(unset GITNIBLET_LEAKCHECK; fSoakLine --merge-gate)" == "Soak test, 1m:" ]]  ||  { echo "  --merge-gate isn't 1m"; bad=1; }
+	[[ "$(unset GITNIBLET_LEAKCHECK; fSoakLine --leakcheck)" == "Soak test, 30m:" ]]  ||  { echo "  --leakcheck isn't 30m"; bad=1; }
+	[[ "$(unset GITNIBLET_LEAKCHECK; fSoakLine --long --backlog-run-full)" == "Soak test, 30m:" ]]  ||  { echo "  --long isn't 30m"; bad=1; }
+	[[ "$(unset GITNIBLET_LEAKCHECK; fSoakLine --slow)" == "Soak test, 30m:" ]]  ||  { echo "  --slow isn't 30m"; bad=1; }
+	bash "${cicd}" --list 2>&1 | sed -n '/^Soak test, /,/^[A-Z]/p' | grep -qE '^dehwn internal/soak TestSoak$'  ||  { echo "  soak list lacks dehwn"; bad=1; }
+	[[ "|$(unset GITNIBLET_LEAKCHECK; fOff --no-leakcheck)|" == *'|Soak test (--no-leakcheck)|'* ]]  ||  { echo "  --no-leakcheck leaves it on"; bad=1; }
+	[[ "|$(GITNIBLET_LEAKCHECK=0 fOff)|" == *'|Soak test (GITNIBLET_LEAKCHECK=0)|'* ]]  ||  { echo "  GITNIBLET_LEAKCHECK=0 leaves it on"; bad=1; }
+	[[ "|$(fOff --backlog-run-quick)|" == *'|Soak test (--backlog-run-quick)|'* ]]  ||  { echo "  --backlog-run-quick leaves it on"; bad=1; }
+	[[ "|$(fOff --quick)|" == *'|Soak test (--quick)|'* ]]  ||  { echo "  --quick leaves it on"; bad=1; }
+	return "${bad}"
+}
+fCheck dehwt "the soak test runs 1m, 30m under --leakcheck or --long, and is off under --no-leakcheck and --quick" fSoakPlan
 
 fAreas(){
 	local out bad=0 area
@@ -212,3 +230,4 @@ echo "flags-test.bash: PASS"
 ##		- 20261025 JC: Race tests and Pipeline tests in the plans.
 ##		- 20261025 JC: A stand-in hooks folder, so the plans match on a hosted runner.
 ##		- 20261026 JC: The leak flags turn the leak checks on and off.
+##		- 20261028 JC: The soak test's step and time.

@@ -1,0 +1,4 @@
+## cmd.exe misreads labels in a .cmd with bare LF, and the launcher for
+## Linux and macOS breaks on CRLF from a Windows checkout.
+*.cmd                       text eol=crlf
+utility/dogfood_gitniblet    text eol=lf

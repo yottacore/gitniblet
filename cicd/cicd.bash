@@ -58,6 +58,8 @@ if [[ -z "${doQuietly+x}" ]]; then
 	declare  -a testAreas=()
 	declare  -i doList=0  doSync=1
 	declare     leakOpt=""            ## --leakcheck or --no-leakcheck, as given
+	declare  -i doLong=0              ## --long: the soak test runs long, as with --leakcheck
+	declare  -i soakMin=1             ## The soak test's minutes, from fSoakTime
 	declare     aliasNote=""
 	## --backlog-run-quick's areas, as "name|go packages", in --help order.
 	declare -ra testAreaDefs=(
@@ -118,6 +120,7 @@ fAbout(){ { ((doQuietly)) || ((wasShown_About)); } && return; wasShown_About=1;
 	fi
 	fEcho_Clean "  • Run automated tests. If tests pass:"
 	fEcho_Clean "  • Copy the release build to dogfood, unless the copy there is in use."
+	fEcho_Clean "  • Copy the dogfood_gitniblet script and launchers beside the other utils."
 	fEcho_Clean "  • Run git automation script (e.g. commit and push)."
 	#           X-------------------------------------------------------------------------------X
 	fEcho_Clean "" ;:;}
@@ -127,20 +130,22 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	#           X-------------------------------------------------------------------------------X
 	fEcho_Clean "Usage: ${meName} [options]"
 	fEcho_Clean "  (no flags)          The default run, up to about an hour: remote sync, builds,"
-	fEcho_Clean "                      cross-builds and packages, lint, tests, fuzz, security,"
-	fEcho_Clean "                      the TUI tests under -race, the pipeline's own tests,"
-	fEcho_Clean "                      remote tests, dogfood, profiler, demo, hooks, then back up"
-	fEcho_Clean "                      and publish."
-	fEcho_Clean "      --quick         About 10 minutes. Skips cross-builds, packaging, the"
-	fEcho_Clean "                      pipeline's own tests, remote tests, profiler and demo."
-	fEcho_Clean "                      Still dogfoods the release build."
-	fEcho_Clean "      --long          Also --slow. The default run, since nothing here takes"
-	fEcho_Clean "                      hours."
+	fEcho_Clean "                      cross-builds and packages, lint, tests, fuzz, a 1-minute"
+	fEcho_Clean "                      soak test, security, CodeQL, the TUI tests under -race,"
+	fEcho_Clean "                      the pipeline's own tests, remote tests, dogfood,"
+	fEcho_Clean "                      profiler, demo, hooks, then back up and publish."
+	fEcho_Clean "      --quick         About 10 minutes. Skips cross-builds, packaging, the soak"
+	fEcho_Clean "                      test, CodeQL, the pipeline's own tests, remote tests,"
+	fEcho_Clean "                      profiler and demo. Still dogfoods the release build."
+	fEcho_Clean "      --long          Also --slow. The default run, with a 30-minute soak test."
 	fEcho_Clean "      --leakcheck, --no-leakcheck"
-	fEcho_Clean "                      goleak after every package's tests, in every run, the"
-	fEcho_Clean "                      container and the test boxes included. --no-leakcheck"
-	fEcho_Clean "                      turns it off, as GITNIBLET_LEAKCHECK=0 does, and"
-	fEcho_Clean "                      --leakcheck turns it back on over that."
+	fEcho_Clean "                      goleak runs after every package's tests, in every run,"
+	fEcho_Clean "                      the container and the test boxes included, and the soak"
+	fEcho_Clean "                      test runs for a minute, but not in --quick or"
+	fEcho_Clean "                      --backlog-run-quick. --leakcheck runs the soak test"
+	fEcho_Clean "                      for 30 minutes. --no-leakcheck turns both off, as"
+	fEcho_Clean "                      GITNIBLET_LEAKCHECK=0 does, and --leakcheck turns them"
+	fEcho_Clean "                      back on over that."
 	fEcho_Clean "      --backlog-run-quick [<area>...]"
 	fEcho_Clean "                      About 4 minutes: release build and CLI smoke, gofmt check,"
 	fEcho_Clean "                      staticcheck, and the tests, or only the tests of the areas"
@@ -189,8 +194,8 @@ fSyntax(){  { ((doQuietly)) || ((wasShown_Syntax)); } && return; wasShown_Syntax
 	fEcho_Clean "than the one before the current, and build cache older than a week."
 	fEcho_Clean ""
 	fEcho_Clean "Every step runs at nice 19 and idle I/O, on half the CPUs, or a quarter for"
-	fEcho_Clean "fuzz and -race or when the 1-minute load is over half of them, checked before"
-	fEcho_Clean "each step."
+	fEcho_Clean "fuzz, -race, the soak test and CodeQL, or when the 1-minute load is over half"
+	fEcho_Clean "of them, checked before each step."
 	fEcho_Clean ""
 	fEcho_Clean "The run log goes to cicd/artifacts/lint/, or to GITNIBLET_LOG_DIR when it's set,"
 	fEcho_Clean "as the pipeline's own tests do for the runs they start. GITNIBLET_HOOKS_DIR stands in"
@@ -213,7 +218,7 @@ fMain(){
 	while (($#)); do case "${1}" in
 		-q|--quiet)                doQuietly=1                          ; shift ;;
 		--quick)                   runMode="quick"                      ; shift ;;
-		--long|--slow)             runMode="run"                        ; shift ;;
+		--long|--slow)             runMode="run"; doLong=1              ; shift ;;
 		--leakcheck|--no-leakcheck)
 			[[ -z "${leakOpt}" || "${leakOpt}" == "${1}" ]]  ||  fThrowError "--leakcheck and --no-leakcheck are opposites; give one."
 			leakOpt="${1}"; shift ;;
@@ -443,11 +448,13 @@ fMain(){
 	fi
 
 	## exec/app/<os>/, per include/dogfood.bash. Windows and macOS only when this
-	## run cross-built them, so --quick never copies an older dist/.
+	## run cross-built them, so --quick never copies an older dist/. Then the
+	## dogfood_gitniblet script and launchers that run it.
 	if fStep "Dogfood"; then
 		local -i crossBuilt=0
 		! fStep_IsOn "Cross-compile + package"  ||  crossBuilt=1
 		fDogfood "${filePath_ExecToTestAndInstall_FinalHome}" "${dirPath_Base}/dist" "${crossBuilt}"  ||  fThrowError "Dogfood copy failed."
+		fDogfood_Script "${dirPath_Base}/utility"  ||  fThrowError "Dogfood script copy failed."
 		fStep_End
 	fi
 
@@ -536,7 +543,10 @@ fSteps_PlanAll(){
 	fStep_Plan "Lint + format"
 	fStep_Plan "Tests"
 	fStep_Plan "Fuzz" "${bq}"
+	why="";  [[ "${GITNIBLET_LEAKCHECK:-}" != "0" ]]  ||  why="${leakOpt:-GITNIBLET_LEAKCHECK=0}"
+	fStep_Plan "Soak test" "${bq:-${quick:-${why}}}"
 	fStep_Plan "Security + supply-chain" "${bq}"
+	fStep_Plan "CodeQL" "${bq:-${quick}}"
 	## The rest runs on this machine, never in the container.
 	((! inContainer))  ||  return 0
 
@@ -562,6 +572,8 @@ fSteps_PlanAll(){
 }
 
 fIsHandsOff(){ [[ "${runMode}" == backlog-* || "${runMode}" == "merge-gate" ]]; }
+## Sets soakMin: a short soak in every run, and a long one for --leakcheck or --long.
+fSoakTime(){ if ((doLong)) || [[ "${leakOpt}" == "--leakcheck" ]]; then soakMin=30; else soakMin=1; fi; }
 ## The pipeline's own tests: every *-test.bash beside cicd.bash, so a new one
 ## can't be left out, but remote-test.bash, which is the Remote tests step.
 fPipelineTests(){
@@ -623,6 +635,13 @@ fList(){
 			[[ "${name}" == Fuzz* ]]  &&  fEcho_Clean "${id} ${pkg#"${modPath}/"} ${name}"
 		done <<< "${ids}"
 	fi
+	if fStep_IsOn "Soak test"; then
+		fSoakTime
+		fEcho_Clean "Soak test, ${soakMin}m:"
+		while read -r pkg name id; do
+			[[ "${pkg}" != "${modPath}/internal/soak" ]]  ||  fEcho_Clean "${id} ${pkg#"${modPath}/"} ${name}"
+		done <<< "${ids}"
+	fi
 	if fStep_IsOn "Race tests"; then
 		fEcho_Clean "Race tests:"
 		prefixes=()
@@ -650,12 +669,12 @@ fList(){
 
 fStep_IsOn(){ local s; for s in "${stepsOn[@]}"; do [[ "${s}" != "${1}" ]]  ||  return 0; done; return 1; }
 
-## Opens a step that's planned, after checking the load again. Fuzz and -race
-## get a quarter of the CPUs, busy or not.
+## Opens a step that's planned, after checking the load again. Fuzz, -race and
+## the soak test get a quarter of the CPUs, busy or not.
 fStep(){
 	fStep_Start "${1}"  ||  return 1
 	local busy=""
-	if [[ "${1}" == "Fuzz" || "${1}" == "Race tests" ]]; then fCpuLimit heavy; else fCpuLimit; fi
+	case "${1}" in "Fuzz"|"Race tests"|"Soak test"|"CodeQL") fCpuLimit heavy ;; *) fCpuLimit ;; esac
 	((! GITNIBLET_BUSY))  ||  busy=", busy"
 	fEcho_Clean "Jobs: ${GITNIBLET_JOBS} of ${GITNIBLET_CORES} CPUs, load ${GITNIBLET_LOAD}${busy}"
 }
@@ -710,13 +729,13 @@ fStages_BuildAndTest(){
 
 		## Cross-compile + package via goreleaser (the same .goreleaser.yaml the release
 		## uses): binaries for linux/darwin/windows/freebsd (amd64+arm64), .deb/.rpm for
-		## linux, a tar.gz/zip per target, and checksums - all into dist/. --snapshot =
-		## build + package locally, no publish. Then the Windows single-file .exe
-		## installer(s) via NSIS. Skipped under --quick; --no-arm filters the goarch line
-		## to amd64 only. Deferred (need the target OS's own host): macOS .dmg, Windows
-		## .msi, FreeBSD .pkg - those ship as archives for now.
+		## linux, .pkg for freebsd, a tar.gz/zip per target, and checksums - all into
+		## dist/. --snapshot = build + package locally, no publish. Then the Windows
+		## single-file .exe installer(s) via NSIS. Skipped under --quick; --no-arm filters
+		## the goarch line to amd64 only. Deferred (need the target OS's own host): macOS
+		## .dmg, Windows .msi - those ship as archives for now.
 		if fStep "Cross-compile + package"; then
-			fEcho_Clean "goreleaser: binaries, .deb/.rpm, archives, checksums"
+			fEcho_Clean "goreleaser: binaries, .deb/.rpm/.pkg, archives, checksums"
 			local grConfig=".goreleaser.yaml"
 			if ((doNoArm)); then
 				grConfig="${dirPath_Base}/cicd/artifacts/goreleaser-noarm.yaml"
@@ -725,7 +744,7 @@ fStages_BuildAndTest(){
 				fEcho_Clean "arm64 skipped (--no-arm): amd64-only matrix"
 			fi
 			( cd "${dirPath_Base}"  &&  GOFLAGS=  go run "${GITNIBLET_GORELEASER}" release --snapshot --clean --parallelism "${GITNIBLET_JOBS}" --config "${grConfig}" )
-			fEcho_Clean "Packaged into ${dirPath_Base}/dist/ (binaries, .deb/.rpm, archives, checksums)"
+			fEcho_Clean "Packaged into ${dirPath_Base}/dist/ (binaries, .deb/.rpm/.pkg, archives, checksums)"
 			## Windows single-file .exe installer(s) from the just-built binaries (NSIS).
 			( cd "${dirPath_Base}"  &&  "${dirPath_Base}/cicd/utility/windows-installer.bash" "${srcVersion:-0.0.0}" )
 			fStep_End
@@ -779,6 +798,20 @@ fStages_BuildAndTest(){
 		fStep_End
 	fi
 
+	## Open, write, sync and replay over and over, failing when heap in use or the
+	## goroutine count keeps climbing. Then the same with a leak put in on purpose,
+	## which has to fail. Only GITNIBLET_SOAK makes internal/soak run.
+	if fStep "Soak test"; then
+		fSoakTime
+		fEcho_Clean "${soakMin}m soak, then a short one with each leak put in"
+		local soakHome; soakHome="$(fTempDir_Make soak-home)"
+		( fConfigHome_Use "${soakHome}"  &&  cd "${dirPath_Source}"  &&  GITNIBLET_SOAK="${soakMin}m" go test -json -mod=vendor -count=1 -timeout "$((soakMin + 15))m" ./internal/soak ) \
+			| GOFLAGS='' go -C "${dirPath_Base}/cicd/utility/testid" run . report "${dirPath_Base}"
+		fConfigHome_Check "${soakHome}"  ||  fThrowError "The soak test used the default config folder."
+		fSafeRm "${soakHome}" > /dev/null
+		fStep_End
+	fi
+
 	## Security + supply-chain. go mod verify is offline; govulncheck and gosec
 	## each pull a tool over the network. All 3 take about a minute, so --quick
 	## keeps them, and only --backlog-run-quick leaves them out. Real findings fail.
@@ -803,6 +836,14 @@ fStages_BuildAndTest(){
 		( cd "${dirPath_Source}"  &&  GOFLAGS=  go run "${GITNIBLET_GOSEC}" -concurrency "${GITNIBLET_JOBS}" \
 			-exclude=G101,G104,G124,G202,G203,G204,G301,G302,G304,G306,G703 -quiet ./... )
 		fEcho_Clean "No security findings (gosec)"
+		fStep_End
+	fi
+
+	## CodeQL over the module and vendor/, from the pinned bundle, which the
+	## container keeps in its cache volume. About 2 minutes, so not in --quick.
+	## Results not in codeql-accepted.txt fail it.
+	if fStep "CodeQL"; then
+		"${dirPath_Base}/cicd/utility/codeql.bash" --out "${dirPath_ArtifactsLint}"
 		fStep_End
 	fi
 
@@ -859,6 +900,9 @@ fContainer_Ready(){
 
 fInnerArgs(){
 	innerArgs=(-q --no-container --no-install --no-hooks --no-publish --no-demo)
+	## Before the mode flags, since --long is a mode too.
+	((! doLong))           ||  innerArgs+=(--long)
+	[[ -z "${leakOpt}" ]]  ||  innerArgs+=("${leakOpt}")
 	((! doQuick))   ||  innerArgs+=(--quick)
 	((! doNoArm))   ||  innerArgs+=(--no-arm)
 	((doFormat))    ||  innerArgs+=(--no-format)
@@ -1244,3 +1288,7 @@ fMain  "${@}"
 ##		- 20261026 JC: Race tests run with a fake home, as test.bash and the smoke do.
 ##		- 20261026 JC: --leakcheck and --no-leakcheck turn goleak on and off, through GITNIBLET_LEAKCHECK.
 ##		- 20261026 JC: Dogfood goes to exec/app/<os>/, Windows and macOS too when cross-built, and skips a copy that's in use. No sudo fallback.
+##		- 20261028 JC: Soak test step, a minute in every run and 30 under --leakcheck or --long.
+##		- 20261028 JC: CodeQL step, from a pinned bundle over the module and vendor/.
+##		- 20261028 JC: Dogfood also copies dogfood_gitniblet.ps1 and its launchers.
+##		- 20261028 JC: FreeBSD .pkg in packaging, from a goreleaser build hook.

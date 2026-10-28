@@ -1,0 +1,15 @@
+# CodeQL results the CodeQL step lets through, one "<rule id> <path>" per line,
+# the path relative to source/, then ## and why. An entry that matches nothing
+# fails the step, so take it out when its finding goes.
+
+go/path-injection               internal/core/crud/features.go  ## The user names the file to copy; that's the feature (gosec G304).
+go/unhandled-writable-file-close internal/core/crud/features.go  ## copyFile skips Close's error only when the copy already failed.
+go/cookie-httponly-not-set      internal/web/auth.go            ## The logout cookie, empty and expired. The session cookie sets HttpOnly.
+go/cookie-secure-not-set        internal/web/auth.go            ## The same logout cookie. The session cookie sets Secure under HTTPS (gosec G124).
+go/unhandled-writable-file-close internal/core/txlog/sync.go    ## Bug 2026102808450278. Take these out with its fix.
+go/unhandled-writable-file-close internal/core/txlog/txlog.go   ## Bug 2026102808450278. Take these out with its fix.
+
+# Third-party, in vendor/: int from a 64-bit or 32-bit parse, wrong only on a 32-bit build with a huge value.
+go/incorrect-integer-conversion vendor/github.com/gdamore/tcell/v2/terminfo/dynamic/dynamic.go  ## terminfo numbers from infocmp
+go/incorrect-integer-conversion vendor/github.com/gdamore/tcell/v2/terminfo/terminfo.go         ## terminfo parameters
+go/incorrect-integer-conversion vendor/github.com/jim-collier/shcl/source/go/v2/shcl.go         ## shcl 2.0.0, pulled in by shclwrap for upgrades
