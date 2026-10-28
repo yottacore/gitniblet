@@ -105,6 +105,8 @@ Build through security run in a container by default, so this project's toolchai
 
 goreleaser stamps the binaries, the archive files and the `.deb` and `.rpm` contents with the commit's time, not the build's, so 2 builds of one commit give the same bytes. `cicd/utility/repro-test.bash` builds twice and compares the checksums.
 
+nfpm has no FreeBSD packager, so a goreleaser post-build hook, `cicd/utility/freebsd-pkg.bash`, writes the FreeBSD `.pkg` itself, in pkg's own format, beside the archives and in `checksums.txt`. Its ABI is `FreeBSD:*:<arch>`, since the binary is static, and its version is the ports form of `app.Version`, such as `1.0.0.b.2`, so pkg sorts a beta before its release. The remote tests install it on the FreeBSD box as root, into a throwaway root, so the box's own packages are untouched, then run, check and delete it.
+
 Each run works in its own folder, `${HOST_TEMP}/gitniblet-floss/<YYYYmmDD-HHMMSS>_<NNN>/`, with a `run.pid` in it and `TMPDIR`, `TEMP` and `TMP` pointed at it. The helpers make their temp folders inside it, and the container gets it mounted at the same path. A trap removes it at the end, on failure and Ctrl+C too. The same pass removes the run's containers, then this project's dangling images, its image tags older than the one before the current one, and build cache older than a week, and prints one line on what that freed. Only docker objects with this project's `dev.project` label are touched. At the start, a run removes run folders older than 2 days whose `run.pid` names no live process. `--keep-temp` keeps the folder and the containers, and prints where they are. Every recursive removal goes through the guard in `cicd/utility/include/temp-run.bash`.
 
 ## Language and stack

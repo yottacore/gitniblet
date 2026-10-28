@@ -729,13 +729,13 @@ fStages_BuildAndTest(){
 
 		## Cross-compile + package via goreleaser (the same .goreleaser.yaml the release
 		## uses): binaries for linux/darwin/windows/freebsd (amd64+arm64), .deb/.rpm for
-		## linux, a tar.gz/zip per target, and checksums - all into dist/. --snapshot =
-		## build + package locally, no publish. Then the Windows single-file .exe
-		## installer(s) via NSIS. Skipped under --quick; --no-arm filters the goarch line
-		## to amd64 only. Deferred (need the target OS's own host): macOS .dmg, Windows
-		## .msi, FreeBSD .pkg - those ship as archives for now.
+		## linux, .pkg for freebsd, a tar.gz/zip per target, and checksums - all into
+		## dist/. --snapshot = build + package locally, no publish. Then the Windows
+		## single-file .exe installer(s) via NSIS. Skipped under --quick; --no-arm filters
+		## the goarch line to amd64 only. Deferred (need the target OS's own host): macOS
+		## .dmg, Windows .msi - those ship as archives for now.
 		if fStep "Cross-compile + package"; then
-			fEcho_Clean "goreleaser: binaries, .deb/.rpm, archives, checksums"
+			fEcho_Clean "goreleaser: binaries, .deb/.rpm/.pkg, archives, checksums"
 			local grConfig=".goreleaser.yaml"
 			if ((doNoArm)); then
 				grConfig="${dirPath_Base}/cicd/artifacts/goreleaser-noarm.yaml"
@@ -744,7 +744,7 @@ fStages_BuildAndTest(){
 				fEcho_Clean "arm64 skipped (--no-arm): amd64-only matrix"
 			fi
 			( cd "${dirPath_Base}"  &&  GOFLAGS=  go run "${GITNIBLET_GORELEASER}" release --snapshot --clean --parallelism "${GITNIBLET_JOBS}" --config "${grConfig}" )
-			fEcho_Clean "Packaged into ${dirPath_Base}/dist/ (binaries, .deb/.rpm, archives, checksums)"
+			fEcho_Clean "Packaged into ${dirPath_Base}/dist/ (binaries, .deb/.rpm/.pkg, archives, checksums)"
 			## Windows single-file .exe installer(s) from the just-built binaries (NSIS).
 			( cd "${dirPath_Base}"  &&  "${dirPath_Base}/cicd/utility/windows-installer.bash" "${srcVersion:-0.0.0}" )
 			fStep_End
@@ -1291,3 +1291,4 @@ fMain  "${@}"
 ##		- 20261028 JC: Soak test step, a minute in every run and 30 under --leakcheck or --long.
 ##		- 20261028 JC: CodeQL step, from a pinned bundle over the module and vendor/.
 ##		- 20261028 JC: Dogfood also copies dogfood_gitniblet.ps1 and its launchers.
+##		- 20261028 JC: FreeBSD .pkg in packaging, from a goreleaser build hook.

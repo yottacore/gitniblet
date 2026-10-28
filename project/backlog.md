@@ -411,7 +411,9 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - A FreeBSD `.pkg`.
 	- ID: 2026102520521033
 	- Type: Task
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: `--backlog-run-full`: Cross-compile + package, for the hook on freebsd amd64 and arm64 in the container. Pipeline tests dehz9 to dehzc, and defr0 and defr1. Remote tests dehzd on vmFreeBSD.
+	- Needs external testing: release.yml at the next release cut, for the `.pkg` upload.
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261025-205210
 	- Opened by: JC
@@ -419,6 +421,24 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Requirements [Feature]:
 		- Package the FreeBSD builds as `.pkg`, beside the archives, and check it installs on vmFreeBSD.
 		- Overrides the FreeBSD `.pkg` deferral in the private notes, under cicd-packaging.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261028: goreleaser makes `gitniblet-<version>-freebsd-<arch>.pkg` for amd64 and arm64, beside the archives, through a post-build hook, `cicd/utility/freebsd-pkg.bash`. It's in `checksums.txt` and goes up with the release.
+		- The remote tests make the same `.pkg` from the binary they test, then as root on vmFreeBSD install it into a throwaway root, run `--version`, `pkg check -s` it and delete it. The box's own packages aren't touched.
+		- `repro-test.bash` builds freebsd too now, so defr0 covers the `.pkg` bytes.
+		- design.md says so, under CI/CD pipeline, and README's install table and the changelog have it.
+		- Verified: dehz9 to dehzc pass, and each fails with the maker broken: relative names, manifests last, no snapshot strip, no OS check. dehzd passes on vmFreeBSD, and fails on a `.pkg` with wrong checksums. A real `pkg add`, run and `pkg delete` on vmFreeBSD as root passed too, the files and folder gone after. A goreleaser run on linux and freebsd made the `.pkg` and listed it in `checksums.txt`. `goreleaser check`, `--backlog-run-quick`, `pins-test.bash`, `flags-test.bash` and `remote-skip-test.bash` pass.
+		- Not verified: the arm64 `.pkg` on a box, since there's no FreeBSD arm64 box. The release upload, until the next release cut.
+		- Swept: every `.pkg` and deferral mention in `.goreleaser.yaml`, `cicd.bash`, the workflows, README.md, design.md and changelog.md. `install.bash` still takes the `.tar.gz` on FreeBSD, unchanged. `release.yml` needs no step, since goreleaser uploads the `extra_files`.
+	- Decisions:
+		- pkg's own format written by a script, since nfpm has no FreeBSD packager and building on the box would tie packaging to a VM that may not answer.
+		- A goreleaser post-build hook, not a step after goreleaser like the Windows installer, so the `.pkg` lands in `checksums.txt` and the release with no extra workflow step.
+		- The install check runs as root, since pkg can't install as a user: it chowns to root. A throwaway root keeps the box's package database as it was.
+		- A snapshot `.pkg` keeps its release's version, since the ports form of `-SNAPSHOT-<commit>` reads badly. `--version` tells builds apart.
+		- The outward choices are in questions.md, as a Check.
+	- Branch: r1028
+	- Test case: dehz9 to dehzc in `cicd/utility/freebsd-pkg-test.bash`, dehzd in `cicd/utility/remote-test.bash`, and defr0 in `cicd/utility/repro-test.bash`.
 
 - A user table that restates a built-in table merges into it, as a system field does.
 	- ID: 2026102409431186

@@ -153,7 +153,8 @@ Pick your platform from the [latest release](https://github.com/yottacore/gitnib
 | Debian, Ubuntu | `gitniblet_<version>_linux_<arch>.deb`
 | Fedora, RHEL, openSUSE | `gitniblet_<version>_linux_<arch>.rpm`
 | Windows | `gitniblet-<version>-windows-<arch>-setup.exe` (updates an existing install in place)
-| macOS, FreeBSD, other Linux | the matching `.tar.gz`, then copy `gitniblet` onto your `PATH`
+| FreeBSD | `gitniblet-<version>-freebsd-<arch>.pkg`, then `pkg add` it as root
+| macOS, other Linux | the matching `.tar.gz`, then copy `gitniblet` onto your `PATH`
 
 Every release also carries a `checksums.txt` if you'd like to verify what you downloaded.
 

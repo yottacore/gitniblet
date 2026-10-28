@@ -22,6 +22,8 @@
 ##		- vmKt6m ignores the ACPI shutdown, so when it was found off it's halted
 ##		  from inside, as collierjr, before the wrap puts it back.
 ##		- GITNIBLET_REMOTE_WAIT is how long to wait in line for a box, default 900s.
+##		- On FreeBSD, root also installs the .pkg into a throwaway root, runs
+##		  it, checks it and deletes it, so the box's own packages are untouched.
 ##	History: At bottom of this file.
 
 ##	Copyright © 2026 Jim Collier [ID: 2უNაɘ«҂թȹɤξπ๙¿ձϖ]
@@ -45,6 +47,8 @@ declare -ra targetTable=(
 	"macos       | darwin  | amd64 | mactest@b26 mactest@vmKt6m    | 4"
 )
 declare -ra sshOpts=(-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=4)
+## Targets that get a package install check, and who can install there.
+declare -rA pkgCheckAs=([freebsd]="root")
 ## Guests that ignore the ACPI shutdown, and who can halt them from inside.
 declare -rA haltFromInside=([vmKt6m]="collierjr@vmKt6m")
 
@@ -82,6 +86,13 @@ fBuildBundle(){
 	else
 		cp "${dirPath_Base}/bin/gitniblet-${os}-${arch}" "${stage}/gitniblet"
 	fi
+	if [[ -n "${pkgCheckAs[${tgt}]:-}" ]]; then
+		local -r pkgBin="${runDir}/${tgt}/pkg/gitniblet_${os}_${arch}/gitniblet"
+		mkdir -p "$(dirname "${pkgBin}")"
+		cp "${stage}/gitniblet" "${pkgBin}"
+		bash "${dirPath_Base}/cicd/utility/freebsd-pkg.bash" "${os}" "${arch}" "${pkgBin}" \
+			"$(grep -oP 'var Version = "\K[^"]+' "${dirPath_Base}/source/app/app.go")" "$(git -C "${dirPath_Base}" log -1 --format=%ct)" > /dev/null
+	fi
 	mkdir -p "${stage}/cicd/utility/include"
 	cp "${dirPath_Base}/cicd/utility/smoke-cli.bash" "${dirPath_Base}/cicd/utility/remote-unix.bash" "${stage}/cicd/utility/"
 	cp -r "${dirPath_Base}/cicd/utility/smoke" "${stage}/cicd/utility/"
@@ -103,20 +114,8 @@ fOnBox(){
 		echo "noanswer" > "${statusFile}"; return "${skipCode}"
 	fi
 	[[ "${tgt}" != "windows" ]]  ||  { fOnBox_Windows "${tgt}" "${dest}" "${jobCap}"; return; }
-	## The box's own temp root per Temp files, as sh, since a login shell may be csh.
 	local work
-	work="$(ssh "${sshOpts[@]}" "${dest}" sh -s <<- 'EOF'
-		r="${HOST_TEMP:-${TMPDIR:-/tmp}}"; r="${r%/}/gitniblet-floss"
-		mkdir -p "${r}" && cd "${r}" && r="$(pwd -P)" || exit 1
-		s="$(date +%Y%m%d-%H%M%S)"; n=1
-		while ! mkdir "$(printf '%s/%s_%03d' "${r}" "${s}" "${n}")" 2> /dev/null; do
-			n=$((n + 1)); [ "${n}" -le 999 ] || exit 1
-		done
-		printf '%s/%s_%03d\n' "${r}" "${s}" "${n}"
-	EOF
-	)" || { echo "fail" > "${statusFile}"; fWarn "${tgt}: couldn't make a work folder on ${dest}"; return 1; }
-	work="${work##*$'\n'}"  ## a noisy login can print first
-	[[ "${work}" =~ ^/[A-Za-z0-9._/-]+/gitniblet-floss/[0-9]{8}-[0-9]{6}_[0-9]{3}$ ]]  ||  { echo "fail" > "${statusFile}"; fWarn "${tgt}: odd work folder '${work}'"; return 1; }
+	work="$(fBoxWork "${dest}")"  ||  { echo "fail" > "${statusFile}"; fWarn "${tgt}: couldn't make a work folder on ${dest}: ${work}"; return 1; }
 	fEcho "${tgt}: ${dest}:${work}"
 
 	## cat, not scp: a login that prints breaks scp and sftp.
@@ -128,7 +127,57 @@ fOnBox(){
 			"cd '${work}' && tar -xzf bundle.tgz && ${leakEnv}bash ./cicd/utility/remote-unix.bash '${work}' ${jobCap} ${keepTemp}" < /dev/null \
 			| "${runDir}/testid" remote "${dirPath_Base}"  ||  rc=$?
 	fi
+	[[ -z "${pkgCheckAs[${tgt}]:-}" ]]  ||  fPkgCheck "${tgt}" "${pkgCheckAs[${tgt}]}@${dest#*@}"  ||  rc=1
 	if ((rc == 0)); then echo "pass" > "${statusFile}"; else echo "fail" > "${statusFile}"; fi
+	return "${rc}"
+}
+
+## Makes a run folder under the box's own temp root, per Temp files, and prints
+## it. As sh, since a login shell may be csh.
+fBoxWork(){
+	local work
+	work="$(ssh "${sshOpts[@]}" "${1}" sh -s <<- 'EOF'
+		r="${HOST_TEMP:-${TMPDIR:-/tmp}}"; r="${r%/}/gitniblet-floss"
+		mkdir -p "${r}" && cd "${r}" && r="$(pwd -P)" || exit 1
+		s="$(date +%Y%m%d-%H%M%S)"; n=1
+		while ! mkdir "$(printf '%s/%s_%03d' "${r}" "${s}" "${n}")" 2> /dev/null; do
+			n=$((n + 1)); [ "${n}" -le 999 ] || exit 1
+		done
+		printf '%s/%s_%03d\n' "${r}" "${s}" "${n}"
+	EOF
+	)"  ||  return 1
+	work="${work##*$'\n'}"  ## a noisy login can print first
+	[[ "${work}" =~ ^/[A-Za-z0-9._/-]+/gitniblet-floss/[0-9]{8}-[0-9]{6}_[0-9]{3}$ ]]  ||  { echo "odd work folder '${work}'"; return 1; }
+	echo "${work}"
+}
+
+## pkg add into a throwaway root, so it needs root but leaves the box's own
+## packages alone. A user pkg can't install as, since it chowns to root.
+fPkgCheck(){
+	local -r tgt="${1}" dest="${2}" what="FreeBSD .pkg installs, runs, checks and deletes"
+	local pkgFile work rc=0
+	pkgFile="$(find "${runDir}/${tgt}/pkg" -maxdepth 1 -name '*.pkg' | head -1)"
+	[[ -n "${pkgFile}" ]]  ||  { fEcho "FAIL dehzd ${what}: no .pkg was made"; return 1; }
+	if ! ssh "${sshOpts[@]}" "${dest}" exit 0 < /dev/null &> /dev/null; then
+		fEcho "SKIP dehzd ${what}: no ssh as ${dest}"; return 0
+	fi
+	work="$(fBoxWork "${dest}")"  ||  { fEcho "FAIL dehzd ${what}: ${work}"; return 1; }
+	ssh "${sshOpts[@]}" "${dest}" "cat > '${work}/gitniblet.pkg'" < "${pkgFile}"  ||  rc=1
+	((rc))  ||  ssh "${sshOpts[@]}" "${dest}" "sh -s '${work}' '${what}'" <<- 'EOF'  ||  rc=1
+		w="$1"; r="$w/root"; log="$w/pkg.log"; step=0
+		mkdir "$r" && pkg -r "$r" add "$w/gitniblet.pkg" > "$log" 2>&1 || step=add
+		if [ "$step" = 0 ]; then
+			v="$("$r/usr/local/bin/gitniblet" --version 2>> "$log" | head -n 1)"
+			case "$v" in "gitniblet v"*) echo "$v" ;; *) step=run ;; esac
+		fi
+		[ "$step" != 0 ] || pkg -r "$r" check -s gitniblet >> "$log" 2>&1 || step=check
+		[ "$step" != 0 ] || pkg -r "$r" delete -y gitniblet >> "$log" 2>&1 || step=delete
+		[ "$step" != 0 ] || ! [ -e "$r/usr/local/bin/gitniblet" -o -e "$r/usr/local/share/doc/gitniblet" ] || step=leftovers
+		if [ "$step" = 0 ]; then echo "PASS dehzd $2"; else echo "FAIL dehzd $2: $step"; tail -n 20 "$log"; fi
+		cd /
+		case "$w" in /*/gitniblet-floss/[0-9]*_[0-9][0-9][0-9]) [ -d "$w" ] && ! [ -L "$w" ] && rm -rf -x -- "$w" ;; esac
+		[ "$step" = 0 ]
+	EOF
 	return "${rc}"
 }
 
@@ -283,3 +332,4 @@ fMain "${@}"
 ##		- 20261025 JC: vmKt6m is halted from inside when it was found off.
 ##		- 20261026 JC: The bundle carries README.md and syntax.md.
 ##		- 20261026 JC: GITNIBLET_LEAKCHECK=0 goes to the boxes too.
+##		- 20261028 JC: The FreeBSD .pkg is installed and deleted again, as root, in a throwaway root.
