@@ -32,6 +32,15 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 ## Issues
 
+- The Soak test and Race tests steps may print their FAIL line twice.
+	- ID: 2026102810331959
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261028-103319
+	- Opened by: JC
+	- Enterprise found its copy of the `( ... ) | testid report` form printed a step's FAIL twice, since the inherited ERR trap also fires inside the subshell. `trap - ERR` inside it fixed enterprise's, in gitniblet-enterprise a192cc0.
+
 - Profiler flamegraph splits generic function names into several frames.
 	- ID: 2026102810071193
 	- Type: Bug
