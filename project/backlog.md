@@ -35,7 +35,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - steps-test deef2 fails when the outer run's own log is written mid-test.
 	- ID: 2026102619384200
 	- Type: Bug
-	- Status: Waiting on automated testing
+	- Status: Done
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261026-193842
 	- Opened by: JC
@@ -44,15 +44,17 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Expected behavior [Bug]: deef2 fails only when the nested run writes its log to the lint folder.
 	- Possible cause [Bug]: It counts `run_*.log` files newer than its run folder before dedq7 and again after. The outer run's own log is open and growing, so it can be older at the first count and newer at the second. Compare the set of file names instead, or leave out the outer run's log.
 	- Test case: deef2.
-	- Needs local test suite run?: steps-test deef2 in a full run (--backlog-run-full), to see it pass with the outer log growing
+	- Needs local test suite run?: No
 	- 20261028: deef2 now compares the set of run_*.log names in cicd/artifacts/lint from before dedq7 and after, in place of a count by mtime, so the outer run's own log can't count as new. Verified: steps-test.bash alone passes with a fake log touched every 10s, and --backlog-run-quick passes. Not shown failing on the old check: the timing is chance.
 	- Decisions: names, not an mtime count, since the outer log exists before the first snapshot. Swept: no other mtime-count of run logs in cicd/utility.
+	- Closed: 20261028-0940
+	- Verified: 2026-10-28, deef2 passed in r1028's full run on d6dd5bb, with the outer run's log growing (run dir 20261028-091500_001).
 
 - Move to shclwrap's newest dev, and drop the upgrade workarounds it made needless.
 	- ID: 2026102621002700
 	- Type: Task
-	- Status: Waiting on automated testing
-	- Needs local test suite run?: `cicd.bash --backlog-run-full`, plain, for the cross-builds and the remote boxes on the new vendored shclwrap.
+	- Status: Done
+	- Needs local test suite run?: No
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261026-210027
 	- Opened by: JC
@@ -75,6 +77,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- Enterprise's bump is left to its own round, per this job's note.
 	- Branch: r1028
 	- Test case: defnx (blank lines keep their numbers), dec93 and defp0 (old seed rows).
+	- Closed: 20261028-0940
+	- Verified: 2026-10-28, r1028's full run on d6dd5bb passed all 13 steps, cross-builds and the 4 remote boxes included, on shclwrap 54dc6c6.
 
 - Go leak checks: a soak test on heap in use and goroutine count.
 	- ID: 2026102520521023
