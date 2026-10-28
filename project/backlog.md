@@ -32,6 +32,23 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 ## Issues
 
+- Profiler flamegraph splits generic function names into several frames.
+	- ID: 2026102810071193
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261028-100711
+	- Opened by: JC
+	- Related IDs: 2026102600551679 (gitniblet-enterprise)
+	- Steps to reproduce [Bug]:
+		- Run the profiler on a path that calls a generic function, such as hkdf.Expand, then read the hotspot summary.
+	- Incorrect behavior [Bug]:
+		- Generic frames come out as several rows, such as one named 'Write }]'. The shape type holds ';', which is the folded format's frame separator, so pprof-to-folded.py splits the frame.
+	- Expected behavior [Bug]:
+		- One row per frame, with the whole name.
+	- Possible cause [Bug]:
+		- pprof-to-folded.py is the same file as enterprise's. Enterprise's fix is in fClean, which collapses shape groups to '[...]' and turns any other ';' into ','. Copy it from gitniblet-enterprise cicd/utility/pprof-to-folded.py, with the dej12 check in profile-test.bash.
+
 - `cleanup-test.bash` dedpb can take 30s to stop after Ctrl+C under load.
 	- ID: 2026102520025738
 	- Type: Bug
