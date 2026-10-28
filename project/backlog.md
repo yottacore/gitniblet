@@ -217,6 +217,43 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: r1028
 	- Test case: defnx (blank lines keep their numbers), dec93 and defp0 (old seed rows).
 
+- Go leak checks: a soak test on heap in use and goroutine count.
+	- ID: 2026102520521023
+	- Type: Task
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: `cicd.bash --backlog-run-full`, for the Soak test step in the container (dehwn, dehwp, dehwq) and flags-test dehwt in Pipeline tests.
+	- Needs external testing: hosted `ci.yml`, since its merge gate now runs the Soak test step on the runner.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Prereq IDs: 2026102520521021
+	- Requirements [Feature]:
+		- Repeat a realistic workload, such as open, write, sync and replay, and fail when heap in use or the goroutine count keeps climbing.
+		- A short run in every full run, and a long one under `--leakcheck`. It takes a quarter of the CPUs, per Machine use.
+		- Watched to fail first, with a leak put in on purpose.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261028: New `internal/soak`. Two clones of one remote take turns: open, which replays the log, then write, sync through git, replay what the pull brought, and close. After each round it reads heap in use and the goroutine count. It fails when each third of the run's low point is over the one before, by more than 1 MiB or a tenth for the heap.
+		- A Soak test step after Fuzz runs it for a minute, then runs it again with a goroutine leak and with a heap leak, and fails if either is missed. `--leakcheck` and `--long` make it 30 minutes. It's off in `--quick`, `--backlog-run-quick` and `--no-leakcheck`, and gets a quarter of the CPUs. `--list` shows its time and IDs.
+		- `--help`, design.md's CI/CD pipeline and the README say so.
+		- Verified: TestSoak passes, 35 rounds in 12s and 473 in 3 minutes, with heap in use at about 1.2 MiB and 2 goroutines throughout. Left open, the store keeps a goroutine, and the goroutine count went 8, 18, 28. Holding 256 KiB a round, heap in use went 2.5, 5.2, 7.7 MiB. Both runs fail. dehwp passes with both leaks.
+		- Verified: the step's own command passes, and returns 1 with a heap leak put in. flags-test dehwt passes, and fails on the old `cicd.bash`. flags-test, steps-test, sync-test, cleanup-test, container-fallback-test, `--backlog-run-quick` and shellcheck pass, with no new shellcheck warnings.
+		- 20261028: flags-test deecd's `--backlog-run-full` plan went from `...|Fuzz|Security + supply-chain|...` to `...|Fuzz|Soak test|Security + supply-chain|...`. deece's `--quick` off list gained `Soak test (--quick)` after `Cross-compile + package (--quick)`. The rest of both is the same.
+		- Swept: every place that names the leak flags, the heavy steps or the step list: `cicd.bash` (plan, `fStep`, `fInnerArgs`, `--list`, `--help`), design.md, the README, flags-test, steps-test and container-fallback-test. `test.bash`, `ci.yml` and the boxes need nothing, since the soak tests are a `SKIP` without `GITNIBLET_SOAK`. Enterprise's `cicd.bash` has its own leak flags and packages, and isn't changed.
+	- Decisions:
+		- Low points by thirds, not a slope. One late GC only lifts a sample, and a cache that fills once steps up and stays, so neither fails. A leak has to lift all 3.
+		- The soak test runs only when `GITNIBLET_SOAK` gives it a time, so `go test ./...` stays quick. The step sets it. By hand, `GITNIBLET_SOAK=4h go test ./internal/soak` runs a longer one.
+		- A short run is a minute, about 2 with the leak checks, at little CPU, since most of a round is git. The long one is 30 minutes.
+		- `--long` runs the long soak too, per the CICD style guide, which puts the leak checks that take long under `--long`. The step plan is the same as the default run's, so `--long` still matches the default plan.
+		- It's off in `--quick`. The issue asks for every full run, and the pipeline tests start nested `--quick` runs, which would each add about 2 minutes.
+		- Its own step, in the container after Fuzz, not part of Tests, so it gets the heavy CPU share and its own `PASS` or `FAIL` line.
+		- The SQLite engine keeps its memory outside the Go heap, so a store left open shows as a goroutine, not as heap. Watching RSS as well would catch that, and isn't asked for here.
+		- Git runs with the box's global and system config left out, so a signing or hook setting can't fail it.
+	- Branch: r1028
+	- Test case: `internal/soak` dehwn (the soak), dehwp (both leaks caught) and dehwq (the climb check), and `flags-test.bash` dehwt.
+
 - A config file of any name and path names the database's files.
 	- ID: 2026102509202821
 	- Type: Feature
@@ -288,20 +325,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- The CLI smoke in `cicd.bash` is done, by 2026102416210004. It runs after the release build in every mode.
 	- Decisions:
 		- The whole suite under `-race` in every full run gets no child here. It's 2026102520474880, which already runs the TUI tests under `-race` and has the same cgo problem to solve.
-
-- Go leak checks: a soak test on heap in use and goroutine count.
-	- ID: 2026102520521023
-	- Type: Task
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-205210
-	- Opened by: JC
-	- Parent ID: 2026102416210008
-	- Prereq IDs: 2026102520521021
-	- Requirements [Feature]:
-		- Repeat a realistic workload, such as open, write, sync and replay, and fail when heap in use or the goroutine count keeps climbing.
-		- A short run in every full run, and a long one under `--leakcheck`. It takes a quarter of the CPUs, per Machine use.
-		- Watched to fail first, with a leak put in on purpose.
 
 - CodeQL from a pinned CLI over the vendored tree.
 	- ID: 2026102520521025
