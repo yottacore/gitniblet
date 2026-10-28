@@ -32,6 +32,19 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 ## Issues
 
+- Check the FreeBSD `.pkg` upload at the next release cut.
+	- ID: 2026102809554655
+	- Type: Task
+	- Status: Stalled
+		- Held for the next release cut, since release.yml runs only on a push to `main`.
+	- Needs external testing: release.yml at the next release cut: the two `gitniblet-<version>-freebsd-<arch>.pkg` files on the release, and listed in its `checksums.txt`.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261028-095546
+	- Opened by: JC
+	- Related IDs: 2026102520521033
+	- Requirements [Feature]: The last open part of 2026102520521033, split out so that item could close.
+	- Estimated effort: Low
+
 - steps-test deef2 fails when the outer run's own log is written mid-test.
 	- ID: 2026102619384200
 	- Type: Bug
@@ -151,110 +164,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- The filter is a small stdlib Go program beside testid, since the image has neither python nor jq.
 	- Branch: r1028
 	- Test case: codeql-test dehy4 to dehya (what fails the step, and the pins). The CodeQL step itself runs in every full run.
-
-- A `dogfood_gitniblet.ps1` script with its launchers.
-	- ID: 2026102520521029
-	- Type: Task
-	- Status: Waiting on automated testing
-	- Needs external testing: `dogfood_gitniblet.cmd` and `.ps1` on b29w as `wintest`, with a stand-in `gitniblet.exe` in a stand-in `Dropbox\0-0\common\exec\app\mswin\` and `LOCALAPPDATA`: the pool, the fixed name in `Programs\gitniblet\` through the hard link or copy fallback, and arguments and the exit code passed through.
-	- Needs hand testing: the next default run on b23, to see the script and launchers land in the synced util folders, and `dogfood_gitniblet --version` by name.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-205210
-	- Opened by: JC
-	- Parent ID: 2026102416210008
-	- Prereq IDs: 2026102520521027
-		- The script reads from the dogfood folders that item sets up.
-	- Requirements [Feature]:
-		- Per the shared CICD rules, Dogfood script: one pwsh 7 script, plus Linux, Windows and macOS launchers, with the master copies in `utility/`.
-	- Estimated effort: Avg
-	- Actual effort: Low
-	- Progress log:
-		- 20261028: New `utility/dogfood_gitniblet.ps1`, from shcl's `dogfood_shcl.ps1`. It takes a new build from the synced `exec/app/<os>/` folder into a pool of dated versions, points a fixed name at the newest, and runs it with every argument and the exit code passed through. The pool is `~/.local/bin/gitniblet_versions/` on Linux, `~/Applications/gitniblet_versions/` on macOS, and `%LOCALAPPDATA%\Programs\gitniblet_versions\` on Windows.
-		- The pool is GFS-rotated every run, to 5 to 10 versions with 1 GB deciding between, and a running version is never removed. `--no-update` runs what's held.
-		- Launchers: `utility/dogfood_gitniblet` for Linux, BSD and macOS, and `utility/dogfood_gitniblet.cmd` for Windows. `.gitattributes` keeps the `.cmd` CRLF and the bash launcher LF.
-		- The Dogfood step copies all 3 to `exec/util/0_crossplatform/`, `linux/bash/`, `macos/bash/` and `mswin/cli/by-self/cmd/`, each skipped with one line when missing, the same bytes, or in use. `--help` and design.md say so.
-		- Verified: `dogfood-script-test.bash` dehyr to dehyx pass under pwsh 7.6 here, and each fails with its part broken: the exit code dropped (dehyr), the in-use check off (dehys), a regular file at the fixed name replaced (dehyt), the launcher joining its arguments (dehyv), the step's call taken out or the `.cmd` saved LF (dehyw), aliases in the script (dehyx), the `-File` argument fix off (dehyr, dehyx), and no same-bytes check (dehyr). With no pwsh, dehyr to dehyv and dehyx are SKIP and dehyw still runs.
-		- Verified: `dogfood-test.bash` defr4 to defra, `flags-test.bash`, `testid check`, shellcheck and `--backlog-run-quick` pass, and `--list` names the 6 new IDs under Pipeline tests.
-		- Swept: every dogfood path in `cicd.bash`, `include/dogfood.bash` and `install.ps1`'s user folder, which the Windows fixed name matches. Enterprise has no Dogfood step, and vendor has no `cicd.bash`.
-	- Decisions:
-		- Windows runs it unelevated in the same window, as shcl decided, where the shared rules say elevated. An elevated CLI's output lands in a new window that closes. The fixed name falls back to a hard link, then a copy, where a symlink needs rights the account lacks.
-		- The Windows fixed name is `%LOCALAPPDATA%\Programs\gitniblet\gitniblet.exe`, which install.ps1 already puts on PATH, rather than a bare `Programs\gitniblet` file that would clash with that folder.
-		- macOS keeps the pool and fixed name in `~/Applications/`, per the shared rules, though install puts gitniblet in `~/.local/bin` there.
-		- On Linux the fixed name is install.bash's `~/.local/bin/gitniblet`. A regular file there, such as a user install, is left alone, with one line on a run that took a build.
-		- Windows PowerShell 5.1 still runs it, through the `.cmd`, as for shcl.
-		- No stray cleanup or `.desktop` file. gitniblet has no desktop entry, and the old `exec/util/linux/bin/ngdb` is still in use by name on b23.
-		- The script and launchers go every Dogfood run, cross-built or not, since the script picks its own build.
-	- Branch: r1028
-	- Test case: `cicd/utility/dogfood-script-test.bash` dehyr to dehyx.
-
-- A FreeBSD `.pkg`.
-	- ID: 2026102520521033
-	- Type: Task
-	- Status: Waiting on automated testing
-	- Needs local test suite run?: `--backlog-run-full`: Cross-compile + package, for the hook on freebsd amd64 and arm64 in the container. Pipeline tests dehz9 to dehzc, and defr0 and defr1. Remote tests dehzd on vmFreeBSD.
-	- Needs external testing: release.yml at the next release cut, for the `.pkg` upload.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-205210
-	- Opened by: JC
-	- Parent ID: 2026102416210008
-	- Requirements [Feature]:
-		- Package the FreeBSD builds as `.pkg`, beside the archives, and check it installs on vmFreeBSD.
-		- Overrides the FreeBSD `.pkg` deferral in the private notes, under cicd-packaging.
-	- Estimated effort: Avg
-	- Actual effort: Avg
-	- Progress log:
-		- 20261028: goreleaser makes `gitniblet-<version>-freebsd-<arch>.pkg` for amd64 and arm64, beside the archives, through a post-build hook, `cicd/utility/freebsd-pkg.bash`. It's in `checksums.txt` and goes up with the release.
-		- The remote tests make the same `.pkg` from the binary they test, then as root on vmFreeBSD install it into a throwaway root, run `--version`, `pkg check -s` it and delete it. The box's own packages aren't touched.
-		- `repro-test.bash` builds freebsd too now, so defr0 covers the `.pkg` bytes.
-		- design.md says so, under CI/CD pipeline, and README's install table and the changelog have it.
-		- Verified: dehz9 to dehzc pass, and each fails with the maker broken: relative names, manifests last, no snapshot strip, no OS check. dehzd passes on vmFreeBSD, and fails on a `.pkg` with wrong checksums. A real `pkg add`, run and `pkg delete` on vmFreeBSD as root passed too, the files and folder gone after. A goreleaser run on linux and freebsd made the `.pkg` and listed it in `checksums.txt`. `goreleaser check`, `--backlog-run-quick`, `pins-test.bash`, `flags-test.bash` and `remote-skip-test.bash` pass, and defr0 and defr1 pass with freebsd in the build.
-		- Not verified: the arm64 `.pkg` on a box, since there's no FreeBSD arm64 box. The release upload, until the next release cut.
-		- Swept: every `.pkg` and deferral mention in `.goreleaser.yaml`, `cicd.bash`, the workflows, README.md, design.md and changelog.md. `install.bash` still takes the `.tar.gz` on FreeBSD, unchanged. `release.yml` needs no step, since goreleaser uploads the `extra_files`.
-	- Decisions:
-		- pkg's own format written by a script, since nfpm has no FreeBSD packager and building on the box would tie packaging to a VM that may not answer.
-		- A goreleaser post-build hook, not a step after goreleaser like the Windows installer, so the `.pkg` lands in `checksums.txt` and the release with no extra workflow step.
-		- The install check runs as root, since pkg can't install as a user: it chowns to root. A throwaway root keeps the box's package database as it was.
-		- A snapshot `.pkg` keeps its release's version, since the ports form of `-SNAPSHOT-<commit>` reads badly. `--version` tells builds apart.
-		- The outward choices are in questions.md, as a Check.
-	- Branch: r1028
-	- Test case: dehz9 to dehzc in `cicd/utility/freebsd-pkg-test.bash`, dehzd in `cicd/utility/remote-test.bash`, and defr0 in `cicd/utility/repro-test.bash`.
-
-- Dogfood to `exec/app/<os>/`, and skip the copy when the binary is in use.
-	- ID: 2026102520521027
-	- Type: Task
-	- Status: Waiting on UAT
-	- Needs local test suite run?: No
-	- Needs external testing: No
-	- Needs hand testing: the next default run on b23, to see the build land in `exec/app/linux/`, and a run with cross-compile for `mswin/` and `macos/`.
-	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
-	- Opened: 20261025-205210
-	- Opened by: JC
-	- Parent ID: 2026102416210008
-	- Requirements [Feature]:
-		- Per the shared CICD rules, Dogfood. The Linux build goes to `~/synced/0-0/common/exec/app/linux/`, and the Windows and macOS builds to `mswin/` and `macos/` beside it, where the run built them.
-		- Skip the copy, with one line, when the binary there is in use.
-		- Today it goes to `exec/util/linux/bin/`, with a `/usr/local/sbin/` fallback through sudo.
-	- Estimated effort: Low
-	- Actual effort: Low
-	- Progress log:
-		- 20261026: The Dogfood step copies the release build to `exec/app/linux/`. When the run cross-built, it also copies the amd64 Windows and macOS builds from `dist/` to `mswin/` and `macos/`. The `exec/util/linux/bin/` path and the sudo fallback are gone.
-		- A copy that a process here runs or holds open is skipped with one line, and so is a missing folder or one that already has the same bytes. The new copy goes in beside the old one and is renamed over it.
-		- The logic is in the new `cicd/utility/include/dogfood.bash`. design.md and `--help` say so.
-		- Verified: `dogfood-test.bash` defr4 to defra pass, and each fails with its part broken: the in-use check off (defr5, defr6), arm64 globs (defr7), the cross-built check ignored (defr8), no same-bytes skip (defr9), and the folder pick (defr4). defra runs `cicd.bash`'s own step, and fails on the old `cicd.bash` and with cross-built forced on. The /proc pass, for a box with no fuser, is checked in defr5 and defr6.
-		- Verified: `--backlog-run-quick`, `flags-test.bash` and shellcheck pass, and `--list` names the 7 new IDs.
-		- Not verified: a real dogfood copy, since a round never dogfoods.
-		- Swept: every dogfood and install path in `cicd.bash`, the scripts under `cicd/utility/`, the workflows and the docs. `preferredInstallPaths_Bash` is declared but read by nothing, so it stays as it was. Enterprise's `cicd.bash` has no Dogfood step, and vendor has no `cicd.bash`.
-	- Decisions:
-		- amd64 for Windows and macOS, since b29w and the Intel Mac boxes are amd64, and one binary name per folder leaves no room for both.
-		- Windows and macOS are copied only when Cross-compile + package is in this run's plan, so a `--quick` run never copies an older `dist/`.
-		- In use means a process on this box runs it or holds it open, through `fuser`, or one pass over /proc where there's no fuser. A copy in use on another box through the synced folder can't be seen from here.
-		- A missing folder is a skip, not a failure or a `mkdir`, per "first available location" in the shared rules.
-		- Same bytes, not mtime, decides "already this build", which replaces `cp --update=older`.
-		- A failed copy fails the step, now that there's no sudo fallback.
-		- `exec/app/linux/` isn't on PATH here, as for silkterm. The old `exec/util/linux/bin/ngdb` is left alone. The dogfood script, 2026102520521029, is what puts a launcher on PATH.
-	- Branch: r1026
-	- Test case: `cicd/utility/dogfood-test.bash` defr4 to defra.
-	- 2026-10-26 Verified: cicd.bash --backlog-run-full passed all 11 steps at r1026 (run 20261026-193900; Windows, FreeBSD and macOS passed, vmDebARM64 didn't answer and was skipped), and hosted ci.yml run 40439675727 passed both jobs. defr4 to defra passed. Only the hand row is left: the next default run on b23, since a round never dogfoods.
 
 - `cleanup-test.bash` dedpb can take 30s to stop after Ctrl+C under load.
 	- ID: 2026102520025738
@@ -523,6 +432,124 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Requirements [Feature]:
 		- Runs on multiple instances of a repo, on multiple external hosts each, and exercises performance, correctness, and integrity; with and without pessimistic record-level locking.
 		- Operates on very large database (e.g. millions of rows) to test where performance starts tapping out.
+
+- A `dogfood_gitniblet.ps1` script with its launchers.
+	- ID: 2026102520521029
+	- Type: Task
+	- Status: Done
+	- Needs external testing: `dogfood_gitniblet.cmd` and `.ps1` on b29w as `wintest`, with a stand-in `gitniblet.exe` in a stand-in `Dropbox\0-0\common\exec\app\mswin\` and `LOCALAPPDATA`: the pool, the fixed name in `Programs\gitniblet\` through the hard link or copy fallback, and arguments and the exit code passed through.
+	- Needs hand testing: the next default run on b23, to see the script and launchers land in the synced util folders, and `dogfood_gitniblet --version` by name.
+		- Stand-in: on b23, `cicd.bash`'s own Dogfood functions ran against a temp home in place of the real synced folders, from the r1028 full run's `bin/` and `dist/`. The script and both launchers landed in the 4 util folders with the same bytes, the bash ones executable, and a second pass copied nothing. `dogfood_gitniblet --version` by name, from the copied `linux/bash/`, took the build into the pool, linked `~/.local/bin/gitniblet` to it, printed `gitniblet v1.0.0-beta.2 build dehzk`, and passed exit code 1 through on a bad command.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Prereq IDs: 2026102520521027
+		- The script reads from the dogfood folders that item sets up.
+	- Requirements [Feature]:
+		- Per the shared CICD rules, Dogfood script: one pwsh 7 script, plus Linux, Windows and macOS launchers, with the master copies in `utility/`.
+	- Estimated effort: Avg
+	- Actual effort: Low
+	- Progress log:
+		- 20261028: New `utility/dogfood_gitniblet.ps1`, from shcl's `dogfood_shcl.ps1`. It takes a new build from the synced `exec/app/<os>/` folder into a pool of dated versions, points a fixed name at the newest, and runs it with every argument and the exit code passed through. The pool is `~/.local/bin/gitniblet_versions/` on Linux, `~/Applications/gitniblet_versions/` on macOS, and `%LOCALAPPDATA%\Programs\gitniblet_versions\` on Windows.
+		- The pool is GFS-rotated every run, to 5 to 10 versions with 1 GB deciding between, and a running version is never removed. `--no-update` runs what's held.
+		- Launchers: `utility/dogfood_gitniblet` for Linux, BSD and macOS, and `utility/dogfood_gitniblet.cmd` for Windows. `.gitattributes` keeps the `.cmd` CRLF and the bash launcher LF.
+		- The Dogfood step copies all 3 to `exec/util/0_crossplatform/`, `linux/bash/`, `macos/bash/` and `mswin/cli/by-self/cmd/`, each skipped with one line when missing, the same bytes, or in use. `--help` and design.md say so.
+		- Verified: `dogfood-script-test.bash` dehyr to dehyx pass under pwsh 7.6 here, and each fails with its part broken: the exit code dropped (dehyr), the in-use check off (dehys), a regular file at the fixed name replaced (dehyt), the launcher joining its arguments (dehyv), the step's call taken out or the `.cmd` saved LF (dehyw), aliases in the script (dehyx), the `-File` argument fix off (dehyr, dehyx), and no same-bytes check (dehyr). With no pwsh, dehyr to dehyv and dehyx are SKIP and dehyw still runs.
+		- Verified: `dogfood-test.bash` defr4 to defra, `flags-test.bash`, `testid check`, shellcheck and `--backlog-run-quick` pass, and `--list` names the 6 new IDs under Pipeline tests.
+		- Swept: every dogfood path in `cicd.bash`, `include/dogfood.bash` and `install.ps1`'s user folder, which the Windows fixed name matches. Enterprise has no Dogfood step, and vendor has no `cicd.bash`.
+		- 20261028 Verified: the full run 20261028-091500 on r1028 d6dd5bb passed all 13 steps, with dehyr to dehyx PASS.
+		- 20261028 Verified on b29w as `wintest`, pwsh 7.6.6 and Windows PowerShell 5.1, with stand-in builds in a stand-in `Dropbox\0-0\common\exec\app\mswin\` and `LOCALAPPDATA`: the `.cmd` from the `mswin\cli\by-self\cmd\` layout, `.ps1` through `pwsh -File`, and 5.1 through the `.cmd` with no pwsh on PATH all passed arguments with spaces, `=`, `://`, `--k:v` and `-v` as typed, and exit codes 7, 3 and 5. Each newer build went into the pool, a restamped same build wasn't taken again, and `--no-update` copied nothing. The fixed name in `Programs\gitniblet\` came out a hard link, since `wintest` can't make a symlink, and moved to each newest build. The real Windows build's `--version` ran through the `.cmd`.
+		- Not reached on Windows: the copy fallback, since the hard link worked, and the "in use" line, since the fixed name was replaced even with a process started from it still running. The newest build ran either way.
+	- Decisions:
+		- Windows runs it unelevated in the same window, as shcl decided, where the shared rules say elevated. An elevated CLI's output lands in a new window that closes. The fixed name falls back to a hard link, then a copy, where a symlink needs rights the account lacks.
+		- The Windows fixed name is `%LOCALAPPDATA%\Programs\gitniblet\gitniblet.exe`, which install.ps1 already puts on PATH, rather than a bare `Programs\gitniblet` file that would clash with that folder.
+		- macOS keeps the pool and fixed name in `~/Applications/`, per the shared rules, though install puts gitniblet in `~/.local/bin` there.
+		- On Linux the fixed name is install.bash's `~/.local/bin/gitniblet`. A regular file there, such as a user install, is left alone, with one line on a run that took a build.
+		- Windows PowerShell 5.1 still runs it, through the `.cmd`, as for shcl.
+		- No stray cleanup or `.desktop` file. gitniblet has no desktop entry, and the old `exec/util/linux/bin/ngdb` is still in use by name on b23.
+		- The script and launchers go every Dogfood run, cross-built or not, since the script picks its own build.
+	- Branch: r1028
+	- Test case: `cicd/utility/dogfood-script-test.bash` dehyr to dehyx.
+	- Acceptance signoff: Self-closed: dehyr to dehyx passed in the r1028 full run, the launchers passed on b29w as `wintest`, and the Dogfood step's copy and `dogfood_gitniblet --version` by name passed on b23 into a temp home.
+	- Closed: 20261028-095800
+
+- A FreeBSD `.pkg`.
+	- ID: 2026102520521033
+	- Type: Task
+	- Status: Done
+	- Needs local test suite run?: `--backlog-run-full`: Cross-compile + package, for the hook on freebsd amd64 and arm64 in the container. Pipeline tests dehz9 to dehzc, and defr0 and defr1. Remote tests dehzd on vmFreeBSD.
+	- Needs external testing: release.yml at the next release cut, for the `.pkg` upload. That check is now 2026102809554655.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Related IDs: 2026102809554655
+	- Requirements [Feature]:
+		- Package the FreeBSD builds as `.pkg`, beside the archives, and check it installs on vmFreeBSD.
+		- Overrides the FreeBSD `.pkg` deferral in the private notes, under cicd-packaging.
+	- Estimated effort: Avg
+	- Actual effort: Avg
+	- Progress log:
+		- 20261028: goreleaser makes `gitniblet-<version>-freebsd-<arch>.pkg` for amd64 and arm64, beside the archives, through a post-build hook, `cicd/utility/freebsd-pkg.bash`. It's in `checksums.txt` and goes up with the release.
+		- The remote tests make the same `.pkg` from the binary they test, then as root on vmFreeBSD install it into a throwaway root, run `--version`, `pkg check -s` it and delete it. The box's own packages aren't touched.
+		- `repro-test.bash` builds freebsd too now, so defr0 covers the `.pkg` bytes.
+		- design.md says so, under CI/CD pipeline, and README's install table and the changelog have it.
+		- Verified: dehz9 to dehzc pass, and each fails with the maker broken: relative names, manifests last, no snapshot strip, no OS check. dehzd passes on vmFreeBSD, and fails on a `.pkg` with wrong checksums. A real `pkg add`, run and `pkg delete` on vmFreeBSD as root passed too, the files and folder gone after. A goreleaser run on linux and freebsd made the `.pkg` and listed it in `checksums.txt`. `goreleaser check`, `--backlog-run-quick`, `pins-test.bash`, `flags-test.bash` and `remote-skip-test.bash` pass, and defr0 and defr1 pass with freebsd in the build.
+		- Not verified: the arm64 `.pkg` on a box, since there's no FreeBSD arm64 box. The release upload, until the next release cut.
+		- Swept: every `.pkg` and deferral mention in `.goreleaser.yaml`, `cicd.bash`, the workflows, README.md, design.md and changelog.md. `install.bash` still takes the `.tar.gz` on FreeBSD, unchanged. `release.yml` needs no step, since goreleaser uploads the `extra_files`.
+		- 20261028 Verified: the full run 20261028-091500 on r1028 d6dd5bb passed all 13 steps. Cross-compile + package made `gitniblet-1.0.0-beta.2-SNAPSHOT-d6dd5bb-freebsd-amd64.pkg` and `-arm64.pkg` through the hook. dehz9 to dehzc, defr0 and defr1 PASS, and dehzd PASS on vmFreeBSD.
+		- The release upload check is split out as 2026102809554655, Stalled for the next release cut, so this one could close.
+	- Decisions:
+		- pkg's own format written by a script, since nfpm has no FreeBSD packager and building on the box would tie packaging to a VM that may not answer.
+		- A goreleaser post-build hook, not a step after goreleaser like the Windows installer, so the `.pkg` lands in `checksums.txt` and the release with no extra workflow step.
+		- The install check runs as root, since pkg can't install as a user: it chowns to root. A throwaway root keeps the box's package database as it was.
+		- A snapshot `.pkg` keeps its release's version, since the ports form of `-SNAPSHOT-<commit>` reads badly. `--version` tells builds apart.
+		- The outward choices are in questions.md, as a Check.
+	- Branch: r1028
+	- Test case: dehz9 to dehzc in `cicd/utility/freebsd-pkg-test.bash`, dehzd in `cicd/utility/remote-test.bash`, and defr0 in `cicd/utility/repro-test.bash`.
+	- Closed: 20261028-095800
+
+- Dogfood to `exec/app/<os>/`, and skip the copy when the binary is in use.
+	- ID: 2026102520521027
+	- Type: Task
+	- Status: Done
+	- Needs local test suite run?: No
+	- Needs external testing: No
+	- Needs hand testing: the next default run on b23, to see the build land in `exec/app/linux/`, and a run with cross-compile for `mswin/` and `macos/`.
+		- Stand-in: on b23, `cicd.bash`'s own `fDogfood` ran against a temp home in place of the real synced folders, with cross-built on, from the r1028 full run's `bin/` and `dist/`. The release build landed in `exec/app/linux/`, executable, and the amd64 Windows and macOS builds in `mswin/` and `macos/`, each with the same bytes and no partial copy left. A second pass said "already this build" for each and copied nothing.
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261025-205210
+	- Opened by: JC
+	- Parent ID: 2026102416210008
+	- Requirements [Feature]:
+		- Per the shared CICD rules, Dogfood. The Linux build goes to `~/synced/0-0/common/exec/app/linux/`, and the Windows and macOS builds to `mswin/` and `macos/` beside it, where the run built them.
+		- Skip the copy, with one line, when the binary there is in use.
+		- Today it goes to `exec/util/linux/bin/`, with a `/usr/local/sbin/` fallback through sudo.
+	- Estimated effort: Low
+	- Actual effort: Low
+	- Progress log:
+		- 20261026: The Dogfood step copies the release build to `exec/app/linux/`. When the run cross-built, it also copies the amd64 Windows and macOS builds from `dist/` to `mswin/` and `macos/`. The `exec/util/linux/bin/` path and the sudo fallback are gone.
+		- A copy that a process here runs or holds open is skipped with one line, and so is a missing folder or one that already has the same bytes. The new copy goes in beside the old one and is renamed over it.
+		- The logic is in the new `cicd/utility/include/dogfood.bash`. design.md and `--help` say so.
+		- Verified: `dogfood-test.bash` defr4 to defra pass, and each fails with its part broken: the in-use check off (defr5, defr6), arm64 globs (defr7), the cross-built check ignored (defr8), no same-bytes skip (defr9), and the folder pick (defr4). defra runs `cicd.bash`'s own step, and fails on the old `cicd.bash` and with cross-built forced on. The /proc pass, for a box with no fuser, is checked in defr5 and defr6.
+		- Verified: `--backlog-run-quick`, `flags-test.bash` and shellcheck pass, and `--list` names the 7 new IDs.
+		- Not verified: a real dogfood copy, since a round never dogfoods.
+		- Swept: every dogfood and install path in `cicd.bash`, the scripts under `cicd/utility/`, the workflows and the docs. `preferredInstallPaths_Bash` is declared but read by nothing, so it stays as it was. Enterprise's `cicd.bash` has no Dogfood step, and vendor has no `cicd.bash`.
+	- Decisions:
+		- amd64 for Windows and macOS, since b29w and the Intel Mac boxes are amd64, and one binary name per folder leaves no room for both.
+		- Windows and macOS are copied only when Cross-compile + package is in this run's plan, so a `--quick` run never copies an older `dist/`.
+		- In use means a process on this box runs it or holds it open, through `fuser`, or one pass over /proc where there's no fuser. A copy in use on another box through the synced folder can't be seen from here.
+		- A missing folder is a skip, not a failure or a `mkdir`, per "first available location" in the shared rules.
+		- Same bytes, not mtime, decides "already this build", which replaces `cp --update=older`.
+		- A failed copy fails the step, now that there's no sudo fallback.
+		- `exec/app/linux/` isn't on PATH here, as for silkterm. The old `exec/util/linux/bin/ngdb` is left alone. The dogfood script, 2026102520521029, is what puts a launcher on PATH.
+	- Branch: r1026
+	- Test case: `cicd/utility/dogfood-test.bash` defr4 to defra.
+	- 2026-10-26 Verified: cicd.bash --backlog-run-full passed all 11 steps at r1026 (run 20261026-193900; Windows, FreeBSD and macOS passed, vmDebARM64 didn't answer and was skipped), and hosted ci.yml run 40439675727 passed both jobs. defr4 to defra passed. Only the hand row is left: the next default run on b23, since a round never dogfoods.
+	- 2026-10-28 Verified: the full run 20261028-091500 on r1028 d6dd5bb passed all 13 steps, with defr4 to defra PASS.
+	- Acceptance signoff: Self-closed: defr4 to defra passed in the r1028 full run, and the Dogfood step's copy passed on b23 into a temp home, cross-built.
+	- Closed: 20261028-095800
 
 - A pipeline test runs the binary against the real config folder.
 	- ID: 2026102613060001
