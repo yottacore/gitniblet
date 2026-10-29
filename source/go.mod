@@ -7,7 +7,7 @@ toolchain go1.26.10
 require (
 	github.com/gdamore/tcell/v2 v2.8.1
 	github.com/google/uuid v1.6.0
-	github.com/jim-collier/shclwrap/source/go v0.0.0-20261027035944-54dc6c66cbb5
+	github.com/jim-collier/shclwrap/source/go v0.0.0-20261029024524-7e8acc38be5b
 	github.com/rivo/tview v0.42.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/term v0.28.0
@@ -24,7 +24,7 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/yottacore/shcl/source/go/v2 v2.0.0-20261026200642-2174f0d94127 // indirect
+	github.com/yottacore/shcl/source/go/v2 v2.0.0-20261028232054-a010fdf8035a // indirect
 	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	modernc.org/libc v1.73.4 // indirect

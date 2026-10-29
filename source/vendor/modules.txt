@@ -50,7 +50,7 @@ github.com/google/uuid
 # github.com/jim-collier/shcl/source/go/v2 v2.0.0
 ## explicit; go 1.20
 github.com/jim-collier/shcl/source/go/v2
-# github.com/jim-collier/shclwrap/source/go v0.0.0-20261027035944-54dc6c66cbb5
+# github.com/jim-collier/shclwrap/source/go v0.0.0-20261029024524-7e8acc38be5b
 ## explicit; go 1.21
 github.com/jim-collier/shclwrap/source/go/shclw
 github.com/jim-collier/shclwrap/source/go/shclw3
@@ -75,7 +75,7 @@ github.com/rivo/tview
 # github.com/rivo/uniseg v0.4.7
 ## explicit; go 1.18
 github.com/rivo/uniseg
-# github.com/yottacore/shcl/source/go/v2 v2.0.0-20261026200642-2174f0d94127
+# github.com/yottacore/shcl/source/go/v2 v2.0.0-20261028232054-a010fdf8035a
 ## explicit; go 1.20
 github.com/yottacore/shcl/source/go/v2
 # go.uber.org/goleak v1.3.0

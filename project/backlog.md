@@ -32,32 +32,6 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 ## Issues
 
-- The Soak test and Race tests steps may print their FAIL line twice.
-	- ID: 2026102810331959
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261028-103319
-	- Opened by: JC
-	- Enterprise found its copy of the `( ... ) | testid report` form printed a step's FAIL twice, since the inherited ERR trap also fires inside the subshell. `trap - ERR` inside it fixed enterprise's, in gitniblet-enterprise a192cc0.
-
-- Profiler flamegraph splits generic function names into several frames.
-	- ID: 2026102810071193
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261028-100711
-	- Opened by: JC
-	- Related IDs: 2026102600551679 (gitniblet-enterprise)
-	- Steps to reproduce [Bug]:
-		- Run the profiler on a path that calls a generic function, such as hkdf.Expand, then read the hotspot summary.
-	- Incorrect behavior [Bug]:
-		- Generic frames come out as several rows, such as one named 'Write }]'. The shape type holds ';', which is the folded format's frame separator, so pprof-to-folded.py splits the frame.
-	- Expected behavior [Bug]:
-		- One row per frame, with the whole name.
-	- Possible cause [Bug]:
-		- pprof-to-folded.py is the same file as enterprise's. Enterprise's fix is in fClean, which collapses shape groups to '[...]' and turns any other ';' into ','. Copy it from gitniblet-enterprise cicd/utility/pprof-to-folded.py, with the dej12 check in profile-test.bash.
-
 - `cleanup-test.bash` dedpb can take 30s to stop after Ctrl+C under load.
 	- ID: 2026102520025738
 	- Type: Bug
@@ -246,6 +220,32 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- The CLI smoke in `cicd.bash` is done, by 2026102416210004. It runs after the release build in every mode.
 	- Decisions:
 		- The whole suite under `-race` in every full run gets no child here. It's 2026102520474880, which already runs the TUI tests under `-race` and has the same cgo problem to solve.
+
+- The Soak test and Race tests steps may print their FAIL line twice.
+	- ID: 2026102810331959
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261028-103319
+	- Opened by: JC
+	- Enterprise found its copy of the `( ... ) | testid report` form printed a step's FAIL twice, since the inherited ERR trap also fires inside the subshell. `trap - ERR` inside it fixed enterprise's, in gitniblet-enterprise a192cc0.
+
+- Profiler flamegraph splits generic function names into several frames.
+	- ID: 2026102810071193
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261028-100711
+	- Opened by: JC
+	- Related IDs: 2026102600551679 (gitniblet-enterprise)
+	- Steps to reproduce [Bug]:
+		- Run the profiler on a path that calls a generic function, such as hkdf.Expand, then read the hotspot summary.
+	- Incorrect behavior [Bug]:
+		- Generic frames come out as several rows, such as one named 'Write }]'. The shape type holds ';', which is the folded format's frame separator, so pprof-to-folded.py splits the frame.
+	- Expected behavior [Bug]:
+		- One row per frame, with the whole name.
+	- Possible cause [Bug]:
+		- pprof-to-folded.py is the same file as enterprise's. Enterprise's fix is in fClean, which collapses shape groups to '[...]' and turns any other ';' into ','. Copy it from gitniblet-enterprise cicd/utility/pprof-to-folded.py, with the dej12 check in profile-test.bash.
 
 - The tx log append and the sync's line append drop Close's error.
 	- ID: 2026102808450278
@@ -469,6 +469,34 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Branch: round1024
 	- Test case: No test ID, since it's a scan, not a test. The govulncheck step in every full run and in hosted CI fails on it. It failed under `go1.26.5` and passes under `go1.26.10`.
 	- Closed: 20261024-092700
+
+- Move to shclwrap dev 7e8acc3 on shcl a010fdf8, and drop the seed-row and backtick workarounds it made needless.
+	- ID: 2026102819463323
+	- Type: Task
+	- Status: Done
+	- Needs local test suite run?: No
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261028-194633
+	- Opened by: JC
+	- Related IDs: 2026102621002700, shclwrap:2026102814295798, shclwrap:2026102816215624
+	- shclwrap 7e8acc3 pins shcl dev a010fdf8, whose upgrade reads a 2.x quoted comma as 2.0 did on repeated keys too and keeps each line. `ddl.legacyRow` can go when dec93 and defp0 pass without it. The backtick swap stays unless a test shows shclwrap's 2026102618065645 is no longer needed.
+	- This is the application test of shcl's next 3.0.0-beta1 candidate, so a full run passing here counts toward that beta.
+	- Progress log:
+		- 20261028: floss takes shclwrap 7e8acc3, which pins shcl dev a010fdf8. The vendor refresh changes only shclwrap and shcl 3, and was scrubbed again, with the 2.0 copyright lines put back.
+		- `ddl.legacyRow` and its helpers are gone. The upgrade now keeps a quoted value's commas, a `#` inside quotes and the escapes on repeated seed rows.
+		- The backtick swap stays. Without it, defnx and defp0 split a backtick SQL value at its comma, so shclwrap 2026102618065645 is still needed.
+		- New dejk9 covers what `legacyRow` did that dec93 and defp0 don't: a `#` and a comma in quotes, and an escaped quote, on repeated rows.
+		- Verified: dec93, defp0 and dejk9 fail on the old pin without `legacyRow`, and pass on 7e8acc3 without it. dejk9 also passes on the old pin with `legacyRow`.
+		- Verified: `--backlog-run-quick` passed, 264 tests, gofmt and staticcheck clean, CLI smoke passing. `go mod verify`, govulncheck and gosec are clean. FuzzParse, FuzzParseQueries and FuzzLoadRecord ran 15s each with no crash.
+		- Enterprise isn't changed here. A copy of it builds and vets against this floss once its `go.mod` takes shclwrap 7e8acc3 and shcl a010fdf8, with the matching `go.sum` lines. Nothing else is needed.
+		- Swept: every `shclio.Load` and `Current` caller in floss, enterprise and vendor, and every use of `legacyRow`, `LineFix` and the removed helpers. design.md's line on what keeps the old reading is updated. The workflows and cicd scripts name no shclwrap pin.
+	- Decisions:
+		- `shclio.Load` and `Current` no longer take line fixes. With `legacyRow` gone the backtick swap was the only one, so it's built in, and goes when 2026102618065645 is in.
+		- The draft shclwrap issue in `upstream/2026102621002700/` is moot, since shclwrap filed and fixed it as 2026102814295798.
+	- Branch: r1028b
+	- Test case: dec93, defp0 and dejk9 (old seed rows), defnx (backtick values).
+	- Closed: 20261028-2015
+	- Verified: 2026-10-28, r1028b's full run on d6d66ca passed all 13 steps, cross-builds, CodeQL over the new vendor tree and the 4 remote boxes included. dec93, defp0 and dejk9 passed without legacyRow.
 
 - Regression tests for all completed features and bug reports.
 	- ID: 2026101915305767

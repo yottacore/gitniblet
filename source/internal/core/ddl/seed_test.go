@@ -4,6 +4,7 @@
 package ddl
 
 import (
+	"maps"
 	"strings"
 	"testing"
 )
@@ -94,6 +95,34 @@ func TestSeedParseExample(t *testing.T) {
 	for _, w := range s.Warnings {
 		if strings.Contains(w, "seed") {
 			t.Fatalf("example seed warns: %s", w)
+		}
+	}
+}
+
+// Old seed rows keep what a quote holds, a # or a comma, on rows that repeat,
+// and a trailing comment stays a comment.
+// ID: dejk9
+func TestOldSeedRowQuotes(t *testing.T) {
+	src := "seed:\n" +
+		"\ttable: lookups\n" +
+		"\t\trow: idx=1, note=\"x # y\", title='p, q'  # comment\n" +
+		"\t\trow: idx=2, title=\"say \\\"hi\\\", then go\"\n" +
+		"\t\trow: idx=3, title=plain\n"
+	s, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []map[string]string{
+		{"idx": "1", "note": "x # y", "title": "p, q"},
+		{"idx": "2", "title": `say "hi", then go`},
+		{"idx": "3", "title": "plain"},
+	}
+	if len(s.Seeds) != len(want) || s.HasErrors() || len(s.Warnings) != 0 {
+		t.Fatalf("seeds = %+v, warnings %v", s.Seeds, s.Warnings)
+	}
+	for i, w := range want {
+		if got := s.Seeds[i]; !maps.Equal(got.Fields, w) || got.Line != i+3 {
+			t.Errorf("seed %d = %+v, want %v on line %d", i, got, w, i+3)
 		}
 	}
 }
