@@ -35,8 +35,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - Move to shclwrap dev 7e8acc3 on shcl a010fdf8, and drop the seed-row and backtick workarounds it made needless.
 	- ID: 2026102819463323
 	- Type: Task
-	- Status: Waiting on automated testing
-	- Needs local test suite run?: `cicd/cicd.bash --backlog-run-full`, plain arm, for the cross-builds, the 4 remote boxes and CodeQL over the refreshed `vendor/`.
+	- Status: Done
+	- Needs local test suite run?: No
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261028-194633
 	- Opened by: JC
@@ -57,6 +57,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- The draft shclwrap issue in `upstream/2026102621002700/` is moot, since shclwrap filed and fixed it as 2026102814295798.
 	- Branch: r1028b
 	- Test case: dec93, defp0 and dejk9 (old seed rows), defnx (backtick values).
+	- Closed: 20261028-2015
+	- Verified: 2026-10-28, r1028b's full run on d6d66ca passed all 13 steps, cross-builds, CodeQL over the new vendor tree and the 4 remote boxes included. dec93, defp0 and dejk9 passed without legacyRow.
 
 - `cleanup-test.bash` dedpb can take 30s to stop after Ctrl+C under load.
 	- ID: 2026102520025738
