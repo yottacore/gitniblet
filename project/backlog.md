@@ -32,31 +32,16 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 
 ## Issues
 
-- The Soak test and Race tests steps may print their FAIL line twice.
-	- ID: 2026102810331959
-	- Type: Bug
+- Move to shclwrap dev 7e8acc3 on shcl a010fdf8, and drop the seed-row and backtick workarounds it made needless.
+	- ID: 2026102819463323
+	- Type: Task
 	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261028-103319
+	- Priority [Feature|Enhancement] | Severity [Bug]: High
+	- Opened: 20261028-194633
 	- Opened by: JC
-	- Enterprise found its copy of the `( ... ) | testid report` form printed a step's FAIL twice, since the inherited ERR trap also fires inside the subshell. `trap - ERR` inside it fixed enterprise's, in gitniblet-enterprise a192cc0.
-
-- Profiler flamegraph splits generic function names into several frames.
-	- ID: 2026102810071193
-	- Type: Bug
-	- Status: Queued
-	- Priority [Feature|Enhancement] | Severity [Bug]: Low
-	- Opened: 20261028-100711
-	- Opened by: JC
-	- Related IDs: 2026102600551679 (gitniblet-enterprise)
-	- Steps to reproduce [Bug]:
-		- Run the profiler on a path that calls a generic function, such as hkdf.Expand, then read the hotspot summary.
-	- Incorrect behavior [Bug]:
-		- Generic frames come out as several rows, such as one named 'Write }]'. The shape type holds ';', which is the folded format's frame separator, so pprof-to-folded.py splits the frame.
-	- Expected behavior [Bug]:
-		- One row per frame, with the whole name.
-	- Possible cause [Bug]:
-		- pprof-to-folded.py is the same file as enterprise's. Enterprise's fix is in fClean, which collapses shape groups to '[...]' and turns any other ';' into ','. Copy it from gitniblet-enterprise cicd/utility/pprof-to-folded.py, with the dej12 check in profile-test.bash.
+	- Related IDs: 2026102621002700, shclwrap:2026102814295798, shclwrap:2026102816215624
+	- shclwrap 7e8acc3 pins shcl dev a010fdf8, whose upgrade reads a 2.x quoted comma as 2.0 did on repeated keys too and keeps each line. `ddl.legacyRow` can go when dec93 and defp0 pass without it. The backtick swap stays unless a test shows shclwrap's 2026102618065645 is no longer needed.
+	- This is the application test of shcl's next 3.0.0-beta1 candidate, so a full run passing here counts toward that beta.
 
 - `cleanup-test.bash` dedpb can take 30s to stop after Ctrl+C under load.
 	- ID: 2026102520025738
@@ -246,6 +231,32 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- The CLI smoke in `cicd.bash` is done, by 2026102416210004. It runs after the release build in every mode.
 	- Decisions:
 		- The whole suite under `-race` in every full run gets no child here. It's 2026102520474880, which already runs the TUI tests under `-race` and has the same cgo problem to solve.
+
+- The Soak test and Race tests steps may print their FAIL line twice.
+	- ID: 2026102810331959
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261028-103319
+	- Opened by: JC
+	- Enterprise found its copy of the `( ... ) | testid report` form printed a step's FAIL twice, since the inherited ERR trap also fires inside the subshell. `trap - ERR` inside it fixed enterprise's, in gitniblet-enterprise a192cc0.
+
+- Profiler flamegraph splits generic function names into several frames.
+	- ID: 2026102810071193
+	- Type: Bug
+	- Status: Queued
+	- Priority [Feature|Enhancement] | Severity [Bug]: Low
+	- Opened: 20261028-100711
+	- Opened by: JC
+	- Related IDs: 2026102600551679 (gitniblet-enterprise)
+	- Steps to reproduce [Bug]:
+		- Run the profiler on a path that calls a generic function, such as hkdf.Expand, then read the hotspot summary.
+	- Incorrect behavior [Bug]:
+		- Generic frames come out as several rows, such as one named 'Write }]'. The shape type holds ';', which is the folded format's frame separator, so pprof-to-folded.py splits the frame.
+	- Expected behavior [Bug]:
+		- One row per frame, with the whole name.
+	- Possible cause [Bug]:
+		- pprof-to-folded.py is the same file as enterprise's. Enterprise's fix is in fClean, which collapses shape groups to '[...]' and turns any other ';' into ','. Copy it from gitniblet-enterprise cicd/utility/pprof-to-folded.py, with the dej12 check in profile-test.bash.
 
 - The tx log append and the sync's line append drop Close's error.
 	- ID: 2026102808450278
