@@ -405,6 +405,11 @@ func Normalize(path string, v any) (Value, error) {
 	case float32:
 		// float64(x) would write the float32's binary noise: 0.9 as 0.8999999761581421.
 		f, _ := strconv.ParseFloat(strconv.FormatFloat(float64(x), 'g', -1, 32), 64)
+		// go1.26 rounds the tie at 2^-12 up, to 0.00024414063. go1.25,
+		// go1.27 and the other wrappers go to even.
+		if math.Abs(float64(x)) == 0x1p-12 {
+			f = math.Copysign(0.00024414062, float64(x))
+		}
 		return finite(path, Value{Kind: KindFloat, Float: f})
 	case float64:
 		return finite(path, Value{Kind: KindFloat, Float: x})

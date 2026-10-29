@@ -35,13 +35,28 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - Move to shclwrap dev 7e8acc3 on shcl a010fdf8, and drop the seed-row and backtick workarounds it made needless.
 	- ID: 2026102819463323
 	- Type: Task
-	- Status: Queued
+	- Status: Waiting on automated testing
+	- Needs local test suite run?: `cicd/cicd.bash --backlog-run-full`, plain arm, for the cross-builds, the 4 remote boxes and CodeQL over the refreshed `vendor/`.
 	- Priority [Feature|Enhancement] | Severity [Bug]: High
 	- Opened: 20261028-194633
 	- Opened by: JC
 	- Related IDs: 2026102621002700, shclwrap:2026102814295798, shclwrap:2026102816215624
 	- shclwrap 7e8acc3 pins shcl dev a010fdf8, whose upgrade reads a 2.x quoted comma as 2.0 did on repeated keys too and keeps each line. `ddl.legacyRow` can go when dec93 and defp0 pass without it. The backtick swap stays unless a test shows shclwrap's 2026102618065645 is no longer needed.
 	- This is the application test of shcl's next 3.0.0-beta1 candidate, so a full run passing here counts toward that beta.
+	- Progress log:
+		- 20261028: floss takes shclwrap 7e8acc3, which pins shcl dev a010fdf8. The vendor refresh changes only shclwrap and shcl 3, and was scrubbed again, with the 2.0 copyright lines put back.
+		- `ddl.legacyRow` and its helpers are gone. The upgrade now keeps a quoted value's commas, a `#` inside quotes and the escapes on repeated seed rows.
+		- The backtick swap stays. Without it, defnx and defp0 split a backtick SQL value at its comma, so shclwrap 2026102618065645 is still needed.
+		- New dejk9 covers what `legacyRow` did that dec93 and defp0 don't: a `#` and a comma in quotes, and an escaped quote, on repeated rows.
+		- Verified: dec93, defp0 and dejk9 fail on the old pin without `legacyRow`, and pass on 7e8acc3 without it. dejk9 also passes on the old pin with `legacyRow`.
+		- Verified: `--backlog-run-quick` passed, 264 tests, gofmt and staticcheck clean, CLI smoke passing. `go mod verify`, govulncheck and gosec are clean. FuzzParse, FuzzParseQueries and FuzzLoadRecord ran 15s each with no crash.
+		- Enterprise isn't changed here. A copy of it builds and vets against this floss once its `go.mod` takes shclwrap 7e8acc3 and shcl a010fdf8, with the matching `go.sum` lines. Nothing else is needed.
+		- Swept: every `shclio.Load` and `Current` caller in floss, enterprise and vendor, and every use of `legacyRow`, `LineFix` and the removed helpers. design.md's line on what keeps the old reading is updated. The workflows and cicd scripts name no shclwrap pin.
+	- Decisions:
+		- `shclio.Load` and `Current` no longer take line fixes. With `legacyRow` gone the backtick swap was the only one, so it's built in, and goes when 2026102618065645 is in.
+		- The draft shclwrap issue in `upstream/2026102621002700/` is moot, since shclwrap filed and fixed it as 2026102814295798.
+	- Branch: r1028b
+	- Test case: dec93, defp0 and dejk9 (old seed rows), defnx (backtick values).
 
 - `cleanup-test.bash` dedpb can take 30s to stop after Ctrl+C under load.
 	- ID: 2026102520025738

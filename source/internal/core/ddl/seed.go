@@ -6,8 +6,6 @@ package ddl
 import (
 	"strconv"
 	"strings"
-
-	"github.com/yottacore/gitniblet/internal/core/shclio"
 )
 
 // SeedRow is one `row:` under seed:. Fields always holds a valid idx, since
@@ -90,88 +88,4 @@ func unquote(val string) string {
 		return val[1 : len(val)-1]
 	}
 	return val
-}
-
-// legacyRow is a seed row from before shcl 3, `row: idx=1, title="a, b"`, in
-// 3's bracket form, `row: [idx=1, "title=a, b"]`. The 1.2 rules kept a
-// quoted value's commas and applied its escapes, and the upgrade's 2.x
-// reading splits it at the comma instead. shclwrap mends that only for a key
-// set once, and seed rows repeat (2026102621002700).
-func legacyRow(line string) (string, bool) {
-	key, value, ok := strings.Cut(line, ":")
-	if !ok || strings.TrimSpace(key) != "row" {
-		return "", false
-	}
-	pairs, comment := splitRow(value)
-	if len(pairs) == 0 || strings.HasPrefix(pairs[0], "[") {
-		return "", false
-	}
-	elems := make([]string, len(pairs))
-	for i, pair := range pairs {
-		if name, val, ok := strings.Cut(pair, "="); ok {
-			pair = strings.TrimSpace(name) + "=" + unescape(strings.TrimSpace(val))
-		}
-		elems[i] = rowElement(pair)
-	}
-	out := key + ": [" + strings.Join(elems, ", ") + "]"
-	if comment != "" {
-		out += "  " + comment
-	}
-	return out, true
-}
-
-// splitRow splits a row's value on the commas outside quotes, and cuts off
-// a trailing comment, which is a # after a blank outside quotes.
-func splitRow(value string) (pairs []string, comment string) {
-	var quote byte
-	start := 0
-	for i := 0; i < len(value); i++ {
-		ch := value[i]
-		switch {
-		case quote != 0 && ch == '\\' && quote == '"':
-			i++
-		case quote != 0:
-			if ch == quote {
-				quote = 0
-			}
-		case ch == '"' || ch == '\'':
-			quote = ch
-		case ch == ',':
-			pairs = append(pairs, strings.TrimSpace(value[start:i]))
-			start = i + 1
-		case ch == '#' && i > 0 && (value[i-1] == ' ' || value[i-1] == '\t'):
-			comment = strings.TrimSpace(value[i:])
-			value = value[:i]
-		}
-	}
-	if last := strings.TrimSpace(value[start:]); last != "" || len(pairs) > 0 {
-		pairs = append(pairs, last)
-	}
-	return pairs, comment
-}
-
-// unescape is a quoted 1.2 value's text: its outer quotes off and, in double
-// quotes, its backslash escapes applied.
-func unescape(val string) string {
-	inner := unquote(val)
-	if inner == val || val[0] != '"' {
-		return inner
-	}
-	return strings.NewReplacer(`\"`, `"`, `\\`, `\`, `\'`, `'`, `\t`, "\t", `\n`, "\n").Replace(inner)
-}
-
-// rowElement is one bracket element, quoted whole when 3 wouldn't read it bare.
-func rowElement(pair string) string {
-	bare := pair != "" && strings.IndexFunc(pair, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_.=+-/@", r))
-	}) < 0
-	switch {
-	case bare:
-		return pair
-	case !strings.Contains(pair, `"`):
-		return `"` + pair + `"`
-	case !strings.Contains(pair, "'"):
-		return "'" + pair + "'"
-	}
-	return shclio.Quote(pair)
 }

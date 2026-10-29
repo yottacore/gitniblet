@@ -196,7 +196,8 @@ func PlaceBlock(text string, marked bool, e InfoEdit) (string, error) {
 // order, so the n-th line of up with text on it is the n-th of orig's, except
 // where it writes one as two, as 2.x's x: ~~~ comes out as x: and a fence
 // under it. Where putting them back would change a value, up comes back as
-// it was.
+// it was. Since a010fdf8 shcl keeps the lines itself where it can, so this
+// covers the files it writes the way fmt does.
 func KeepBlanks(orig, up string, e InfoEdit) string {
 	bom := ""
 	if strings.HasPrefix(up, "\ufeff") {

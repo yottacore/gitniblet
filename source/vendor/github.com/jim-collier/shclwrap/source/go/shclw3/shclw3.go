@@ -24,7 +24,7 @@ import (
 )
 
 // ShclVersion is the shcl release this package wraps.
-const ShclVersion = "3.0.0-dev+2174f0d9"
+const ShclVersion = "3.0.0-dev+a010fdf8"
 
 // FormatMajor is the newest file format this shcl reads.
 const FormatMajor = shcl.FormatMajor
@@ -283,8 +283,8 @@ func FormatOf(text string) int {
 // reports errors on is ErrRefused, with those errors in
 // Diags. A 2.x file comes out reading what 2.0 read, backslash escapes
 // included, and one that can't is ErrRefused too. 2.x's block is swapped for
-// the current one where it sits, and the lines end as the file's did. Blank
-// lines shcl's conversion drops are put back, so a line keeps its number.
+// the current one where it sits, and the lines end as the file's did. Each
+// line keeps its number, blank ones included.
 func Upgrade(text string, from int) (Upgraded, error) {
 	if f := max(FormatOf(text), from); f > FormatMajor {
 		return Upgraded{Text: text, From: f}, tooNew("", f)
@@ -331,7 +331,7 @@ func Upgrade(text string, from int) (Upgraded, error) {
 			Msg: fmt.Sprintf("%d lines would still have an error once converted; fix them and upgrade again", len(u.ErrorsLeft))}
 	}
 	if out.Changed {
-		out.Text = shclw.KeepBlanks(in, mendReads(old, out.Text), infoEdit)
+		out.Text = shclw.KeepBlanks(in, out.Text, infoEdit)
 	}
 	lost, err := checkReads(old, out.Text, FormatOf(text) == 1)
 	if err != nil {
@@ -433,9 +433,9 @@ func oldErrors(old *shcl2.Document) *shclw.Error {
 	return &shclw.Error{Kind: shclw.ErrRefused, Diags: errs, Msg: fmt.Sprintf("shcl 2.0 reports errors on %d lines; fix them and upgrade again", len(lines))}
 }
 
-// checkReads reads every path 2.0 reads one value at in old back against up,
-// the upgraded text. shcl's migrate writes the text 2.x read, backslash
-// escapes included (2026101910455900), so this checks its answer rather than
+// checkReads reads every value 2.0 reads in old back against up, the
+// upgraded text. shcl's migrate writes the text 2.x read, backslash escapes
+// included (2026101910455900), so this checks its answer rather than
 // trusting it. A name 2.0 read with an escape resolved stays as typed, so
 // it's refused, unless the file names format 1, since 1.2 read names as
 // typed. So is a value that reads differently. The lines with a value 2.0
@@ -450,21 +450,30 @@ func checkReads(old *shcl2.Document, up string, namesAsTyped bool) ([]int, error
 	}
 	var lost []int
 	for _, p := range old.Paths() {
+		had, has, lines := old.Count(p), now.Count(p), old.Lines(p)
 		// Instances past the ones 3.0 still has are gone.
-		for _, l := range old.Lines(p)[min(now.Count(p), old.Count(p)):] {
+		for _, l := range lines[min(has, had):] {
 			if l > 0 {
 				lost = append(lost, l)
 			}
 		}
-		if old.Count(p) != 1 {
+		if had != 1 && has != had {
 			continue
 		}
-		was, is := old.ReadStringArray(p), now.ReadStringArray(p)
-		if was.Status == shcl2.Good && is.Status == shcl.Good && !slices.Equal(was.Value, is.Value) {
-			bad = append(bad, carryDiag(old.Line(p), "the upgraded file doesn't read this value as shcl 2.0 read it"))
-		}
-		if now.Count(p) == 1 && was.Status == shcl2.Good && is.Status != shcl.Good && now.ReadRaw(p).Status != shcl.Good {
-			lost = append(lost, old.Line(p))
+		// A repeated key is read one instance at a time, the i-th against
+		// the i-th, as [#i] in 2.0 and (i) in 3.0 (2026102816332481).
+		for i := 0; i < had; i++ {
+			p2, p3 := p, p
+			if had > 1 {
+				p2, p3 = fmt.Sprintf("%s[#%d]", p, i), fmt.Sprintf("%s(%d)", p, i)
+			}
+			was, is := old.ReadStringArray(p2), now.ReadStringArray(p3)
+			if was.Status == shcl2.Good && is.Status == shcl.Good && !slices.Equal(was.Value, is.Value) {
+				bad = append(bad, carryDiag(lines[i], "the upgraded file doesn't read this value as shcl 2.0 read it"))
+			}
+			if has == had && was.Status == shcl2.Good && is.Status != shcl.Good && now.ReadRaw(p3).Status != shcl.Good {
+				lost = append(lost, lines[i])
+			}
 		}
 	}
 	if len(bad) == 0 {
@@ -477,48 +486,6 @@ func checkReads(old *shcl2.Document, up string, namesAsTyped bool) ([]int, error
 	}
 	return nil, &shclw.Error{Kind: shclw.ErrRefused, Diags: bad,
 		Msg: fmt.Sprintf("%d lines don't read as shcl 2.0 read them; fix them and upgrade again", len(lines))}
-}
-
-// mendReads sets each value of up, the upgraded text, that reads otherwise
-// than 2.0 read it in old back to 2.0's reading. shcl's migrate splits a 2.x
-// element at a comma inside quotes, as in title="a, b", which 1.2 and 2.0
-// read whole (2026102618065640). checkReads still checks the result.
-func mendReads(old *shcl2.Document, up string) string {
-	now := shcl.Parse(up)
-	var d *shcl.Document
-	for _, p := range old.Paths() {
-		if old.Count(p) != 1 || now.Count(p) != 1 || now.ReadRaw(p).Status == shcl.Good {
-			continue
-		}
-		was, is := old.ReadStringArray(p), now.ReadStringArray(p)
-		if was.Status != shcl2.Good || is.Status != shcl.Good || slices.Equal(was.Value, is.Value) {
-			continue
-		}
-		if d == nil {
-			var err error
-			if d, err = shcl.ParseKeepLines(up, shcl.Standard); err != nil {
-				return up
-			}
-		}
-		// 2.0's ReadString is Good on a list too, so its length says which.
-		var st shcl.SetStatus
-		if len(was.Value) == 1 {
-			st = d.SetString(p, was.Value[0])
-		} else {
-			st = d.SetStringArray(p, was.Value)
-		}
-		if st != shcl.SetOk {
-			return up
-		}
-	}
-	if d == nil {
-		return up
-	}
-	text, kept := d.ToTextKeepLines()
-	if !kept {
-		return up
-	}
-	return text
 }
 
 func carryDiag(line int, msg string) Diag {

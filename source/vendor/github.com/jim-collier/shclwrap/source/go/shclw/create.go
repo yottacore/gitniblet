@@ -12,10 +12,14 @@ import (
 	"runtime"
 	"strconv"
 	"sync/atomic"
+	"syscall"
 	"unicode/utf8"
 )
 
 var tempSeq atomic.Uint64
+
+// linkFile is os.Link, swapped by a test for a filesystem with no links.
+var linkFile = os.Link
 
 // CheckMode refuses a WriteOpts.Mode with more than permission bits in it.
 func CheckMode(path string, mode fs.FileMode) error {
@@ -43,7 +47,7 @@ func CreateNew(path, data string, mode fs.FileMode) error {
 	if err != nil {
 		return createErr(path, err)
 	}
-	err = os.Link(tmp, path)
+	err = linkFile(tmp, path)
 	os.Remove(tmp)
 	switch {
 	case err == nil:
@@ -51,10 +55,24 @@ func CreateNew(path, data string, mode fs.FileMode) error {
 		return nil
 	case errors.Is(err, fs.ErrExist):
 		return Exists(path)
-	case errors.Is(err, errors.ErrUnsupported) || errors.Is(err, fs.ErrPermission):
+	case noLinks(err):
 		return createInPlace(path, data, mode)
 	}
 	return createErr(path, err)
+}
+
+// errInvalidFunction is Windows' ERROR_INVALID_FUNCTION.
+const errInvalidFunction = syscall.Errno(1)
+
+// noLinks is a link error that says the filesystem has no hard links. Linux
+// gives EPERM, and Windows on FAT gives ERROR_INVALID_FUNCTION, which Go
+// doesn't count as unsupported.
+func noLinks(err error) bool {
+	if errors.Is(err, errors.ErrUnsupported) || errors.Is(err, fs.ErrPermission) {
+		return true
+	}
+	var en syscall.Errno
+	return runtime.GOOS == "windows" && errors.As(err, &en) && en == errInvalidFunction
 }
 
 // writeTemp writes data to a new file beside path and syncs it.

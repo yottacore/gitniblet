@@ -182,7 +182,7 @@ type View struct {
 // load over one bad line: the rest of the file still opens, so a typo costs a
 // line rather than the whole schema. Nothing passes silently.
 func Parse(src []byte) (*Schema, error) {
-	doc, _ := shclio.Load(string(src), shclio.Loose, legacyRow) // only Strict can fail a load
+	doc, _ := shclio.Load(string(src), shclio.Loose) // only Strict can fail a load
 	s := &Schema{AppCode: map[string]string{}, Tunables: map[string]string{}}
 	s.addDiagnostics(doc.Diags())
 	s.addDiagnostics(doc.Check(schemaDoc()))

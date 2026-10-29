@@ -27,7 +27,7 @@ func tablePaths() []string {
 // RenameTable renames a table and records the old name on its aliases. Returns
 // the new text and whether the table was found.
 func RenameTable(src []byte, oldName, newName string) ([]byte, bool) {
-	doc, _ := shclio.Load(string(src), shclio.Standard, legacyRow)
+	doc, _ := shclio.Load(string(src), shclio.Standard)
 	for _, base := range tablePaths() {
 		at, ok := instanceOf(doc, base, oldName)
 		if !ok {
@@ -40,7 +40,7 @@ func RenameTable(src []byte, oldName, newName string) ([]byte, bool) {
 
 // RenameField renames a field inside the named table, same contract.
 func RenameField(src []byte, table, oldName, newName string) ([]byte, bool) {
-	doc, _ := shclio.Load(string(src), shclio.Standard, legacyRow)
+	doc, _ := shclio.Load(string(src), shclio.Standard)
 	for _, base := range tablePaths() {
 		tableAt, ok := instanceOf(doc, base, table)
 		if !ok {
