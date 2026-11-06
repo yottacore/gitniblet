@@ -1169,7 +1169,7 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 - Move to shcl v3.0.0-beta1 and drop shclwrap.
 	- ID: 2026110609362100
 	- Type: Task
-	- Status: In progress
+	- Status: Done
 	- Needs local test suite run?: Yes
 	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
 	- Opened: 20261106-093621
@@ -1183,6 +1183,8 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 		- The backtick swap stays. The `## Default` line fill-in that shclwrap did is not carried over, and no test needed it.
 	- Branch: shcl3
 	- Test case: The existing ddl, config, and shclio tests.
+	- Closed: 20261106-1050
+	- Verified: 2026-11-06, the full run passed all 13 steps on shcl v3.0.0-beta1, remote boxes included. CodeQL needed the stale shcl accept line out of `codeql-accepted.txt`.
 
 - Go leak checks: a soak test on heap in use and goroutine count.
 	- ID: 2026102520521023
