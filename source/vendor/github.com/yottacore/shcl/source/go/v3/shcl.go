@@ -975,6 +975,10 @@ type Document struct {
 	// line left: the next check costs the same, and nothing is wrong.
 	keptNear []nearNode
 	keptSum  uint64
+	// walked: a kept line with an index in its path was judged by the
+	// instances written before it, which can sit anywhere above it, so every
+	// edit settles while one is held.
+	walked bool
 	// The parse's multi-line bindings, from the binding line to the last line
 	// each took. Edits leave it alone; only a reparse reads it.
 	ends [][2]int
@@ -986,6 +990,13 @@ type Document struct {
 	// its lines. A merge drops it: the layer's lines are not this text's. Nil
 	// when none was kept.
 	source *string
+	// The file a load read, which a save over it checks first. A merge keeps
+	// it, since the file under the merged document is still that one. A save
+	// there records what it wrote, so a save is a write like any edit.
+	file *loadedFile
+	// newer: the text named a newer format than this one (H006), so its lines
+	// may read differently there, and a save refuses. A merge takes a layer's.
+	newer bool
 }
 
 // nameIndex is the first child of each (parent, name), chained on to the next
@@ -1520,6 +1531,33 @@ func skipWsp(s string, pos int) int {
 	return pos
 }
 
+// blankLen is the byte length of the blank at s[i], or 0. 2.x trimmed every
+// Unicode White_Space character at a piece's edges, a no-break space and a
+// vertical tab included, so its rules count those as blanks too.
+func blankLen(s string, i int, rules Rules) int {
+	if isWspByte(s[i]) {
+		return 1
+	}
+	if rules != RulesV2 || s[i] < 0x0B || (s[i] > 0x0C && s[i] < 0x80) {
+		return 0
+	}
+	if r, n := utf8.DecodeRuneInString(s[i:]); r != utf8.RuneError && whiteSpace(r) {
+		return n
+	}
+	return 0
+}
+
+func skipBlank(s string, pos int, rules Rules) int {
+	for pos < len(s) {
+		n := blankLen(s, pos, rules)
+		if n == 0 {
+			break
+		}
+		pos += n
+	}
+	return pos
+}
+
 // utf8Len is the byte length of the UTF-8 character at s[i]. The scan only
 // ever compares against ASCII structure characters, which UTF-8 guarantees
 // cannot appear inside a multibyte sequence, so it advances by whole
@@ -1609,13 +1647,19 @@ func looseComma(s string, at int) bool {
 // `]` that closes it ends a value element too, and every comma does;
 // elsewhere only a loose one does, 2.x aside.
 func scanPiece(s string, pos int, term byte, rules Rules, comments, array bool) (Piece, int) {
+	// 2.x's wider trim is taken for a value piece only. The selector arm
+	// of migrate cuts a body by its own offsets.
+	edges := rules
+	if term != ',' {
+		edges = RulesCurrent
+	}
 	clamp := func(i int) int {
 		if i > len(s) {
 			return len(s)
 		}
 		return i
 	}
-	pos = skipWsp(s, pos)
+	pos = skipBlank(s, pos, edges)
 	start := pos
 	quote := QuoteNone
 	everyComma := term != ',' || array || rules == RulesV2
@@ -1629,7 +1673,7 @@ func scanPiece(s string, pos int, term byte, rules Rules, comments, array bool) 
 		if close := quoteClose(s, pos, rules); close >= 0 {
 			// A value piece may also end at a comment or the line end;
 			// a selector body ends at its bracket and nowhere else.
-			i := skipWsp(s, close+1)
+			i := skipBlank(s, close+1, edges)
 			var ended bool
 			if i < len(s) {
 				ended = endsAt(i) || (array && s[i] == ']') || (term == ',' && commentAt(s, i))
@@ -1657,9 +1701,14 @@ func scanPiece(s string, pos int, term byte, rules Rules, comments, array bool) 
 			quote = QuoteOpen
 			if rules == RulesV2 {
 				// 2.x: an open quote swallowed the rest of the line.
-				end := len(s)
-				for end > start && isWspByte(s[end-1]) {
-					end--
+				end := start
+				for i := start; i < len(s); {
+					if n := blankLen(s, i, edges); n > 0 {
+						i += n
+					} else {
+						i += utf8Len(s, i)
+						end = clamp(i)
+					}
 				}
 				return Piece{Start: start, End: end, Quote: quote}, len(s)
 			}
@@ -1690,8 +1739,9 @@ func scanPiece(s string, pos int, term byte, rules Rules, comments, array bool) 
 		if endsAt(pos) || (array && b == ']') || (comments && commentAt(s, pos)) {
 			break
 		}
+		blank := blankLen(s, pos, edges) > 0
 		pos += utf8Len(s, pos)
-		if !isWspByte(b) {
+		if !blank {
 			contentEnd = clamp(pos)
 		}
 	}
@@ -3085,7 +3135,7 @@ func formatLineRead(text string) Read[int] {
 	}
 	now := newRawLines(RulesCurrent)
 	then := newRawLines(RulesV2)
-	var found, unread Read[int]
+	var found, newest, unread Read[int]
 	for i, line := range strings.Split(text, "\n") {
 		current, inNow := now.step(line)
 		old, inThen := then.step(line)
@@ -3126,12 +3176,15 @@ func formatLineRead(text string) Read[int] {
 			v = math.MaxUint32
 		}
 		if v >= FormatMajor {
-			if inNow {
-				return Read[int]{Value: v, Status: Good, Raw: &n, Line: i + 1}
+			if inNow && (newest.Line == 0 || v > newest.Value) {
+				newest = Read[int]{Value: v, Status: Good, Raw: &n, Line: i + 1}
 			}
 		} else if inThen && (found.Line == 0 || v > found.Value) {
 			found = Read[int]{Value: v, Status: Good, Raw: &n, Line: i + 1}
 		}
+	}
+	if newest.Line != 0 {
+		return newest
 	}
 	if found.Line != 0 {
 		return found
@@ -3632,6 +3685,7 @@ func valueEdits(text string, tok *Tokens, edits *[]edit) {
 		if quoted {
 			a, b = p.Start-1, p.End+1
 		}
+		v2EdgeEdits(text, a, b, edits)
 		// A comma or a `#` in a bare piece sat inside a quote 2.0 paired.
 		if p.Quote == QuoteNone && !strings.ContainsAny(raw, "\\,#") && !strings.ContainsRune(raw, escapeMark) && raw != "" {
 			if _, bad := bareTrouble(raw, bareValue); !bad {
@@ -3644,6 +3698,44 @@ func valueEdits(text string, tok *Tokens, edits *[]edit) {
 		}
 		spelling := migrateSpelling(logical, !(quoted || p.Quote == QuoteOpen))
 		*edits = append(*edits, edit{start: a, end: b, with: spelling})
+	}
+}
+
+// v2EdgeEdits: 2.x trimmed a blank the current rules keep, such as a no-break
+// space or a vertical tab, at a piece's edges. A run of blanks on either side
+// of the piece from a to b that holds one becomes a space, or nothing at the
+// end of the line.
+func v2EdgeEdits(text string, a, b int, edits *[]edit) {
+	kept := func(run string) bool { return strings.IndexFunc(run, func(c rune) bool { return !isWsp(c) }) >= 0 }
+	i := a
+	for i > 0 {
+		c, n := utf8.DecodeLastRuneInString(text[:i])
+		if c == utf8.RuneError || !whiteSpace(c) {
+			break
+		}
+		i -= n
+	}
+	if kept(text[i:a]) {
+		with := " "
+		if a == len(text) {
+			with = ""
+		}
+		*edits = append(*edits, edit{start: i, end: a, with: with})
+	}
+	j := b
+	for j < len(text) {
+		c, n := utf8.DecodeRuneInString(text[j:])
+		if c == utf8.RuneError || !whiteSpace(c) {
+			break
+		}
+		j += n
+	}
+	if kept(text[b:j]) {
+		with := " "
+		if j == len(text) {
+			with = ""
+		}
+		*edits = append(*edits, edit{start: b, end: j, with: with})
 	}
 }
 
@@ -4199,6 +4291,11 @@ func itemFault(tok *Tokens, text string) *fault {
 	if len(tok.Elements) > 1 {
 		return newFault("E026", "a comma then a space or the end in a list item; an item is one value, so quote the text", true)
 	}
+	if len(tok.Elements) > 0 {
+		if _, ok := elementOf(&tok.Elements[0], text); !ok {
+			return newFault("E009", "empty list element", true)
+		}
+	}
 	if len(tok.Elements) == 1 && tok.Elements[0].Quote == QuoteNone {
 		p := &tok.Elements[0]
 		raw := text[p.Start:p.End]
@@ -4261,7 +4358,7 @@ func nameFault(tok *Tokens, text string) *fault {
 		return f
 	}
 	if tok.Misspelled < 0 {
-		return nil
+		return wildcardFault(tok, text)
 	}
 	if tok.Sep >= 0 {
 		return newFault("E014", "field name needs quotes; a bare name is a letter, then letters, digits, '-' and '_'", true)
@@ -4283,7 +4380,7 @@ func nameFault(tok *Tokens, text string) *fault {
 		}
 	}
 	if blank < 0 {
-		return nil
+		return wildcardFault(tok, text)
 	}
 	f := newFault("E014", "malformed line skipped: unexpected character after the path", true)
 	for k := blank; k < len(text); k++ {
@@ -4293,6 +4390,18 @@ func nameFault(tok *Tokens, text string) *fault {
 		}
 	}
 	return f
+}
+
+// wildcardFault is a wildcard selector on a line that would bind (E004).
+// Wrong wherever the line sits, so it is kept and re-diagnoses the same on a
+// reload.
+func wildcardFault(tok *Tokens, text string) *fault {
+	for i := range tok.Segments {
+		if sel := tok.Segments[i].Selector; sel != nil && selectorOf(sel, text).kind == selWildcard {
+			return newFault("E004", "wildcard selector is query-only", false)
+		}
+	}
+	return nil
 }
 
 // valueSideFault is the half of lineFault judged after the element cap: the
@@ -4366,10 +4475,34 @@ func keptForPlace(text string) int {
 	return placeNone
 }
 
+// indexedPath is the path of a kept field line that reads clean and has an
+// index in it, array or not. A reload walks it over the instances written
+// before it.
+func indexedPath(text string) ([]segment, bool) {
+	if !isFieldText(text) {
+		return nil, false
+	}
+	var tok Tokens
+	Tokenize(text, ':', false, RulesCurrent, &tok)
+	if lineFault(&tok, text) != nil {
+		return nil, false
+	}
+	scan, err := pathOf(&tok, text)
+	if err != nil {
+		return nil, false
+	}
+	for _, seg := range scan.segments {
+		if byIndex(seg) {
+			return scan.segments, true
+		}
+	}
+	return nil, false
+}
+
 // isItem reports a stacked list item's line: `-` then a blank. The blank is
 // what keeps `-x: y` a field line (E014) and `- -5` the item `-5`.
 func isItem(text string) bool {
-	return len(text) > 1 && text[0] == '-' && isWspByte(text[1])
+	return text != "" && text[0] == '-' && (len(text) == 1 || isWspByte(text[1]))
 }
 
 // isFieldText reports a line's text after its indent that is read as a field
@@ -4512,6 +4645,9 @@ type parser struct {
 	// Parents where a remap ended up on a key a sibling already held: the only
 	// places a duplicate can survive the keyed lookup, so the fold starts here.
 	lateDups []int
+	// Nodes a fold or a re-mention gave a later line's leading lines to, for
+	// refileFolded().
+	folded []int
 	// Node -> line of the re-open that H002-hinted it. A merge under a hinted
 	// container combines the same two textual regions, so it hints too even
 	// when it ends up on the newest child at its own scope - that is how every
@@ -4783,6 +4919,7 @@ func (p *parser) foldDupsFrom(start int) {
 				// merge at parse time asks of the newest child.
 				p.hintFold(parent, keep[i], c, i+1 != len(keep))
 				foldNodeInto(p.arena, keep[i], c)
+				p.folded = append(p.folded, keep[i])
 				grew[i] = true
 			} else {
 				slotInsert(first, h, len(keep))
@@ -5275,25 +5412,9 @@ func (p *parser) throughItems(parent int, segs []segment) bool {
 	if !indexed {
 		return false
 	}
-	node := parent
-	if parent == lazy {
-		from := len(p.stack) - 1
-		for from > 1 && p.stack[from-1].node == lazy {
-			from--
-		}
-		node = p.stack[from-1].node
-		for _, l := range p.lazies {
-			if l.at < from {
-				continue
-			}
-			for _, seg := range l.segs {
-				c, ok := p.foundStep(node, seg)
-				if !ok {
-					return false
-				}
-				node = c
-			}
-		}
+	node, ok := p.heldNode(parent)
+	if !ok {
+		return false
 	}
 	for _, seg := range steps {
 		c, ok := p.foundStep(node, seg)
@@ -5308,6 +5429,88 @@ func (p *parser) throughItems(parent int, segs []segment) bool {
 	return false
 }
 
+// heldNode is the node a line binds under, found without opening it: a lazy
+// level, and any lazy one it sits under, as openLazy would open them. False
+// when that would create one.
+func (p *parser) heldNode(parent int) (int, bool) {
+	if parent != lazy {
+		return parent, true
+	}
+	from := len(p.stack) - 1
+	for from > 1 && p.stack[from-1].node == lazy {
+		from--
+	}
+	node := p.stack[from-1].node
+	for _, l := range p.lazies {
+		if l.at < from {
+			continue
+		}
+		for _, seg := range l.segs {
+			c, ok := p.foundStep(node, seg)
+			if !ok {
+				return 0, false
+			}
+			node = c
+		}
+	}
+	return node, true
+}
+
+// indexMiss is the index segment of a line's path that selects no instance
+// among those bound before it (E003), walked as attachPath will walk it,
+// creating nothing. A step that would create a field leaves every index
+// after it nothing to select. Judged before anything opens, so a kept line
+// opens none of its path's fields.
+func (p *parser) indexMiss(parent int, segs []segment) (uint64, string, bool) {
+	indexed := false
+	for _, s := range segs {
+		indexed = indexed || byIndex(s)
+	}
+	if !indexed {
+		return 0, "", false
+	}
+	node, ok := p.heldNode(parent)
+	if ok {
+		node, ok = p.arrayOpens(node)
+	}
+	for i, seg := range segs {
+		found, hit := 0, false
+		if ok {
+			found, hit = p.foundStep(node, seg)
+		}
+		if !byIndex(seg) {
+			node, ok = found, hit
+			continue
+		}
+		if !hit {
+			return seg.sel.index, seg.name, true
+		}
+		node, ok = found, true
+		if i+1 < len(segs) {
+			node, ok = p.arrayOpens(found)
+		}
+	}
+	return 0, "", false
+}
+
+// arrayOpens is the node arrayUnder leaves a field under node to bind in,
+// found without moving anything. False when it would create one.
+func (p *parser) arrayOpens(node int) (int, bool) {
+	nd := &p.arena[node]
+	if node == root || nd.starList || nd.value.kind != vArray {
+		return node, true
+	}
+	if m, ok := p.arrayLines[node]; ok && m.line != nd.line && m.line >= 1 && m.line <= len(p.src) {
+		return p.emptyChild(nd.parent, nd.name)
+	}
+	return node, true
+}
+
+// byIndex is true for a path segment with an index selector.
+func byIndex(seg segment) bool {
+	return seg.sel != nil && seg.sel.kind == selByIndex
+}
+
 // foundStep is the child one path step selects under cur without creating it.
 func (p *parser) foundStep(cur int, seg segment) (int, bool) {
 	if cur < 0 || cur >= len(p.arena) {
@@ -5315,10 +5518,7 @@ func (p *parser) foundStep(cur int, seg segment) (int, bool) {
 	}
 	switch {
 	case seg.sel == nil:
-		empty := value{}
-		return slotFirstMatch(p.childMap[cur], mergeHash(seg.name, &empty), func(c int) bool {
-			return mergeEq(p.arena[c].name, &p.arena[c].value, seg.name, &empty)
-		})
+		return p.emptyChild(cur, seg.name)
 	case seg.sel.kind == selByValue:
 		return p.findByValue(cur, seg.name, seg.sel.value)
 	case seg.sel.kind == selByIndex:
@@ -5334,6 +5534,15 @@ func (p *parser) foundStep(cur int, seg segment) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+// emptyChild is the child named name with no value that selectOrCreate would
+// select for a path step, without creating it.
+func (p *parser) emptyChild(cur int, name string) (int, bool) {
+	empty := value{}
+	return slotFirstMatch(p.childMap[cur], mergeHash(name, &empty), func(c int) bool {
+		return mergeEq(p.arena[c].name, &p.arena[c].value, name, &empty)
+	})
 }
 
 // headOf is the node a path's first segment bound, from the one its last did.
@@ -5524,6 +5733,7 @@ func (p *parser) attachPath(parent int, segs []segment, v value, line int, inden
 					cur = p.arrayUnder(cur)
 				}
 			} else {
+				// indexMiss keeps a parsed line with one first (E003).
 				p.refuse(line, "E003", fmt.Sprintf("no instance %d of '%s'", seg.sel.index, diagName(seg.name)), outDropped, indent)
 				return 0, false
 			}
@@ -5533,6 +5743,7 @@ func (p *parser) attachPath(parent int, segs []segment, v value, line int, inden
 				p.refuse(line, "E002", fmt.Sprintf("value after selector on '%s' ignored", diagName(seg.name)), outValueDropped, indent)
 			}
 		case seg.sel != nil:
+			// nameFault keeps a parsed line with one first (E004).
 			p.refuse(line, "E004", "wildcard selector is query-only", outDropped, indent)
 			return 0, false
 		case !isLast:
@@ -5669,20 +5880,16 @@ func (p *parser) refuseCapped(line int, indent string) {
 // addStarElement: one stacked-list item (`- scalar`) appends to the parent's
 // array.
 func (p *parser) addStarElement(parent int, tok *Tokens, text string, line int, indent string) bool {
-	if parent == root {
-		p.refuse(line, "E007", "list element with no parent field", outDropped, indent)
-		return false
-	}
 	piece := tok.Elements[0]
+	// itemFault kept an empty one (E009).
 	el, ok := elementOf(&piece, text)
 	if !ok {
-		p.refuse(line, "E009", "empty list element", outDropped, indent)
 		return false
 	}
 	clash, clashed := unitClash(p.arena[parent].name, el.text)
 	// Element cap: each element line past it is refused on its own, the way
 	// any other bad element line is. Only a line that would join the list:
-	// under a field that already has a value it is E011, cap or not.
+	// the item arm kept one under a field with a value (E011), cap or not.
 	if p.listFull(parent) {
 		p.refuseCapped(line, indent)
 		return false
@@ -5702,7 +5909,8 @@ func (p *parser) addStarElement(parent int, tok *Tokens, text string, line int, 
 		p.starNode = parent
 		p.starKey = mergeHash(p.arena[parent].name, &p.arena[parent].value)
 		p.starDisp = dispHash(p.arena[parent].name, &p.arena[parent].value)
-	case p.arena[parent].value.kind == vArray && p.arena[parent].starList:
+	default:
+		// The item arm kept any other value's item (E011).
 		if !(p.starOpen && p.starNode == parent) {
 			p.starFlush()
 			p.starOpen = true
@@ -5711,9 +5919,6 @@ func (p *parser) addStarElement(parent int, tok *Tokens, text string, line int, 
 			p.starDisp = dispHash(p.arena[parent].name, &p.arena[parent].value)
 		}
 		p.arena[parent].value.els = append(p.arena[parent].value.els, el)
-	default:
-		p.refuse(line, "E011", "field already has a value; list element ignored", outDropped, indent)
-		return false
 	}
 	if clashed {
 		p.diag(Diagnostic{Line: line, Severity: SeverityHint, Message: clash, Code: "H005"})
@@ -5871,7 +6076,9 @@ func (p *parser) parse(text string, strictness Strictness) *Document {
 		lines = lines[:len(lines)-1]
 	}
 	p.src = lines
-	if d, ok := stampHint(formatLineRead(text)); ok {
+	stamp := formatLineRead(text)
+	newer := stamp.Status == Good && stamp.Value > FormatMajor
+	if d, ok := stampHint(stamp); ok {
 		p.diag(d)
 	}
 	// Growing the arena by append cost about an eighth of fmt on a large
@@ -6000,18 +6207,11 @@ func (p *parser) parse(text string, strictness Strictness) *Document {
 				continue
 			}
 		}
-		// Stacked-list item: `-` then a blank. A bare name starts with a
-		// letter, so no field line starts that way. A `-` alone after the
-		// trim is an empty item only when a blank followed it, and only the
-		// untrimmed line still knows; with none it is a field line (E014).
-		item := false
-		if strings.HasPrefix(rest, "-") {
-			after := rest[1:]
-			item = after != "" && isWspByte(after[0])
-			if after == "" && len(lines[i]) > len(indent)+lead+1 {
-				item = isWspByte(lines[i][len(indent)+lead+1])
-			}
-		}
+		// Stacked-list item: `-` then a blank or the end. A bare name
+		// starts with a letter, so no field line starts that way. A `-`
+		// alone is an empty item (E009), so a kept one, written back with
+		// its blank trimmed, reloads as the same line.
+		item := isItem(rest)
 		if item || strings.HasPrefix(rest, "*") {
 			if item {
 				TokenizeValue(rest, 1, RulesCurrent, &tok)
@@ -6055,36 +6255,42 @@ func (p *parser) parse(text string, strictness Strictness) *Document {
 					i++
 					continue
 				}
+				// No field above it, or one with a value already: kept the same
+				// way. Nothing the item says is wrong, so the emitter asks the
+				// reload before it writes one.
+				code, msg := "", ""
+				if parent == root {
+					code, msg = "E007", "list element with no parent field"
+				} else if nd := &p.arena[parent]; !nd.value.isEmpty() && !(nd.starList && nd.value.kind == vArray) {
+					code, msg = "E011", "field already has a value; list element ignored"
+				}
+				if code != "" {
+					p.keptAny = true
+					p.refuse(lineno, code, msg, outRetained(trimEndWS(rest), hadBlank), indent)
+					i++
+					continue
+				}
+				// Elements have no node of their own; trivia rides the field.
 				comment := ""
 				if tok.Comment >= 0 {
 					comment = rest[tok.Comment:]
 				}
-				// Elements have no node of their own; trivia rides the field. At the
-				// root there is no field (E007), so the comment rides the document like
-				// any other pending one.
-				if parent != root {
-					if p.addStarElement(parent, &tok, rest, lineno, indent) {
-						p.keepAmong(parent, indent)
-						// A comment on an item stays on its item.
-						if comment != "" && p.arena[parent].value.kind == vArray {
-							t := p.arena[parent].trivMut()
-							t.notes = append(t.notes, itemNote{at: len(p.arena[parent].value.els) - 1, text: comment})
-							comment = ""
-						}
+				if p.addStarElement(parent, &tok, rest, lineno, indent) {
+					p.keepAmong(parent, indent)
+					// A comment on an item stays on its item.
+					if comment != "" && p.arena[parent].value.kind == vArray {
+						t := p.arena[parent].trivMut()
+						t.notes = append(t.notes, itemNote{at: len(p.arena[parent].value.els) - 1, text: comment})
+						comment = ""
 					}
-					head := p.arena[parent].line
-					if n := len(p.ends); n > 0 && p.ends[n-1][0] == head {
-						p.ends[n-1][1] = lineno
-					} else {
-						p.ends = append(p.ends, [2]int{head, lineno})
-					}
-					p.attachTrivia(parent, indent, comment)
-				} else {
-					if comment != "" {
-						p.pending = append(p.pending, pend{text: comment, indent: indent, blankBefore: hadBlank, ceiling: len(indent)})
-					}
-					p.addStarElement(parent, &tok, rest, lineno, indent)
 				}
+				head := p.arena[parent].line
+				if n := len(p.ends); n > 0 && p.ends[n-1][0] == head {
+					p.ends[n-1][1] = lineno
+				} else {
+					p.ends = append(p.ends, [2]int{head, lineno})
+				}
+				p.attachTrivia(parent, indent, comment)
 				i++
 				continue
 			}
@@ -6201,6 +6407,20 @@ func (p *parser) parse(text string, strictness Strictness) *Document {
 			i++
 			continue
 		}
+		// An index that selects no instance bound before it: kept the same
+		// way, since an instance written above it later would make it bind.
+		if k, name, miss := p.indexMiss(parent, scan.segments); miss {
+			msg := fmt.Sprintf("no instance %d of '%s'", k, diagName(name))
+			if _, _, _, raw := lineFence(&tok, rest); raw {
+				p.refuse(lineno, "E003", msg, outDropped, indent)
+				i = p.skipFieldLine(lines, i, indent, &tok, rest)
+				continue
+			}
+			p.keptAny = true
+			p.refuse(lineno, "E003", msg, outRetained(trimEndWS(rest), hadBlank), indent)
+			i++
+			continue
+		}
 		// The verbatim value span, kept for reads' Raw (only the plain
 		// scalar/inline-array case has a one-line source spelling).
 		srcText, haveSrc := "", false
@@ -6272,6 +6492,9 @@ func (p *parser) parse(text string, strictness Strictness) *Document {
 					}
 				}
 			}
+			if p.arena[node].line != lineno {
+				p.folded = append(p.folded, node)
+			}
 			p.attachTrivia(node, indent, comment)
 			p.stack = append(p.stack, stackEnt{indent: indent, node: node})
 			if tok.Array >= 0 {
@@ -6327,7 +6550,8 @@ func (p *parser) parse(text string, strictness Strictness) *Document {
 	if 2*len(p.arena) < cap(p.arena) {
 		p.arena = append([]nodeData(nil), p.arena...)
 	}
-	doc := &Document{arena: p.arena, diags: p.diags, strictness: strictness, orphans: orphans, lost: p.lost, keptOwed: p.keptOwed, kept: p.keptAny, arrays: p.keptArrays, ends: p.ends, dropped: p.dropped}
+	doc := &Document{arena: p.arena, diags: p.diags, strictness: strictness, orphans: orphans, lost: p.lost, keptOwed: p.keptOwed, kept: p.keptAny, arrays: p.keptArrays, ends: p.ends, dropped: p.dropped, newer: newer}
+	doc.refileFolded(p.folded)
 	doc.settleKept()
 	return doc
 }
@@ -6403,6 +6627,14 @@ func (d *Document) Diagnostics() []Diagnostic {
 // kept-lines table does not let it take.
 func (d *Document) LostCount() int {
 	return d.lost + d.keptShortfall()
+}
+
+// NewerFormat is whether the text named a newer format than this reader's,
+// the one H006 hints at, from a load or a parse, or a merged layer's did.
+// Reads work as usual, and so do edits, but every save refuses with
+// *SaveTooNew, since it would write the lines by these rules.
+func (d *Document) NewerFormat() bool {
+	return d.newer
 }
 
 // keptShortfall is the kept lines the document owes and no longer holds. Free
@@ -6494,11 +6726,51 @@ func restep(leads []lead) {
 	}
 }
 
+// foldedKept is the kept lines a load's fold gave this node from a later
+// instance of it, with the comments before them: what besideKept takes, from
+// the first line read after the node's own. Only a fold puts those there.
+func foldedKept(nd *nodeData) []lead {
+	heads := headsBlock(nd)
+	t := nd.trivia
+	if t == nil {
+		return nil
+	}
+	from := -1
+	for k := range t.leading {
+		if t.leading[k].line > nd.line {
+			from = k
+			break
+		}
+	}
+	if from < 0 {
+		return nil
+	}
+	last := len(t.leading)
+	if heads {
+		last--
+	}
+	end := 0
+	for k := last - 1; k >= 0; k-- {
+		if t.leading[k].isKeptLine() {
+			end = k + 1
+			break
+		}
+	}
+	if end <= from {
+		return nil
+	}
+	left := append([]lead(nil), t.leading[from:end]...)
+	t.leading = append(t.leading[:from], t.leading[end:]...)
+	restep(t.leading)
+	return left
+}
+
 // besideKept is what a remove of this node leaves of its lines, by
 // design.md's kept-lines table: the kept lines beside it, with the comments
 // that sit with them. Above it that is everything up to its last kept line,
 // below it everything from its first, so a comment written against the node
 // goes with it. The kept line written in place of its `name:` line goes too.
+// What goes stays on the node, where a fold of two instances still wants it.
 func besideKept(nd *nodeData) []lead {
 	heads := headsBlock(nd)
 	t := nd.trivia
@@ -6506,17 +6778,19 @@ func besideKept(nd *nodeData) []lead {
 		return nil
 	}
 	left := t.leading
-	t.leading = nil
+	last := len(left)
 	if heads {
-		left = left[:len(left)-1]
+		last--
 	}
 	end := 0
-	for k := len(left) - 1; k >= 0; k-- {
+	for k := last - 1; k >= 0; k-- {
 		if left[k].isKeptLine() {
 			end = k + 1
 			break
 		}
 	}
+	// A copy, since the caller appends to what is left.
+	t.leading = append([]lead(nil), left[end:]...)
 	left = left[:end]
 	from := len(t.after)
 	for k := range t.after {
@@ -6647,14 +6921,7 @@ func (d *Document) ToTextKeepLines() (string, bool) {
 // dropped comes back as written when the lines are kept, so this refuses the
 // way SaveFile does only when it would write canonical.
 func (d *Document) SaveFileKeepLines(path string) (bool, error) {
-	text, kept := d.ToTextKeepLines()
-	if lost := d.LostCount(); !kept && lost > 0 {
-		return false, &SaveRefused{Path: path, Lost: lost}
-	}
-	if err := WriteFileAtomic(path, text); err != nil {
-		return false, err
-	}
-	return kept, nil
+	return d.SaveFileWith(path, SaveOptions{KeepLines: true})
 }
 
 func (d *Document) emitMarked() *emit {
@@ -6664,11 +6931,119 @@ func (d *Document) emitMarked() *emit {
 	return e
 }
 
+// indexRefuses is true when a reload keeps a clean field line with an index
+// in its path where the emit model stands, after its resolve found a live
+// parent: an index selects none of the instances written before it (E003),
+// or one reaches stacked items before the last segment (E001). Lines held
+// open since the last binding line are walked first, as the reload opens
+// them.
+func (d *Document) indexRefuses(e *emit, open int, tail []stackEnt, segs []segment) bool {
+	for _, t := range tail {
+		if t.node != lazy {
+			return false
+		}
+	}
+	node := root
+	if open >= 0 {
+		if open >= len(e.lv) {
+			return false
+		}
+		node = e.lv[open].node
+	}
+	// Of the first node's children, only those written so far.
+	upto := 0
+	if open+1 < len(e.lv) {
+		upto = e.lv[open+1].pos + 1
+	}
+	var held []segment
+	for _, t := range tail {
+		text, ok := "", false
+		for k := len(e.lazies) - 1; k >= 0 && !ok; k-- {
+			text, ok = e.lazies[k][1], e.lazies[k][0] == t.indent
+		}
+		if !ok {
+			return false
+		}
+		var tok Tokens
+		Tokenize(text, ':', false, RulesCurrent, &tok)
+		scan, err := pathOf(&tok, text)
+		if err != nil {
+			return false
+		}
+		held = append(held, scan.segments...)
+	}
+	for _, seg := range held {
+		c, ok := d.writtenStep(node, upto, seg)
+		if !ok {
+			// Opening it creates a field, with no instance under it.
+			return true
+		}
+		node, upto = c, -1
+	}
+	through := false
+	for _, seg := range segs[:len(segs)-1] {
+		through = through || byIndex(seg)
+	}
+	for i, seg := range segs {
+		c, ok := d.writtenStep(node, upto, seg)
+		upto = -1
+		switch {
+		case ok && through && i+1 < len(segs) && stacks(&d.arena[c]):
+			return true
+		case ok:
+			node = c
+		case byIndex(seg):
+			return true
+		default:
+			// Created, so every index after it selects nothing.
+			for _, s := range segs[i+1:] {
+				if byIndex(s) {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	return false
+}
+
+// writtenStep is the child a reload's path step selects under cur among its
+// first upto children (all of them for -1), as the parser's foundStep does.
+func (d *Document) writtenStep(cur, upto int, seg segment) (int, bool) {
+	kids := d.arena[cur].children
+	if upto >= 0 && upto < len(kids) {
+		kids = kids[:upto]
+	}
+	var nth uint64
+	for _, c := range kids {
+		nd := &d.arena[c]
+		if nd.name != seg.name {
+			continue
+		}
+		switch {
+		case seg.sel == nil:
+			if nd.value.kind == vEmpty {
+				return c, true
+			}
+		case seg.sel.kind == selByValue:
+			if nd.value.kind == vCell && nd.value.els[0].text == seg.sel.value {
+				return c, true
+			}
+		case seg.sel.kind == selByIndex:
+			if nth == seg.sel.index {
+				return c, true
+			}
+			nth++
+		}
+	}
+	return 0, false
+}
+
 func (d *Document) emitAll(e *emit) {
 	d.emitChildren(d.arena[root].children, 0, e)
 	// Comments that never found a following line re-emit at the end.
 	e.near(root, 0)
-	pushLeads(e, d.orphans, 0, root, siteOrphans, 0)
+	pushLeads(d, e, d.orphans, 0, root, siteOrphans, 0)
 }
 
 // settleKept makes a misplaced line kept as written into the comment the
@@ -6745,7 +7120,7 @@ func (d *Document) settleArrays() {
 // nodes those came from cannot move it, and the whole-document emit is
 // skipped (20260924d item 2).
 func (d *Document) resettleKept() {
-	if d.kept && d.nearSum() != d.keptSum {
+	if d.kept && (d.walked || d.nearSum() != d.keptSum) {
 		d.settleKept()
 	} else {
 		d.settleArrays()
@@ -6822,6 +7197,7 @@ func (d *Document) settleKeptOnce() bool {
 	e := newEmit(0, true)
 	d.emitAll(e)
 	d.kept = e.verbatim > 0
+	d.walked = e.walked
 	d.keptNear = e.keptNear
 	var among []fell
 	for _, f := range e.fell {
@@ -6902,9 +7278,15 @@ type emit struct {
 	nearBy   []nearNode
 	flushed  int
 	keptNear []nearNode
-	// Per binding depth, whether that node has a `- ` item written yet and a
-	// field line under it, for a kept line refused only for where it sits.
-	lv []lv
+	// Per binding depth, whether that node has a `- ` item written yet, a
+	// field line under it, and a value an item cannot join, for a kept line
+	// refused only for where it sits, and the node with its place in its
+	// parent's list. Then the text of each kept line held open since the
+	// last binding line, by its indent, and whether a kept line was asked
+	// about the instances written before it.
+	lv     []lv
+	lazies [][2]string
+	walked bool
 	// ToTextKeepLines() only: where the lines from each source line start
 	// (0 for none), each raw body with the tabs its lines are padded with,
 	// and where each value is written on its binding line.
@@ -6918,6 +7300,9 @@ type emit struct {
 type lv struct {
 	items  bool
 	fields bool
+	valued bool
+	node   int
+	pos    int
 }
 
 // nearNode is a node an emit passed through and its index in its parent's
@@ -6968,16 +7353,17 @@ func (e *emit) span(at int) {
 
 // bound: a binding line at this depth, so the stack is its levels and
 // nothing else.
-func (e *emit) bound(depth int) {
+func (e *emit) bound(depth, node, pos int) {
 	if len(e.lv) > depth {
 		e.lv = e.lv[:depth]
 	}
 	if len(e.lv) > 0 {
 		e.lv[len(e.lv)-1].fields = true
 	}
-	e.lv = append(e.lv, lv{})
+	e.lv = append(e.lv, lv{node: node, pos: pos})
 	e.open = depth
 	e.tail = e.tail[:0]
+	e.lazies = e.lazies[:0]
 	e.held = false
 	e.nearBy = e.nearBy[:0]
 	e.flushed = 0
@@ -7113,8 +7499,16 @@ func arrayKept(text string) bool {
 	if tok.Array < 0 {
 		return false
 	}
-	if _, err := pathOf(&tok, text); err != nil {
+	// One with an index in its path is the emitter's, which asks the
+	// instances written before it.
+	scan, err := pathOf(&tok, text)
+	if err != nil {
 		return false
+	}
+	for _, seg := range scan.segments {
+		if byIndex(seg) {
+			return false
+		}
 	}
 	return lineFault(&tok, text) == nil
 }
@@ -7248,7 +7642,7 @@ func localClock() (string, int, string) {
 // an edit can leave it where it would bind, and there it is written as a
 // comment, which reads the same. node, at and from name the list and the
 // index of its first line, for settleKept().
-func pushLeads(e *emit, leads []lead, base, node int, at site, from int) {
+func pushLeads(d *Document, e *emit, leads []lead, base, node int, at site, from int) {
 	lastComment := 0
 	for i, c := range leads {
 		if c.blankBefore && e.out.Len() > 0 {
@@ -7301,15 +7695,21 @@ func pushLeads(e *emit, leads []lead, base, node int, at site, from int) {
 			// open for the lines under it when only its value was wrong.
 			indent := strings.Repeat("\t", pad)
 			found, open, tail := e.resolve(indent)
-			// One kept only for where it sat, E001 or E008, reloads kept only
-			// under a list with an item written, or a field with a field line
-			// written, or as E001 under lines held open on such a list.
-			// Anywhere else it would bind: a comment then.
-			if kind := keptForPlace(c.text); kind != placeNone {
-				stays := false
+			// One kept only for where it sat reloads kept only as E001 under a
+			// list with an item written, or under lines held open on one, and
+			// an item only as E008 under a field with a field line written,
+			// E011 under one with a value, or E007 at the root. Anywhere else
+			// it would bind: a comment then.
+			segs, indexed := indexedPath(c.text)
+			kind := keptForPlace(c.text)
+			if kind == placeNone && indexed {
+				kind = placeField
+			}
+			if kind != placeNone {
+				stays := kind == placeItem && found.ok && found.parent == root && open == -1 && len(tail) == 0
 				if pad > 0 && len(tail) == 0 && open == pad-1 && pad-1 < len(e.lv) && found.ok && found.parent != dead && found.parent != unopened {
 					up := e.lv[pad-1]
-					stays = (kind == placeField && up.items) || (kind == placeItem && up.fields)
+					stays = (kind == placeField && up.items) || (kind == placeItem && (up.fields || up.valued))
 				}
 				if found.ok && found.parent == lazy && open >= 0 && open < len(e.lv) && e.lv[open].items {
 					held := true
@@ -7317,6 +7717,13 @@ func pushLeads(e *emit, leads []lead, base, node int, at site, from int) {
 						held = held && t.node == lazy
 					}
 					stays = stays || held
+				}
+				// One with an index in its path is kept too where the index
+				// selects none of the instances written before it (E003), or
+				// reaches stacked items through one (E001).
+				if indexed && !stays && found.ok && found.parent != dead && found.parent != unopened {
+					stays = d.indexRefuses(e, open, tail, segs)
+					e.walked = e.walked || stays
 				}
 				if !stays && !strings.Contains(c.text, "\n") {
 					// A comment nests at most one level past the line before it,
@@ -7343,6 +7750,7 @@ func pushLeads(e *emit, leads []lead, base, node int, at site, from int) {
 			e.held = false
 			if found.ok && found.parent != dead && opensLater(c.text) {
 				e.open = open
+				e.lazies = append(e.lazies, [2]string{indent, c.text})
 				e.tail = append(tail, stackEnt{indent: indent, node: lazy})
 			} else {
 				e.refused(indent, open, tail)
@@ -8285,9 +8693,9 @@ func (d *Document) emitNode(idx, pos, depth int, wouldMerge bool, e *emit) {
 	d.emitChildren(d.arena[idx].children, depth+1, e)
 	e.near(idx, pos)
 	// Comments this block owns with no child to take them, one deeper.
-	pushLeads(e, d.arena[idx].inside(), depth+1, idx, siteInside, 0)
+	pushLeads(d, e, d.arena[idx].inside(), depth+1, idx, siteInside, 0)
 	// Comments that hung on this block after its last child.
-	pushLeads(e, d.arena[idx].after(), depth, idx, siteAfter, 0)
+	pushLeads(d, e, d.arena[idx].after(), depth, idx, siteAfter, 0)
 }
 
 func (d *Document) emitLine(idx, pos, depth int, wouldMerge bool, e *emit) {
@@ -8300,10 +8708,10 @@ func (d *Document) emitLine(idx, pos, depth int, wouldMerge bool, e *emit) {
 	// comment joins the leading lines instead; the flag comes from the parent's
 	// walk. Each blank rides its own comment (or the binding line), never as
 	// the first output line.
-	pushLeads(e, node.leading(), depth, idx, siteLeading, 0)
+	pushLeads(d, e, node.leading(), depth, idx, siteLeading, 0)
 	// The kept line just written opens this block on a reload.
 	if headsBlock(node) {
-		e.bound(depth)
+		e.bound(depth, idx, pos)
 		e.near(idx, pos)
 		return
 	}
@@ -8319,8 +8727,11 @@ func (d *Document) emitLine(idx, pos, depth int, wouldMerge bool, e *emit) {
 	out.WriteString(pad)
 	out.WriteString(emitName(node.name))
 	out.WriteByte(':')
-	e.bound(depth)
+	e.bound(depth, idx, pos)
 	e.near(idx, pos)
+	if depth < len(e.lv) {
+		e.lv[depth].valued = !node.value.isEmpty() && !stacks(node)
+	}
 	switch {
 	case node.value.kind == vEmpty:
 		e.span(out.Len())
@@ -8338,7 +8749,7 @@ func (d *Document) emitLine(idx, pos, depth int, wouldMerge bool, e *emit) {
 				next++
 			}
 			for j := from; j < next; j++ {
-				pushLeads(e, []lead{among[j].lead}, depth+1, idx, siteAmong, j)
+				pushLeads(d, e, []lead{among[j].lead}, depth+1, idx, siteAmong, j)
 			}
 			column := pad + "\t"
 			out.WriteString(column)
@@ -8356,7 +8767,7 @@ func (d *Document) emitLine(idx, pos, depth int, wouldMerge bool, e *emit) {
 			}
 		}
 		for j := next; j < len(among); j++ {
-			pushLeads(e, []lead{among[j].lead}, depth+1, idx, siteAmong, j)
+			pushLeads(d, e, []lead{among[j].lead}, depth+1, idx, siteAmong, j)
 		}
 	case node.value.kind == vCell:
 		at := out.Len()
@@ -8845,6 +9256,12 @@ func readSchemaFile(path string) (string, SchemaStatus, error) {
 // A failure is a *WriteError, whose Status says why. The i/o failures wrap
 // rather than flatten, so errors.Is still reaches the OS error.
 func WriteFileAtomic(file, data string) error {
+	return writeFileHow(file, data, false, 0)
+}
+
+// writeFileHow is WriteFileAtomic, plus SaveOptions' Create and Mode. Only
+// Create gives a *SaveExists.
+func writeFileHow(file, data string, newOnly bool, mode os.FileMode) error {
 	if namesADirectory(file) {
 		return &WriteError{Status: WriteIsDirectory, Err: fmt.Errorf("%s: is a directory", file)}
 	}
@@ -8852,7 +9269,13 @@ func WriteFileAtomic(file, data string) error {
 	if terr != nil {
 		return writeFailed(terr, "%s: %w", file, terr)
 	}
-	dir := filepath.Dir(target)
+	// As written, since a clean would put the temp beside `nodir/..` rather
+	// than in the missing folder the kernel refuses.
+	dir := rawDir(target)
+	inDir := dir + string(filepath.Separator)
+	if os.IsPathSeparator(dir[len(dir)-1]) {
+		inDir = dir
+	}
 	base := filepath.Base(target)
 	// At most the first 64 bytes of the name, cut where a character starts, so the
 	// temp's own length is fixed. Keeping the whole name put the temp over the
@@ -8876,8 +9299,15 @@ func WriteFileAtomic(file, data string) error {
 	// and the real mode goes on below - the copy is never briefly readable to
 	// anyone the original was not. A file that does not exist yet has no mode to
 	// preserve, so it takes the one an ordinary create would: 0666 narrowed by
-	// the umask, like every other file the user's tools produce.
+	// the umask, like every other file the user's tools produce, unless the
+	// caller gave one.
 	existing, existErr := os.Stat(target)
+	if newOnly {
+		if _, lerr := os.Lstat(target); existErr == nil || lerr == nil || linkAt(file) {
+			return &SaveExists{Path: file}
+		}
+	}
+	mode = mode.Perm()
 	// Only a regular file is replaced. A rename over a FIFO or a device node
 	// swaps it for a regular file at exit 0. Save outcomes in design.md is the
 	// rule for what a save does with each thing it can find at the path.
@@ -8893,7 +9323,7 @@ func WriteFileAtomic(file, data string) error {
 		return notRegular(file)
 	}
 	born := os.FileMode(0o600)
-	if existErr != nil {
+	if existErr != nil && mode == 0 {
 		born = 0o666
 	}
 	// Windows: a read-only file cannot be replaced, and a read-only temp cannot
@@ -8912,7 +9342,7 @@ func WriteFileAtomic(file, data string) error {
 	var tmp string
 	var last error
 	for attempt := 0; attempt < 8; attempt++ {
-		tmp = filepath.Join(dir, "."+base+".tmp"+strconv.Itoa(os.Getpid())+"."+strconv.Itoa(attempt))
+		tmp = inDir + "." + base + ".tmp" + strconv.Itoa(os.Getpid()) + "." + strconv.Itoa(attempt)
 		from := ""
 		if existErr == nil {
 			from = target
@@ -8949,6 +9379,9 @@ func WriteFileAtomic(file, data string) error {
 		}
 		_ = f.Chmod(existing.Mode())
 	}
+	if err == nil && existErr != nil && mode != 0 && runtime.GOOS != "windows" {
+		_ = f.Chmod(mode) // best effort, and the temp was born private
+	}
 	// The sync above is what forces the data out, so a close error here is the
 	// unlikely tail of it - but a write error that only surfaces on close would
 	// otherwise publish a truncated temp file over the target.
@@ -8979,6 +9412,9 @@ func WriteFileAtomic(file, data string) error {
 	if rerr != nil {
 		if existErr != nil {
 			_ = os.Remove(tmp) // the publish error is the one to report
+		}
+		if newOnly && errors.Is(rerr, os.ErrExist) {
+			return &SaveExists{Path: file}
 		}
 		return writeFailed(rerr, "%s: %w", file, osReason(rerr))
 	}
@@ -9201,8 +9637,8 @@ func UpgradeFile(path string, fromV2 bool) (Upgraded, error) {
 		return Upgraded{}, &UpgradeError{Kind: UpgradeErrorsLeft, Path: path, Lines: up.ErrorsLeft}
 	}
 	same := func() bool {
-		now, rerr := os.ReadFile(path)
-		return rerr == nil && string(now) == text
+		now, regular, rerr := readRegular(path)
+		return rerr == nil && regular && string(now) == text
 	}
 	if !same() {
 		return Upgraded{}, &UpgradeError{Kind: UpgradeIO, Err: &WriteError{Status: WriteOther, Err: fmt.Errorf("%s: changed since it was read; nothing written", path)}}
@@ -9243,6 +9679,17 @@ func namesADirectory(file string) bool {
 	return last == "." || last == ".."
 }
 
+// linkAt reports a link at the path as given, which a create-only save
+// refuses. The resolve follows a link to nowhere and finds nothing where it
+// points. Windows is left as it was (2026110312163207).
+func linkAt(file string) bool {
+	if runtime.GOOS == "windows" {
+		return false
+	}
+	fi, err := os.Lstat(file)
+	return err == nil && fi.Mode()&os.ModeSymlink != 0
+}
+
 // resolveTarget is the path a save actually rewrites. A symlink is followed so
 // the write goes through it; EvalSymlinks does that but needs the target to
 // exist, so a dangling link is walked by hand and the file is created where it
@@ -9251,7 +9698,7 @@ func namesADirectory(file string) bool {
 // would be the exact replacement the symlink walk exists to avoid.
 func resolveTarget(file string) (string, error) {
 	if p, err := filepath.EvalSymlinks(file); err == nil {
-		return p, nil
+		return absReal(p), nil
 	}
 	p := file
 	for hop := 0; hop < 40; hop++ {
@@ -9273,10 +9720,92 @@ func resolveTarget(file string) (string, error) {
 	if _, err := os.Readlink(p); err == nil {
 		return "", errors.New("too many levels of symbolic links")
 	}
-	if dir, err := filepath.EvalSymlinks(rawDir(p)); err == nil {
-		return filepath.Join(dir, filepath.Base(p)), nil
+	return realNearest(p), nil
+}
+
+// realNearest is p, with nothing at it, made absolute through the real path of
+// the nearest folder above it that is there, the rest as written. So one file
+// has one spelling whether it's there or not, and however the path names it:
+// bare, `./`, absolute, through a link, or relative to another working folder.
+// The rest isn't cleaned, since a clean cancels `nodir/..` as text where the
+// kernel refuses the missing folder, and the save would create the file.
+func realNearest(p string) string {
+	at := p
+	for {
+		dir := rawDir(at)
+		if dir == at {
+			break
+		}
+		if real, err := filepath.EvalSymlinks(dir); err == nil {
+			// at is p up to some separator, so its last part starts the rest.
+			// FromSlash so it reads as EvalSymlinks writes a file that's there.
+			rest := filepath.FromSlash(p[len(at)-len(rawBase(at)):])
+			if runtime.GOOS != "windows" {
+				rest = tidyRest(rest)
+			}
+			out := absReal(real)
+			if !os.IsPathSeparator(out[len(out)-1]) {
+				out += string(filepath.Separator)
+			}
+			return out + rest
+		}
+		at = dir
 	}
-	return p, nil
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return p
+}
+
+// tidyRest is the rest of a path under a missing folder, less its `.` and empty
+// parts. Neither changes what the kernel reaches, and a file that's there
+// resolves with neither, so a load of `new/./n.shcl` and a save to
+// `new/n.shcl` name one file. `..` stays, since the kernel refuses it through a
+// missing folder. Windows is left as it was (2026110314240418).
+func tidyRest(rest string) string {
+	parts := strings.Split(rest, "/")
+	kept := parts[:0]
+	for _, n := range parts {
+		if n != "" && n != "." {
+			kept = append(kept, n)
+		}
+	}
+	return strings.Join(kept, "/")
+}
+
+// absReal makes a path EvalSymlinks gave absolute. Getwd can answer with $PWD,
+// which may run through a link, so the working folder is resolved too, or a
+// file named relative and absolute would get 2 spellings. On windows the
+// working folder can be a short name, and EvalSymlinks of the absolute path
+// gives the long one, as it does for a file that's there.
+func absReal(p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	if runtime.GOOS != "windows" {
+		if wd, err := os.Getwd(); err == nil {
+			if real, err := filepath.EvalSymlinks(wd); err == nil {
+				return filepath.Join(real, p)
+			}
+		}
+	}
+	if abs, err := filepath.Abs(p); err == nil {
+		if real, err := filepath.EvalSymlinks(abs); err == nil {
+			return real
+		}
+		return abs
+	}
+	return p
+}
+
+// rawBase is the last part of p as written, the half rawDir leaves.
+func rawBase(p string) string {
+	vol := filepath.VolumeName(p)
+	i := len(p)
+	for i > len(vol) && !os.IsPathSeparator(p[i-1]) {
+		i--
+	}
+	return p[i:]
 }
 
 // rawDir is the directory half of p as written. filepath.Dir cleans it, and a
@@ -9466,12 +9995,18 @@ func loadFileGated(path string, level Strictness, keep bool) (*Document, FileSta
 func loadFileAny(path string, level Strictness, keep bool) (*Document, FileStatus) {
 	text, st := ReadFile(path, 0)
 	if st != FileClean {
-		return newParser().parse("", level), st
+		doc := newParser().parse("", level)
+		// A file that could not be read gives a save nothing to compare.
+		if st == FileNotFound {
+			doc.file = loadedFileAt(path, nil)
+		}
+		return doc, st
 	}
 	doc := newParser().parse(text, level)
 	if keep {
 		doc.keepSource(text)
 	}
+	doc.file = loadedFileAt(path, &text)
 	if doc.ErrorCount() > 0 {
 		return doc, FileHadErrors
 	}
@@ -9495,24 +10030,191 @@ func (e *SaveRefused) Error() string {
 		"from the file (see diagnostics; SaveFileLossy overrides)", e.Path, e.Lost)
 }
 
+// SaveChanged is the error a save returns when the file the document was
+// loaded from no longer holds what the load read, or what this document's
+// last save there wrote. Nothing is written. Another program's edit is not
+// the caller's to undo by accident, so SaveOptions.Force is the override.
+type SaveChanged struct {
+	Path string
+}
+
+// Error names the file and the override.
+func (e *SaveChanged) Error() string {
+	return e.Path + ": refusing to save: the file changed since it was loaded; nothing written (force overrides)"
+}
+
+// SaveExists is the error a save returns when SaveOptions.Create found a file
+// already there, or another save made it first. Nothing is written.
+type SaveExists struct {
+	Path string
+}
+
+// Error names the file and the option.
+func (e *SaveExists) Error() string {
+	return e.Path + ": refusing to save: the file is already there and create asks for a new one; nothing written"
+}
+
+// SaveTooNew is the error every save returns for a document read from a newer
+// format (see NewerFormat), since it would write the lines by these rules.
+// Nothing is written, and no option overrides it.
+type SaveTooNew struct {
+	Path string
+}
+
+// Error names the file and the reason.
+func (e *SaveTooNew) Error() string {
+	return e.Path + ": refusing to save: the document holds lines from a newer format than this reader's; nothing written"
+}
+
+// SaveOptions is how SaveFileWith saves. The zero value is SaveFile.
+type SaveOptions struct {
+	// Lossy writes even when the save deletes content from the file, as
+	// SaveFileLossy does.
+	Lossy bool
+	// KeepLines keeps the lines no edit touched, as SaveFileKeepLines does.
+	KeepLines bool
+	// Force writes over the file the document was loaded from even when it
+	// changed since, for a caller that means to replace whatever is there.
+	Force bool
+	// Create only makes a new file: *SaveExists when one is there, even one
+	// another save makes at the same time.
+	Create bool
+	// Mode is the permission bits (0o777) a file this save makes gets,
+	// exactly, whatever the umask. 0 is an ordinary create's. A file already
+	// there keeps its own, and windows has no such bits.
+	Mode os.FileMode
+}
+
+// loadedFile is the file a load read, for the save's changed check: where the
+// path resolved to, and its text, or nil when nothing was there.
+type loadedFile struct {
+	target string
+	text   *string
+}
+
+// loadedFileAt gives nil for a path that resolves to no target, a link cycle,
+// since that is a save's error already and gets no check.
+func loadedFileAt(path string, text *string) *loadedFile {
+	target, err := resolveTarget(path)
+	if err != nil {
+		return nil
+	}
+	return &loadedFile{target: target, text: text}
+}
+
+func (f *loadedFile) over(path string) bool {
+	target, err := resolveTarget(path)
+	return err == nil && target == f.target
+}
+
+// holds is true when the file at path still holds the text, byte for byte, or
+// is still not there. Content only, so a touch alone is no change. Something
+// that isn't a regular file is left to the write, which refuses it. A file
+// that can't be read is a change, since the rename that replaces it needs no
+// read access.
+func (f *loadedFile) holds(path string) bool {
+	now, regular, err := readRegular(path)
+	switch {
+	case err == nil && !regular:
+		return true
+	case err == nil:
+		return f.text != nil && *f.text == string(now)
+	case errors.Is(err, os.ErrNotExist):
+		return f.text == nil
+	}
+	return false
+}
+
+// readRegular gives the bytes of the regular file at path, for a check that it
+// didn't change, and false when something else is there, such as a FIFO
+// swapped in, which the open doesn't wait on.
+func readRegular(path string) ([]byte, bool, error) {
+	if st, err := os.Stat(path); err != nil || !st.Mode().IsRegular() {
+		return nil, false, err
+	}
+	fh, err := openNoWait(path)
+	if err != nil {
+		return nil, false, err
+	}
+	defer fh.Close()
+	if st, err := fh.Stat(); err != nil || !st.Mode().IsRegular() {
+		return nil, false, err
+	}
+	now, err := io.ReadAll(fh)
+	return now, err == nil, err
+}
+
 // SaveFile is the file tier's save half: write this document's canonical text
 // to path through WriteFileAtomic, so an interrupted save can never truncate
 // the config it rewrites - the same mechanics the CLI's `--write` uses.
 // Refuses when the write would delete content from the file (see
-// LostCount); SaveFileLossy writes anyway. A refusal comes back as
-// *SaveRefused, a write failure as WriteFileAtomic's *WriteError.
+// LostCount); SaveFileLossy writes anyway. Over the file a load read, refuses
+// when that file no longer holds what the load read, or what this document's
+// last save there wrote, so another program's edit is not lost;
+// SaveOptions.Force writes anyway. A refusal comes back as *SaveRefused,
+// another program's edit as *SaveChanged, a document from a newer format as
+// *SaveTooNew (see NewerFormat), a write failure as
+// WriteFileAtomic's *WriteError. A save records what it wrote, so it is a
+// write: not concurrent with another call on the document.
 func (d *Document) SaveFile(path string) error {
-	if lost := d.LostCount(); lost > 0 {
-		return &SaveRefused{Path: path, Lost: lost}
-	}
-	return WriteFileAtomic(path, d.ToCanonical())
+	_, err := d.SaveFileWith(path, SaveOptions{})
+	return err
 }
 
 // SaveFileLossy is SaveFile without the lost-content gate: writes even when
 // the write deletes content from the file. The caller owns that choice. It
-// never returns *SaveRefused - the gate is the one thing it skips.
+// never returns *SaveRefused - the gate is the one thing it skips. The changed
+// check still applies.
 func (d *Document) SaveFileLossy(path string) error {
-	return WriteFileAtomic(path, d.ToCanonical())
+	_, err := d.SaveFileWith(path, SaveOptions{Lossy: true})
+	return err
+}
+
+// SaveFileWith is the save the options describe: true when it kept the lines,
+// as SaveFileKeepLines says. All the save calls come here.
+func (d *Document) SaveFileWith(path string, opts SaveOptions) (bool, error) {
+	// First, and no option overrides it: whatever else is true, the save would
+	// write a newer format's lines by these rules.
+	if d.newer {
+		return false, &SaveTooNew{Path: path}
+	}
+	lost := d.LostCount()
+	var text string
+	kept := false
+	if opts.KeepLines {
+		text, kept = d.ToTextKeepLines()
+	} else {
+		text = d.ToCanonical()
+	}
+	if !opts.Lossy && !kept && lost > 0 {
+		return false, &SaveRefused{Path: path, Lost: lost}
+	}
+	// The file the load read has to be as the load or this document's last
+	// save there left it. That's a check and not a lock: an edit between it
+	// and the rename is still lost.
+	// Before the changed check, so a create that loses to another program is
+	// told the file is there.
+	if opts.Create {
+		if linkAt(path) {
+			return false, &SaveExists{Path: path}
+		}
+		if target, err := resolveTarget(path); err == nil {
+			if _, err := os.Lstat(target); err == nil {
+				return false, &SaveExists{Path: path}
+			}
+		}
+	}
+	over := d.file != nil && d.file.over(path)
+	if over && !opts.Force && !d.file.holds(path) {
+		return false, &SaveChanged{Path: path}
+	}
+	if err := writeFileHow(path, text, opts.Create, opts.Mode); err != nil {
+		return false, err
+	}
+	if over {
+		d.file.text = &text
+	}
+	return kept, nil
 }
 
 // disavowedNames returns the leaf names of the schema entries pick accepts,
@@ -10934,13 +11636,14 @@ func (d *Document) setValueAs(path string, v value, keepQuotes bool) SetStatus {
 			return SetHasChildren
 		}
 	}
-	idx, st := d.place(path, true)
+	// A new instance with a value one already has would fold into that one,
+	// so the set is a set of that one, which leaves its lines be.
+	idx, st := d.sameInstance(path, &v), SetOk
+	if idx < 0 {
+		idx, st = d.place(path, true)
+	}
 	if st != SetOk {
 		return st
-	}
-	// place has already done it for a field it created.
-	if idx < fresh && d.keptOwed > 0 {
-		d.commentOutKept(d.arena[idx].parent, d.arena[idx].name, path, false)
 	}
 	if keepQuotes {
 		keepMark(&d.arena[idx].value, &v)
@@ -10953,6 +11656,12 @@ func (d *Document) setValueAs(path string, v value, keepQuotes bool) SetStatus {
 	// No longer the list the lines among its elements sat in.
 	unstack(&d.arena[idx])
 	d.arena[idx].starList = stacked
+	// place has already done it for a field it created. After the unstack,
+	// so a line of its name from among the items, now above it, is a
+	// comment too.
+	if idx < fresh && d.keptOwed > 0 {
+		d.commentOutKept(d.arena[idx].parent, d.arena[idx].name, path, false)
+	}
 	// An empty binding or a raw block can put a fence after an empty sibling
 	// of its name.
 	fenceSide := v.kind == vEmpty || v.kind == vRaw
@@ -10964,6 +11673,36 @@ func (d *Document) setValueAs(path string, v value, keepQuotes bool) SetStatus {
 	settleFirstBlank(d.arena, d.orphans)
 	d.resettleKept()
 	return SetOk
+}
+
+// sameInstance is the instance a write of v at path would fold into: one with
+// that value, beside the one a (value) selector at the end of the path would
+// make. -1 when the selector finds one, or the path is not Ok.
+func (d *Document) sameInstance(path string, v *value) int {
+	scan, err := scanLookup(path)
+	if err != nil || len(scan.segments) == 0 {
+		return -1
+	}
+	last := &scan.segments[len(scan.segments)-1]
+	if last.sel == nil || last.sel.kind != selByValue {
+		return -1
+	}
+	st, trail := d.probeWrite(scan)
+	if st != SetOk || trail[len(trail)-1] >= 0 {
+		return -1
+	}
+	parent := root
+	if n := len(trail); n > 1 {
+		if parent = trail[n-2]; parent < 0 {
+			return -1
+		}
+	}
+	for _, c := range d.childrenNamed(parent, last.name) {
+		if mergeEq(d.arena[c].name, &d.arena[c].value, last.name, v) {
+			return c
+		}
+	}
+	return -1
 }
 
 // keptAt is where a lead sits: its list, the node that list is on, and its
@@ -11153,6 +11892,11 @@ func (d *Document) collapseDup(node int) {
 	if pos(node) < pos(other) {
 		survivor, loser = node, other
 	}
+	at := pos(loser)
+	// The data does not change, so the kept lines beside the loser stay
+	// where they were, as a remove leaves them. Only the comments written
+	// against it go with it.
+	left := besideKept(&d.arena[loser])
 	moved := append([]int(nil), d.arena[loser].children...)
 	foldNodeInto(d.arena, survivor, loser)
 	keep := d.arena[parent].children[:0]
@@ -11162,6 +11906,13 @@ func (d *Document) collapseDup(node int) {
 		}
 	}
 	d.arena[parent].children = keep
+	if len(left) > 0 {
+		if at < len(keep) {
+			d.leaveAbove(keep[at], left)
+		} else {
+			d.leaveLast(parent, left)
+		}
+	}
 	d.settle(parent, 1)
 	if ix := d.index.Load(); ix != nil {
 		ix.unlink(nameKey(parent, d.arena[loser].name), loser)
@@ -11230,11 +11981,15 @@ func (d *Document) foldDupsBelow(start int) {
 		d.arena[parent].children = nil
 		first := make(map[uint64]slot, len(kids))
 		keep := make([]int, 0, len(kids))
+		// What a folded node leaves, as in collapseDup, for the next node
+		// that stays.
+		var left []lead
 		for _, c := range kids {
 			h := mergeHash(d.arena[c].name, &d.arena[c].value)
 			if survivor, ok := slotFirstMatch(first, h, func(x int) bool {
 				return mergeEq(d.arena[x].name, &d.arena[x].value, d.arena[c].name, &d.arena[c].value)
 			}); ok {
+				left = append(left, besideKept(&d.arena[c])...)
 				moved := append([]int(nil), d.arena[c].children...)
 				foldNodeInto(d.arena, survivor, c)
 				if ix := d.index.Load(); ix != nil {
@@ -11248,10 +12003,17 @@ func (d *Document) foldDupsBelow(start int) {
 				stack = append(stack, survivor)
 			} else {
 				slotInsert(first, h, c)
+				if len(left) > 0 {
+					d.leaveAbove(c, left)
+					left = nil
+				}
 				keep = append(keep, c)
 			}
 		}
 		d.arena[parent].children = keep
+		if len(left) > 0 {
+			d.leaveLast(parent, left)
+		}
 		d.settle(parent, 1)
 	}
 }
@@ -11442,6 +12204,76 @@ func (d *Document) TryRemove(path string) Read[int] {
 	settleFirstBlank(d.arena, d.orphans)
 	d.resettleKept()
 	return Read[int]{Value: len(targets), Status: status}.at(line, nil)
+}
+
+// refileFolded: a load that folds 2 instances leaves the kept lines read
+// beside the later one where they were, as a setter's fold does: above the
+// next sibling read after them, or at the end of the block. folded holds the
+// nodes a fold or a re-mention gave lines to.
+func (d *Document) refileFolded(folded []int) {
+	sort.Ints(folded)
+	// Parent, the child they go above (past the last, the block's end), line,
+	// the line. All first, since 2 folds can fill one place.
+	type move struct {
+		parent, at, line int
+		l                lead
+	}
+	var moves []move
+	for x, c := range folded {
+		if x > 0 && folded[x-1] == c {
+			continue
+		}
+		p := d.arena[c].parent
+		at := -1
+		for k, kid := range d.arena[p].children {
+			if kid == c {
+				at = k
+				break
+			}
+		}
+		if at < 0 {
+			continue
+		}
+		j, line := at+1, 0
+		for _, l := range foldedKept(&d.arena[c]) {
+			line = maxInt(line, l.line)
+			kids := d.arena[p].children
+			for j < len(kids) && d.arena[kids[j]].line <= line {
+				j++
+			}
+			moves = append(moves, move{p, j, line, l})
+		}
+	}
+	// Stable, so the lines of one fold keep their order.
+	sort.SliceStable(moves, func(a, b int) bool {
+		if moves[a].parent != moves[b].parent {
+			return moves[a].parent < moves[b].parent
+		}
+		if moves[a].at != moves[b].at {
+			return moves[a].at < moves[b].at
+		}
+		return moves[a].line < moves[b].line
+	})
+	for k := 0; k < len(moves); {
+		p, j := moves[k].parent, moves[k].at
+		var group []lead
+		for ; k < len(moves) && moves[k].parent == p && moves[k].at == j; k++ {
+			group = append(group, moves[k].l)
+		}
+		if j < len(d.arena[p].children) {
+			d.leaveAbove(d.arena[p].children[j], group)
+		} else {
+			d.leaveLast(p, group)
+		}
+		if k == len(moves) || moves[k].parent != p {
+			settleBlock(d.arena, p, 1)
+		}
+	}
+	// The first node can have lost the lines above it, and with them the room
+	// for a blank a re-mention left it.
+	if len(moves) > 0 {
+		settleFirstBlank(d.arena, d.orphans)
+	}
 }
 
 // leaveAbove puts lines a remove left above the sibling that followed them.
@@ -12078,6 +12910,8 @@ func (d *Document) Merge(over *Document) {
 	d.index.Store(nil)
 	d.source = nil
 	d.lost += over.lost
+	// The layer's lines are in the document now, read by these rules.
+	d.newer = d.newer || over.newer
 	d.keptOwed += over.keptOwed
 	// The layer's own kept lines were modeled against its own tree.
 	fresh := over.kept
@@ -12266,7 +13100,7 @@ func (d *Document) overlay(baseParent int, over *Document, overParent int, touch
 				// Off the index, not a scan of every base child: N leaves
 				// overridden by the same N names made this quadratic
 				// (20260918b item 58).
-				var kept []lead
+				var kept, inside []lead
 				for _, b := range byName[name] {
 					nd := &d.arena[b]
 					// The leaf's own comments are the ones a remove would
@@ -12295,10 +13129,16 @@ func (d *Document) overlay(baseParent int, over *Document, overParent int, touch
 					for _, a := range nd.among() {
 						among = append(among, a.lead)
 					}
-					for _, list := range [][]lead{leading[above:], among, nd.inside(), after[:below]} {
+					// A line kept inside its block stays there, as when a
+					// setter changes the leaf in place.
+					for li, list := range [][]lead{leading[above:], among, nd.inside(), after[:below]} {
 						for _, l := range list {
 							if !strings.HasPrefix(l.text, "#") {
-								kept = append(kept, l)
+								if li == 2 {
+									inside = append(inside, l)
+								} else {
+									kept = append(kept, l)
+								}
 							} else if l.kept {
 								// A settled one goes with the leaf's comments
 								// (decided 2026-09-28), so it is no longer owed.
@@ -12315,6 +13155,11 @@ func (d *Document) overlay(baseParent int, over *Document, overParent int, touch
 					t.leading = append(kept, t.leading...)
 					// Comments from two sources now share one run.
 					restep(t.leading)
+				}
+				if len(inside) > 0 {
+					t := d.arena[clones[0]].trivMut()
+					t.inside = append(inside, t.inside...)
+					restep(t.inside)
 				}
 				replace[name] = clones
 			} else {
