@@ -1166,6 +1166,24 @@ This is a product backlog just for pre-v1.0.0 release. After that, bugs, feature
 	- Closed: 20261028-0940
 	- Verified: 2026-10-28, r1028's full run on d6dd5bb passed all 13 steps, cross-builds and the 4 remote boxes included, on shclwrap 54dc6c6.
 
+- Move to shcl v3.0.0-beta1 and drop shclwrap.
+	- ID: 2026110609362100
+	- Type: Task
+	- Status: In progress
+	- Needs local test suite run?: Yes
+	- Priority [Feature|Enhancement] | Severity [Bug]: Avg
+	- Opened: 20261106-093621
+	- Opened by: JC
+	- Related IDs: 2026102621002700
+	- Requirements [Feature]:
+		- `source/go.mod` takes shcl `v3.0.0-beta1` and has no shclwrap or shcl 2.x.
+		- `internal/core/shclio` reads and writes over shcl's own `Document`, so no other package changes.
+	- Progress log:
+		- 20261106: `shclio` has its own `Doc`, over shcl's keep-lines load and save. `Current` calls shcl's `Upgrade` with 2.x taken as the source. The vendor folder has only shcl v3. Go tests pass.
+		- The backtick swap stays. The `## Default` line fill-in that shclwrap did is not carried over, and no test needed it.
+	- Branch: shcl3
+	- Test case: The existing ddl, config, and shclio tests.
+
 - Go leak checks: a soak test on heap in use and goroutine count.
 	- ID: 2026102520521023
 	- Type: Task

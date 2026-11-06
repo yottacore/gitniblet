@@ -10,15 +10,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jim-collier/shclwrap/source/go/shclw"
-	shcl "github.com/jim-collier/shclwrap/source/go/shclw3"
+	shcl "github.com/yottacore/shcl/source/go/v3"
 )
 
-// Doc is a parsed file.
-type Doc = shcl.Doc
-
 // Diag is one load or validation diagnostic.
-type Diag = shcl.Diag
+type Diag = shcl.Diagnostic
+
+// Strictness is how hard a load is on bad lines.
+type Strictness = shcl.Strictness
 
 // The strictness levels a load takes.
 const (
@@ -28,14 +27,21 @@ const (
 )
 
 // IsError is true for a diagnostic that cost the load a line.
-func IsError(d Diag) bool { return d.Severity == shclw.SevError }
+func IsError(d Diag) bool { return d.Severity == shcl.SeverityError }
 
 // New is an empty document.
-func New() *Doc { return shcl.New() }
+func New() *Doc {
+	d, _ := shcl.ParseKeepLines("", shcl.Standard)
+	return &Doc{d: d}
+}
 
 // Load parses text at strictness s, after Current. Only Strict can fail.
-func Load(text string, s shcl.Strictness) (*Doc, error) {
-	return shcl.ParseWith(Current(text), s)
+func Load(text string, s Strictness) (*Doc, error) {
+	d, err := shcl.ParseKeepLines(Current(text), s)
+	if d == nil {
+		d = shcl.New()
+	}
+	return &Doc{d: d}, err
 }
 
 // Current is text as shcl 3 should read it. A file with no Format line that
@@ -45,11 +51,10 @@ func Load(text string, s shcl.Strictness) (*Doc, error) {
 //
 // The upgrade reads the file the 2.x way, which splits a backtick value at
 // its commas. Those lines skip it and keep the reading gitniblet always gave
-// them, until shclwrap can keep them itself (2026102618065645). A file that
-// reads two ways is taken as 2.x, since every file without a Format line was
-// written for the 2.x rules.
+// them. A file that reads two ways is taken as 2.x, since every file without
+// a Format line was written for the 2.x rules.
 func Current(text string) string {
-	if shcl.FormatOf(text) >= shcl.FormatMajor {
+	if FormatOf(text) >= shcl.FormatMajor {
 		return text
 	}
 	lines := strings.Split(text, "\n")
@@ -64,14 +69,11 @@ func Current(text string) string {
 		kept[token], lines[i] = line, key+": "+token
 	}
 	held := strings.Join(lines, "\n")
-	u, err := shcl.Upgrade(held, 0)
-	if shcl.KindOf(err) == shclw.ErrAmbiguous {
-		u, err = shcl.Upgrade(held, 2)
-	}
+	u := shcl.Upgrade(held, true)
 	switch {
-	case err != nil:
+	case u.Ambiguous != 0 || len(u.ErrorsLeft) != 0:
 		return text
-	case !u.Changed:
+	case u.Current:
 		u.Text = held
 	}
 	// The upgrade keeps blank lines, so each line keeps its number.
@@ -94,7 +96,7 @@ func isBacktick(line string) bool {
 }
 
 // Quote is name as one path segment, quoted if it needs it.
-func Quote(name string) string { return shcl.New().Child("", name) }
+func Quote(name string) string { return shcl.QuoteSegment(name) }
 
 // Select is the path to the instance of name whose value is disc. The body
 // is always quoted, since a bare number would select by index.
@@ -109,8 +111,6 @@ func Select(name, disc string) string {
 // Text is doc as a save writes it. It names its format, so a later load
 // never takes it for 2.x.
 func Text(doc *Doc) string {
-	// A stamp fails only after an edit that stops the Format line going in,
-	// and the text then reads as current anyway.
 	_ = doc.StampFormat()
 	return doc.Text()
 }
